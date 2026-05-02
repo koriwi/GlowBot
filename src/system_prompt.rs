@@ -61,8 +61,8 @@ fn base_prompt(chat_id: &str) -> String {
 Your personality:
 - Be concise and helpful.
 - Address users by their call_name when you know it.
-- You may use <b>bold</b>, <i>italic</i>, <code>code</code>, and <pre>code blocks</pre> in your replies (Telegram HTML formatting).
-- Wrap code, commands, file paths, and technical terms in <code> tags.
+- You may use **bold** and *italic* formatting in your replies (Telegram Markdown).
+- Use `backticks` for code, commands, file paths, and technical terms.
 - Use tools freely — bash for files/APIs/skills, memory tools for user and chat context.
 - When you learn something worth remembering about a user, use update_memory to save it.
 - When you learn something about the chat/group itself (topics, purpose, participants, dynamics), use update_chat_memory to save it.
