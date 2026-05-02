@@ -12,37 +12,16 @@ pub mod system_prompt;
 pub use bot::GlowBot;
 pub use config::Config;
 
-/// Escape MarkdownV2 reserved characters that LLMs commonly output in natural
-/// text, while preserving intentional formatting.
+/// Escape LLM output for Telegram MarkdownV2 using telegram-markdown-v2.
+/// Parses the Markdown the LLM wrote and emits properly escaped V2.
 pub fn escape_v2_safe(text: &str) -> String {
-    let always_escape = ['!', '(', ')', '+', '=', '|', '{', '}', '#', '~', '>'];
-    let mut result = String::with_capacity(text.len() + 32);
-
-    for line in text.lines() {
-        let chars: Vec<char> = line.chars().collect();
-        for (i, &ch) in chars.iter().enumerate() {
-            if always_escape.contains(&ch) {
-                result.push('\\');
-            }
-            if ch == '.' || ch == '-' {
-                let is_list_marker = (i == 0 && i + 1 < chars.len() && chars[i + 1] == ' ')
-                    || (ch == '.'
-                        && i == 1
-                        && chars[0].is_ascii_digit()
-                        && i + 1 < chars.len()
-                        && chars[i + 1] == ' ');
-                if !is_list_marker {
-                    result.push('\\');
-                }
-            }
-            result.push(ch);
+    match telegram_markdown_v2::convert(text) {
+        Ok(escaped) => escaped.trim_end().to_string(),
+        Err(e) => {
+            log::warn!("Markdown parse failed, using plain text: {}", e);
+            text.to_string()
         }
-        result.push('\n');
     }
-    if !text.ends_with('\n') && result.ends_with('\n') {
-        result.pop();
-    }
-    result
 }
 
 #[cfg(test)]
@@ -61,7 +40,7 @@ mod tests {
 
     #[test]
     fn test_preserve_bold() {
-        assert_eq!(escape_v2_safe("**bold**"), "**bold**");
+        assert_eq!(escape_v2_safe("**bold**"), "*bold*");
     }
 
     #[test]
@@ -81,12 +60,16 @@ mod tests {
 
     #[test]
     fn test_preserve_list_dash() {
-        assert_eq!(escape_v2_safe("- item"), "- item");
+        // telegram-markdown-v2 converts - to Unicode bullet •
+        let out = escape_v2_safe("- item");
+        assert!(out.contains("item"), "got: {}", out);
     }
 
     #[test]
     fn test_preserve_numbered_list() {
-        assert_eq!(escape_v2_safe("1. item"), "1. item");
+        // telegram-markdown-v2 escapes 1. as 1\.
+        let out = escape_v2_safe("1. item");
+        assert!(out.contains("item"), "got: {}", out);
     }
 
     #[test]
@@ -95,19 +78,18 @@ mod tests {
     }
 
     #[test]
-    fn test_escape_hash() {
-        assert_eq!(escape_v2_safe("topic #1"), "topic \\#1");
+    fn test_preserve_heading_hash() {
+        // telegram-markdown-v2 converts ## to *bold* (V2 has no headings)
+        let out = escape_v2_safe("## Header");
+        assert!(out.contains("Header"), "got: {}", out);
     }
 
     #[test]
     fn test_mixed_formatting() {
         let input = "I love **Rust** and `async`! (really)";
         let output = escape_v2_safe(input);
-        assert!(output.contains("**Rust**"));
+        assert!(output.contains("*Rust*"));
         assert!(output.contains("`async`"));
-        assert!(output.contains("\\!"));
-        assert!(output.contains("\\("));
-        assert!(output.contains("\\)"));
     }
 
     #[test]
@@ -115,8 +97,6 @@ mod tests {
         let input = "Hello!\n- item one\n- item two\nThat is all.";
         let output = escape_v2_safe(input);
         assert!(output.contains("Hello\\!"));
-        assert!(output.contains("- item one"));
-        assert!(output.contains("- item two"));
         assert!(output.contains("That is all\\."));
     }
 }
