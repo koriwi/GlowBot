@@ -74,16 +74,19 @@ async fn handle_message(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, msg: Message, bot
         text
     );
 
+    // Show typing indicator while processing
+    let chat = ChatId(chat_id.parse().unwrap_or_default());
+    let _ = tg_bot
+        .send_chat_action(chat, teloxide::types::ChatAction::Typing)
+        .await;
+
     let bot_inner = bot.lock().await;
     match bot_inner
         .process_message(&chat_id, &user_id, username, text, bot_username)
         .await
     {
         Ok(Some(response)) => {
-            if let Err(e) = tg_bot
-                .send_message(ChatId(chat_id.parse().unwrap_or_default()), &response)
-                .await
-            {
+            if let Err(e) = tg_bot.send_message(chat, &response).await {
                 log::error!("Failed to send message: {}", e);
             }
         }
