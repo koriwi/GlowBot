@@ -224,6 +224,8 @@ pub fn all_tool_definitions() -> Vec<ToolDefinition> {
         update_memory_tool_definition(),
         read_chat_memory_tool_definition(),
         update_chat_memory_tool_definition(),
+        create_skill_tool_definition(),
+        update_skill_tool_definition(),
     ]
 }
 
@@ -267,6 +269,64 @@ pub fn update_chat_memory_tool_definition() -> ToolDefinition {
                     }
                 },
                 "required": []
+            }),
+        },
+    }
+}
+
+/// The create_skill tool definition.
+pub fn create_skill_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "create_skill".into(),
+            description: "Create a new skill. Skills extend my capabilities with shell commands, API calls, or custom workflows. Each skill gets a directory under skills/<name>/ with a skill.md file.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Unique skill name (lowercase, hyphens for spaces, e.g. 'search-web')."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of what the skill does."
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Instructions for using the skill — bash commands, API endpoints, workflow steps. Gets injected into my system prompt."
+                    }
+                },
+                "required": ["name", "description", "body"]
+            }),
+        },
+    }
+}
+
+/// The update_skill tool definition.
+pub fn update_skill_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "update_skill".into(),
+            description: "Update an existing skill. Only provided fields are overwritten. Skills are reloaded automatically after updating.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the existing skill to update."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional: new description."
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Optional: new body/instructions."
+                    }
+                },
+                "required": ["name"]
             }),
         },
     }
@@ -439,7 +499,7 @@ mod tests {
     #[test]
     fn test_all_tool_definitions() {
         let tools = all_tool_definitions();
-        assert_eq!(tools.len(), 5);
+        assert_eq!(tools.len(), 7);
         assert_eq!(tools[0].function.name, "bash");
         assert_eq!(tools[1].function.name, "read_memory");
         assert_eq!(tools[2].function.name, "update_memory");

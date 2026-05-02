@@ -109,10 +109,14 @@ The data directory is a standalone git repository, not nested inside the applica
 - Handles tool-use responses with a multi-turn loop (up to 10 rounds).
 - Maintains a **sliding conversation window** (`conversation_window` in config, default 20) of recent user + assistant messages per chat, sent as context with each request.
 - Responses are sent with `ParseMode::MarkdownV2`. LLM output is converted via the `telegram-markdown-v2` crate, which parses standard Markdown and emits properly escaped V2. Falls back to plain text on conversion failure.
-- Three tools are exposed to the LLM:
+- Seven tools are exposed to the LLM:
   1. **`bash`** — raw shell execution for file ops, API calls, invoking skills.
   2. **`read_memory`** — returns a user's memory as structured JSON (frontmatter + body).
-  3. **`update_memory`** — partial update of a user's memory; all fields optional (username, call_name, description, log_entry). Only provided fields overwrite existing values.
+  3. **`update_memory`** — partial update of a user's memory; all fields optional.
+  4. **`read_chat_memory`** — returns chat-level memory as JSON.
+  5. **`update_chat_memory`** — partial update of chat memory; all fields optional.
+  6. **`create_skill`** — create a new skill file (name, description, body). Triggers reload.
+  7. **`update_skill`** — update an existing skill (name, description?, body?). Triggers reload.
 
 **Important implementation detail:** Bash commands run with the data directory as working directory. All paths must be relative (e.g. `chats/123/456.md`, not `glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` so the LLM knows the exact memory file paths.
 
@@ -156,7 +160,9 @@ Parse the results and summarize.
 #### Skill creation
 
 - The bot only creates or modifies skills when explicitly asked by a user.
-- It can write simple `skill.md` files directly.
+- Skills are created and updated via structured tools (`create_skill`, `update_skill`) — the LLM never writes skill files by hand via bash. This guarantees correct YAML frontmatter format.
+- `create_skill(name, description, body)` — creates `skills/<name>/skill.md` and reloads.
+- `update_skill(name, description?, body?)` — updates an existing skill, only overwrites provided fields, then reloads.
 - (Phase 2) It can generate and compile Rust skills.
 
 ---
@@ -230,6 +236,14 @@ The bot exposes a **bash** tool for raw shell execution.
 - **Memory files should be accessed via `read_memory` / `update_memory` tools**, not raw bash — this guarantees correct YAML frontmatter format.
 - All file paths in bash commands are relative to the data directory (e.g. `chats/123/456.md`).
 
+### 4.7 Tool Call Logging
+
+Every tool invocation is logged for debugging and audit:
+- Written to `glowbot_data/tool_calls.log` (append-only).
+- Format: `[timestamp] tool_name | args: <json> | result: <first 200 chars>`
+- Also logged to stdout via `log::info!` for Docker log visibility.
+- Log writes are best-effort — they never block or fail message processing.
+
 ---
 
 ### 4.6 Commands & Permissions
@@ -264,6 +278,8 @@ Whitelists contain Telegram user IDs.
 - [x] Simple skills (`skills/<name>/skill.md` with frontmatter)
 - [x] Bash tool (oneshot, container-isolated, 30s timeout)
 - [x] `read_memory` / `update_memory` structured tools for per-user `.md` memory
+- [x] `create_skill` / `update_skill` structured tools for skill management
+- [x] Tool call logging to `tool_calls.log`
 - [x] Per-user `.md` memory with YAML frontmatter, freeform body
 - [x] Memory frontmatter injected into system prompt; full file readable via tools
 - [x] `/model`, `/mode`, `/reload`, `/status` commands

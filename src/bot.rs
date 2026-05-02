@@ -274,8 +274,18 @@ impl GlowBot {
                             "update_chat_memory" => {
                                 self.execute_update_chat_memory(chat_id, &args).await
                             }
+                            "create_skill" => self.execute_create_skill(&args).await,
+                            "update_skill" => self.execute_update_skill(&args).await,
                             _ => format!("Unknown tool: {}", tool_call.function.name),
                         };
+
+                        // Log the tool call
+                        self.log_tool_call(
+                            &tool_call.function.name,
+                            &tool_call.function.arguments,
+                            &result_text,
+                        )
+                        .await;
 
                         messages.push(ChatMessage::tool_result(&tool_call.id, &result_text));
                     }
@@ -479,6 +489,106 @@ impl GlowBot {
             "No fields to update. Provide at least one of: call_name, description, log_entry."
                 .into()
         }
+    }
+
+    /// Execute a create_skill tool call.
+    async fn execute_create_skill(&self, args: &serde_json::Value) -> String {
+        let name = args["name"].as_str().unwrap_or("");
+        let description = args["description"].as_str().unwrap_or("");
+        let body = args["body"].as_str().unwrap_or("");
+
+        if name.is_empty() || description.is_empty() || body.is_empty() {
+            return "Error: name, description, and body are all required.".into();
+        }
+
+        let state = self.state.lock().await;
+        let fm = crate::skills::SkillFrontmatter {
+            name: name.to_string(),
+            description: description.to_string(),
+        };
+        match crate::skills::write_skill(&state.skills_dir(), name, &fm, body) {
+            Ok(_path) => {
+                drop(state);
+                // Reload skills so the new one is available immediately
+                if let Err(e) = self.reload_skills().await {
+                    log::error!("Failed to reload skills after create: {}", e);
+                }
+                format!("Skill '{}' created successfully.", name)
+            }
+            Err(e) => format!("Failed to create skill: {}", e),
+        }
+    }
+
+    /// Execute an update_skill tool call.
+    async fn execute_update_skill(&self, args: &serde_json::Value) -> String {
+        let name = args["name"].as_str().unwrap_or("");
+        if name.is_empty() {
+            return "Error: name is required.".into();
+        }
+
+        let state = self.state.lock().await;
+        let skill_path = state.skills_dir().join(name).join("skill.md");
+
+        let mut skill = match crate::skills::load_skill(&skill_path) {
+            Ok(s) => s,
+            Err(_) => return format!("Skill '{}' not found at {}.", name, skill_path.display()),
+        };
+
+        let mut changed = false;
+        if let Some(v) = args["description"].as_str() {
+            skill.frontmatter.description = v.to_string();
+            changed = true;
+        }
+        let body = args["body"].as_str();
+        if let Some(v) = body {
+            skill.body = v.to_string();
+            changed = true;
+        }
+
+        if !changed {
+            return "No fields to update. Provide at least one of: description, body.".into();
+        }
+
+        // Reconstruct the file content and write
+        let yaml = serde_yaml::to_string(&skill.frontmatter).unwrap_or_default();
+        let content = format!("---\n{}---\n{}", yaml, skill.body);
+        match std::fs::write(&skill_path, &content) {
+            Ok(()) => {
+                drop(state);
+                if let Err(e) = self.reload_skills().await {
+                    log::error!("Failed to reload skills after update: {}", e);
+                }
+                format!("Skill '{}' updated successfully.", name)
+            }
+            Err(e) => format!("Failed to update skill: {}", e),
+        }
+    }
+
+    /// Log a tool call to the tool_calls.log file in the data directory.
+    async fn log_tool_call(&self, tool_name: &str, args: &str, result: &str) {
+        let state = self.state.lock().await;
+        let log_path = state.data_dir.join("tool_calls.log");
+        drop(state);
+
+        let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
+        let result_summary: String = result.chars().take(200).collect();
+        let args_summary: String = args.chars().take(200).collect();
+        let line = format!(
+            "[{}] {} | args: {} | result: {}\n",
+            timestamp, tool_name, args_summary, result_summary
+        );
+
+        // Best-effort append — don't block on log write errors
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .and_then(|mut f| {
+                use std::io::Write;
+                f.write_all(line.as_bytes())
+            });
+
+        log::info!("tool {}: {}", tool_name, args_summary);
     }
 }
 
@@ -1228,5 +1338,89 @@ mod tests {
         let mem = crate::memory::load_chat_memory(&state.chats_dir(), "-123").unwrap();
         assert_eq!(mem.frontmatter.call_name, "Original"); // unchanged
         assert_eq!(mem.frontmatter.description, "New desc");
+    }
+
+    #[tokio::test]
+    async fn test_execute_create_skill() {
+        let (bot, dir, _mock) = setup_test_bot().await;
+        let result = bot
+            .execute_create_skill(&serde_json::json!({
+                "name": "my-skill",
+                "description": "Does things",
+                "body": "Run: echo hello"
+            }))
+            .await;
+        assert!(result.contains("created successfully"));
+
+        // Verify file exists
+        let skills_dir = dir.path().join("glowbot_data").join("skills");
+        let skill_file = skills_dir.join("my-skill").join("skill.md");
+        assert!(skill_file.exists());
+
+        // Verify skill was loaded
+        let state = bot.state.lock().await;
+        assert!(state.skills.contains_key("my-skill"));
+        assert_eq!(
+            state.skills["my-skill"].frontmatter.description,
+            "Does things"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_create_skill_missing_fields() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+        let result = bot
+            .execute_create_skill(&serde_json::json!({"name": "test"}))
+            .await;
+        assert!(result.contains("Error"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_update_skill() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+
+        // Create a skill first
+        bot.execute_create_skill(&serde_json::json!({
+            "name": "updatable",
+            "description": "Original",
+            "body": "Original body"
+        }))
+        .await;
+
+        // Update it
+        let result = bot
+            .execute_update_skill(&serde_json::json!({
+                "name": "updatable",
+                "description": "Updated desc"
+            }))
+            .await;
+        assert!(result.contains("updated successfully"));
+
+        let state = bot.state.lock().await;
+        let skill = &state.skills["updatable"];
+        assert_eq!(skill.frontmatter.description, "Updated desc");
+        assert_eq!(skill.body, "Original body"); // unchanged
+    }
+
+    #[tokio::test]
+    async fn test_execute_update_skill_not_found() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+        let result = bot
+            .execute_update_skill(&serde_json::json!({"name": "nonexistent"}))
+            .await;
+        assert!(result.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_log_tool_call() {
+        let (bot, dir, _mock) = setup_test_bot().await;
+        bot.log_tool_call("bash", r#"{"command":"echo hi"}"#, "stdout: hi\n")
+            .await;
+
+        let log_path = dir.path().join("glowbot_data").join("tool_calls.log");
+        assert!(log_path.exists());
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        assert!(content.contains("bash"));
+        assert!(content.contains("echo hi"));
     }
 }
