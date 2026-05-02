@@ -743,134 +743,144 @@ pub async fn run_heartbeat_task(
     git_repo: crate::git::GitRepo,
     chat_id: &str,
 ) {
-    let (task_id, task_desc) = {
-        let s = state.lock().await;
-        let list = crate::tasks::TaskList::load(&s.chats_dir(), chat_id).unwrap_or_default();
-        match list.oldest() {
-            Some(t) => (t.id.clone(), t.description.clone()),
-            None => return,
-        }
-    };
-
-    log::info!("Heartbeat chat {}: working on task '{}'", chat_id, task_id);
-
-    let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let system_prompt = format!(
-        "You are GlowBot's task agent for chat {chat_id}.\n\
-        Task: {task_desc}\n\
-        - Use bash and other tools to complete it.\n\
-        - When done, call remove_task(\"{task_id}\").\n\
-        - For follow-ups, call add_task(\"...\").\n\
-        - Do NOT send Telegram messages. Background process.\n\
-        Current date: {date}",
-        chat_id = chat_id,
-        task_desc = task_desc,
-        task_id = task_id,
-        date = date,
-    );
-
-    let model = {
-        let s = state.lock().await;
-        s.config.model_for_chat(chat_id).to_string()
-    };
-    let tools = crate::openrouter::all_tool_definitions();
-    let mut messages = vec![ChatMessage::system(&system_prompt)];
     let cid = chat_id.to_string();
+    let mut processed = 0;
+    let max_per_cycle = 20;
 
-    for _ in 0..10 {
-        let request = ChatCompletionRequest {
-            model: model.clone(),
-            messages: messages.clone(),
-            tools: Some(tools.clone()),
-            tool_choice: None,
-        };
-        let response = {
+    while processed < max_per_cycle {
+        let (task_id, task_desc) = {
             let s = state.lock().await;
-            match s.llm.chat_completion(&request).await {
-                Ok(r) => r,
-                Err(e) => {
-                    log::error!("Heartbeat LLM error: {}", e);
-                    return;
-                }
+            let list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            match list.oldest() {
+                Some(t) => (t.id.clone(), t.description.clone()),
+                None => break,
             }
         };
-        let choice = match response.choices.into_iter().next() {
-            Some(c) => c,
-            None => break,
+
+        processed += 1;
+        log::info!("Heartbeat chat {}: working on task '{}'", cid, task_id);
+
+        let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let system_prompt = format!(
+            "You are GlowBot's task agent for chat {chat_id}.\n\
+            Task: {task_desc}\n\
+            - Use bash and other tools to complete it.\n\
+            - When done, call remove_task(\"{task_id}\").\n\
+            - For follow-ups, call add_task(\"...\").\n\
+            - Do NOT send Telegram messages. Background process.\n\
+            Current date: {date}",
+            chat_id = cid,
+            task_desc = task_desc,
+            task_id = task_id,
+            date = date,
+        );
+
+        let model = {
+            let s = state.lock().await;
+            s.config.model_for_chat(&cid).to_string()
         };
-        if let Some(tcs) = &choice.message.tool_calls {
-            if tcs.is_empty() {
-                break;
-            }
-            messages.push(ChatMessage::assistant_tool_calls(tcs.clone()));
-            for tc in tcs {
-                let args: serde_json::Value =
-                    serde_json::from_str(&tc.function.arguments).unwrap_or_default();
-                let result = match tc.function.name.as_str() {
-                    "bash" => {
-                        let cmd = args["command"].as_str().unwrap_or("");
-                        let dir = { state.lock().await.data_dir.clone() };
-                        match crate::bash::execute_in_dir(cmd, &dir).await {
-                            Ok(r) => format!("stdout:\n{}\nstderr:\n{}", r.stdout, r.stderr),
-                            Err(e) => format!("Error: {}", e),
-                        }
+        let tools = crate::openrouter::all_tool_definitions();
+        let mut messages = vec![ChatMessage::system(&system_prompt)];
+
+        for _ in 0..10 {
+            let request = ChatCompletionRequest {
+                model: model.clone(),
+                messages: messages.clone(),
+                tools: Some(tools.clone()),
+                tool_choice: None,
+            };
+            let response = {
+                let s = state.lock().await;
+                match s.llm.chat_completion(&request).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        log::error!("Heartbeat LLM error: {}", e);
+                        break;
                     }
-                    "add_task" => {
-                        let d = args["description"].as_str().unwrap_or("");
-                        if d.is_empty() {
-                            "Error".into()
-                        } else {
+                }
+            };
+            let choice = match response.choices.into_iter().next() {
+                Some(c) => c,
+                None => break,
+            };
+            if let Some(tcs) = &choice.message.tool_calls {
+                if tcs.is_empty() {
+                    break;
+                }
+                messages.push(ChatMessage::assistant_tool_calls(tcs.clone()));
+                for tc in tcs {
+                    let args: serde_json::Value =
+                        serde_json::from_str(&tc.function.arguments).unwrap_or_default();
+                    let result = match tc.function.name.as_str() {
+                        "bash" => {
+                            let cmd = args["command"].as_str().unwrap_or("");
+                            let dir = { state.lock().await.data_dir.clone() };
+                            match crate::bash::execute_in_dir(cmd, &dir).await {
+                                Ok(r) => format!("stdout:\n{}\nstderr:\n{}", r.stdout, r.stderr),
+                                Err(e) => format!("Error: {}", e),
+                            }
+                        }
+                        "add_task" => {
+                            let d = args["description"].as_str().unwrap_or("");
+                            if d.is_empty() {
+                                "Error".into()
+                            } else {
+                                let s = state.lock().await;
+                                let mut l = crate::tasks::TaskList::load(&s.chats_dir(), &cid)
+                                    .unwrap_or_default();
+                                let id = l.add(d);
+                                let _ = l.save(&s.chats_dir(), &cid);
+                                format!("Task '{}' added", id)
+                            }
+                        }
+                        "list_tasks" => {
+                            let s = state.lock().await;
+                            let l = crate::tasks::TaskList::load(&s.chats_dir(), &cid)
+                                .unwrap_or_default();
+                            serde_json::to_string_pretty(&l.tasks).unwrap_or_default()
+                        }
+                        "remove_task" => {
+                            let id = args["id"].as_str().unwrap_or("");
                             let s = state.lock().await;
                             let mut l = crate::tasks::TaskList::load(&s.chats_dir(), &cid)
                                 .unwrap_or_default();
-                            let id = l.add(d);
-                            let _ = l.save(&s.chats_dir(), &cid);
-                            format!("Task '{}' added", id)
-                        }
-                    }
-                    "list_tasks" => {
-                        let s = state.lock().await;
-                        let l =
-                            crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
-                        serde_json::to_string_pretty(&l.tasks).unwrap_or_default()
-                    }
-                    "remove_task" => {
-                        let id = args["id"].as_str().unwrap_or("");
-                        let s = state.lock().await;
-                        let mut l =
-                            crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
-                        if l.remove(id) {
-                            let _ = l.save(&s.chats_dir(), &cid);
-                            format!("Removed {}", id)
-                        } else {
-                            format!("Not found: {}", id)
-                        }
-                    }
-                    name if name.starts_with("mcp_") => {
-                        let s = state.lock().await;
-                        match s
-                            .mcp_tools
-                            .iter()
-                            .find(|t| format!("mcp_{}_{}", t.server_name, t.name) == name)
-                        {
-                            Some(t) => {
-                                let tc = t.clone();
-                                drop(s);
-                                crate::mcp::invoke_tool(&tc, &args).await
+                            if l.remove(id) {
+                                let _ = l.save(&s.chats_dir(), &cid);
+                                format!("Removed {}", id)
+                            } else {
+                                format!("Not found: {}", id)
                             }
-                            None => format!("MCP tool not found: {}", name),
                         }
-                    }
-                    _ => format!("N/A: {}", tc.function.name),
-                };
-                messages.push(ChatMessage::tool_result(&tc.id, &result));
+                        name if name.starts_with("mcp_") => {
+                            let s = state.lock().await;
+                            match s
+                                .mcp_tools
+                                .iter()
+                                .find(|t| format!("mcp_{}_{}", t.server_name, t.name) == name)
+                            {
+                                Some(t) => {
+                                    let tc = t.clone();
+                                    drop(s);
+                                    crate::mcp::invoke_tool(&tc, &args).await
+                                }
+                                None => format!("MCP tool not found: {}", name),
+                            }
+                        }
+                        _ => format!("N/A: {}", tc.function.name),
+                    };
+                    messages.push(ChatMessage::tool_result(&tc.id, &result));
+                }
+                let _ = git_repo.auto_commit("Heartbeat");
+                continue;
             }
-            let _ = git_repo.auto_commit("Heartbeat");
-            continue;
+            break;
         }
-        break;
+        log::info!("Heartbeat chat {}: task '{}' done", cid, task_id);
     }
-    log::info!("Heartbeat chat {}: task '{}' done", cid, task_id);
+
+    if processed > 0 {
+        log::info!("Heartbeat chat {}: processed {} task(s)", cid, processed);
+    }
 }
 
 #[cfg(test)]
