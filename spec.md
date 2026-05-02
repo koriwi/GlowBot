@@ -173,12 +173,13 @@ Parse the results and summarize.
 ```
 chats/
   <chat_id>/
-    <user_id>.md
+    _chat.md        ← chat-level memory (name, description, log)
+    <user_id>.md    ← per-user memory
     <user_id>.md
     ...
 ```
 
-Each file uses YAML frontmatter for structured metadata, followed by a freeform Markdown body:
+Each file uses YAML frontmatter for structured metadata, followed by a freeform Markdown body. The `_chat.md` file uses the same format but describes the chat itself (call_name, description, log) rather than a user.
 
 ```markdown
 ---
@@ -199,7 +200,10 @@ description: |
 - The LLM uses **structured tools** (`read_memory` and `update_memory`) to interact with memory files — it never edits the YAML by hand via bash. This guarantees correct format.
   - `read_memory(user_id)` → returns the full memory as JSON: `{user_id, username, call_name, description, body}`.
   - `update_memory(user_id, ...)` → partial update. All fields optional (`username`, `call_name`, `description`, `log_entry`). Only provided fields overwrite existing values. `log_entry` appends a timestamped line to the body.
-- The bot **autonomously** calls `update_memory` with facts it considers worth remembering.
+- **Chat-level memory** uses the same tools:
+  - `read_chat_memory()` → returns chat memory as JSON: `{call_name, description, body}`.
+  - `update_chat_memory(...)` → partial update with optional fields (`call_name`, `description`, `log_entry`).
+- The bot **autonomously** calls `update_memory` / `update_chat_memory` with facts it considers worth remembering.
 - **Only the YAML frontmatter** (user_id, username, call_name, description) is injected into the system prompt — keeping context usage minimal.
 - The LLM can still read the full file body via `read_memory` (or raw `bash`) if it needs deeper recall.
 - The `call_name` is what the bot uses when addressing the user in conversation. It is inferred autonomously on first encounter, but the bot may ask the user directly if it is unsure what to call them.

@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+/// Filename for per-chat memory (as opposed to per-user).
+pub const CHAT_MEMORY_FILE: &str = "_chat.md";
+
 /// Structured metadata stored in the YAML frontmatter of memory files.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MemoryFrontmatter {
@@ -31,6 +34,17 @@ impl Memory {
             frontmatter: MemoryFrontmatter {
                 user_id: user_id.to_string(),
                 username: username.to_string(),
+                ..Default::default()
+            },
+            body: String::new(),
+        }
+    }
+
+    /// Create an empty chat-level memory.
+    pub fn new_chat() -> Self {
+        Self {
+            frontmatter: MemoryFrontmatter {
+                user_id: "_chat".into(),
                 ..Default::default()
             },
             body: String::new(),
@@ -73,6 +87,23 @@ impl Memory {
         }
         parts.join("\n")
     }
+
+    /// Generate the system prompt fragment for a chat-level memory.
+    pub fn to_chat_system_prompt(&self) -> String {
+        let fm = &self.frontmatter;
+        let mut parts = vec!["This chat:".to_string()];
+        if !fm.call_name.is_empty() {
+            parts.push(format!("- Name: {}", fm.call_name));
+        }
+        if !fm.description.is_empty() {
+            parts.push(format!("- About: {}", fm.description));
+        }
+        if parts.len() == 1 {
+            String::new()
+        } else {
+            parts.join("\n")
+        }
+    }
 }
 
 /// Parse a memory file from its content string.
@@ -95,6 +126,16 @@ pub fn load_memory(chats_dir: &std::path::Path, chat_id: &str, user_id: &str) ->
     parse_memory(&content)
 }
 
+/// Load the chat-level memory from disk.
+pub fn load_chat_memory(chats_dir: &std::path::Path, chat_id: &str) -> Option<Memory> {
+    let path = chats_dir.join(chat_id).join(CHAT_MEMORY_FILE);
+    if !path.exists() {
+        return None;
+    }
+    let content = std::fs::read_to_string(&path).ok()?;
+    parse_memory(&content)
+}
+
 /// Save a user's memory to disk.
 pub fn save_memory(
     chats_dir: &std::path::Path,
@@ -109,7 +150,20 @@ pub fn save_memory(
     Ok(())
 }
 
-/// Load memories for all known users in a chat.
+/// Save the chat-level memory to disk.
+pub fn save_chat_memory(
+    chats_dir: &std::path::Path,
+    chat_id: &str,
+    memory: &Memory,
+) -> anyhow::Result<()> {
+    let dir = chats_dir.join(chat_id);
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(CHAT_MEMORY_FILE);
+    std::fs::write(&path, memory.to_file_content())?;
+    Ok(())
+}
+
+/// Load memories for all known users in a chat (excludes chat-level `_chat.md`).
 pub fn load_chat_memories(
     chats_dir: &std::path::Path,
     chat_id: &str,
@@ -122,6 +176,10 @@ pub fn load_chat_memories(
     for entry in std::fs::read_dir(&dir)? {
         let entry = entry?;
         let path = entry.path();
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if file_name == CHAT_MEMORY_FILE {
+            continue; // skip chat-level memory
+        }
         if path.extension().is_some_and(|e| e == "md") {
             if let Ok(content) = std::fs::read_to_string(&path) {
                 if let Some(memory) = parse_memory(&content) {
@@ -280,5 +338,82 @@ mod tests {
         let chats_dir = dir.path().join("chats");
         let result = load_chat_memories(&chats_dir, "-none").unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_chat_memory_new() {
+        let mem = Memory::new_chat();
+        assert_eq!(mem.frontmatter.user_id, "_chat");
+        assert!(mem.frontmatter.call_name.is_empty());
+        assert!(mem.frontmatter.description.is_empty());
+        assert!(mem.body.is_empty());
+    }
+
+    #[test]
+    fn test_save_and_load_chat_memory() {
+        let dir = TempDir::new().unwrap();
+        let chats_dir = dir.path().join("chats");
+        let mut mem = Memory::new_chat();
+        mem.frontmatter.call_name = "Study Group".into();
+        mem.frontmatter.description = "A group for learning Rust".into();
+        mem.append_log("started the chat");
+
+        save_chat_memory(&chats_dir, "-100", &mem).unwrap();
+        let loaded = load_chat_memory(&chats_dir, "-100").unwrap();
+        assert_eq!(loaded.frontmatter.call_name, "Study Group");
+        assert_eq!(loaded.frontmatter.description, "A group for learning Rust");
+        assert!(loaded.body.contains("started the chat"));
+    }
+
+    #[test]
+    fn test_load_chat_memory_nonexistent() {
+        let dir = TempDir::new().unwrap();
+        let chats_dir = dir.path().join("chats");
+        assert!(load_chat_memory(&chats_dir, "-none").is_none());
+    }
+
+    #[test]
+    fn test_load_chat_memories_excludes_chat_file() {
+        let dir = TempDir::new().unwrap();
+        let chats_dir = dir.path().join("chats");
+        // Create a user memory
+        save_memory(&chats_dir, "-100", "111", &Memory::new("111", "@u1")).unwrap();
+        // Create a chat memory
+        save_chat_memory(&chats_dir, "-100", &Memory::new_chat()).unwrap();
+
+        let users = load_chat_memories(&chats_dir, "-100").unwrap();
+        assert_eq!(users.len(), 1); // only user memory, not _chat.md
+        assert_eq!(users[0].frontmatter.user_id, "111");
+    }
+
+    #[test]
+    fn test_to_chat_system_prompt() {
+        let mut mem = Memory::new_chat();
+        // Empty chat memory produces empty prompt
+        assert_eq!(mem.to_chat_system_prompt(), "");
+
+        mem.frontmatter.call_name = "My Chat".into();
+        mem.frontmatter.description = "Testing stuff".into();
+        let prompt = mem.to_chat_system_prompt();
+        assert!(prompt.contains("My Chat"));
+        assert!(prompt.contains("Testing stuff"));
+    }
+
+    #[test]
+    fn test_to_chat_system_prompt_only_name() {
+        let mut mem = Memory::new_chat();
+        mem.frontmatter.call_name = "Just Name".into();
+        let prompt = mem.to_chat_system_prompt();
+        assert!(prompt.contains("Just Name"));
+        assert!(!prompt.contains("About:"));
+    }
+
+    #[test]
+    fn test_chat_memory_append_log() {
+        let mut mem = Memory::new_chat();
+        mem.append_log("group topic decided");
+        mem.append_log("new member joined");
+        assert!(mem.body.contains("group topic decided"));
+        assert!(mem.body.contains("new member joined"));
     }
 }

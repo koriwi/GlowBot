@@ -222,7 +222,54 @@ pub fn all_tool_definitions() -> Vec<ToolDefinition> {
         bash_tool_definition(),
         read_memory_tool_definition(),
         update_memory_tool_definition(),
+        read_chat_memory_tool_definition(),
+        update_chat_memory_tool_definition(),
     ]
+}
+
+/// The read_chat_memory tool definition.
+pub fn read_chat_memory_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "read_chat_memory".into(),
+            description: "Read the chat-level memory for this conversation. Returns JSON with call_name, description, and body (log entries). Use this to recall context about the chat itself — topics, participants, group purpose, etc.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+    }
+}
+
+/// The update_chat_memory tool definition.
+pub fn update_chat_memory_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "update_chat_memory".into(),
+            description: "Update the chat-level memory. All fields optional — only provided fields are overwritten. Use call_name to name the chat, description to summarize it, log_entry to append a timestamped fact.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "call_name": {
+                        "type": "string",
+                        "description": "Optional: a name for this chat (e.g. 'Rust Study Group')."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional: summary of what this chat is about."
+                    },
+                    "log_entry": {
+                        "type": "string",
+                        "description": "Optional: a fact to append as a timestamped log entry."
+                    }
+                },
+                "required": []
+            }),
+        },
+    }
 }
 
 /// A request to OpenRouter's chat completions API.
@@ -392,7 +439,7 @@ mod tests {
     #[test]
     fn test_all_tool_definitions() {
         let tools = all_tool_definitions();
-        assert_eq!(tools.len(), 3);
+        assert_eq!(tools.len(), 5);
         assert_eq!(tools[0].function.name, "bash");
         assert_eq!(tools[1].function.name, "read_memory");
         assert_eq!(tools[2].function.name, "update_memory");

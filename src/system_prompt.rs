@@ -7,6 +7,7 @@ pub fn assemble(
     chat_id: &str,
     chat_system_prompt: &str,
     skills: &HashMap<String, Skill>,
+    chat_memory: Option<&Memory>,
     memories: &[Memory],
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -33,7 +34,15 @@ pub fn assemble(
         }
     }
 
-    // 4. User memories
+    // 4. Chat-level memory
+    if let Some(chat_mem) = chat_memory {
+        let prompt = chat_mem.to_chat_system_prompt();
+        if !prompt.is_empty() {
+            parts.push(format!("\n## About this conversation\n{}", prompt));
+        }
+    }
+
+    // 5. User memories
     if !memories.is_empty() {
         parts.push("\n## Known users in this conversation\n".to_string());
         for memory in memories {
@@ -47,14 +56,15 @@ pub fn assemble(
 /// The base system prompt that all messages start with.
 fn base_prompt(chat_id: &str) -> String {
     format!(
-        r#"You are GlowBot, a helpful, friendly Telegram chatbot. You have access to tools for executing bash commands and managing user memory.
+        r#"You are GlowBot, a helpful, friendly Telegram chatbot. You have access to tools for executing bash commands and managing memory.
 
 Your personality:
 - Be concise and helpful.
 - Address users by their call_name when you know it.
-- Use tools freely — bash for files/APIs/skills, read_memory and update_memory for user context.
+- Use tools freely — bash for files/APIs/skills, memory tools for user and chat context.
 - When you learn something worth remembering about a user, use update_memory to save it.
-- Use read_memory at the start of a conversation to recall what you know about the user.
+- When you learn something about the chat/group itself (topics, purpose, participants, dynamics), use update_chat_memory to save it.
+- Use read_memory and read_chat_memory at the start of a conversation to recall context.
 - The current chat ID is: {chat_id}
 - Memory files live under chats/{chat_id}/ — you can also read them raw with bash if needed.
 - You may use curl, jq, grep, find, and other standard Unix tools via bash.
@@ -72,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_assemble_basic() {
-        let prompt = assemble("-123", "", &HashMap::new(), &[]);
+        let prompt = assemble("-123", "", &HashMap::new(), None, &[]);
         assert!(prompt.contains("GlowBot"));
         assert!(prompt.contains("bash"));
         // Should contain the chat ID
@@ -88,6 +98,7 @@ mod tests {
             "-123",
             "Be extra helpful in this chat.",
             &HashMap::new(),
+            None,
             &[],
         );
         assert!(prompt.contains("Be extra helpful"));
@@ -109,7 +120,7 @@ mod tests {
                 body: "Use curl to do things.\n".into(),
             },
         );
-        let prompt = assemble("-123", "", &skills, &[]);
+        let prompt = assemble("-123", "", &skills, None, &[]);
         assert!(prompt.contains("test-skill"));
         assert!(prompt.contains("A test skill"));
         assert!(prompt.contains("Use curl"));
@@ -121,7 +132,7 @@ mod tests {
         let mut mem = Memory::new("123", "@testuser");
         mem.frontmatter.call_name = "Tester".into();
         mem.frontmatter.description = "Loves testing.".into();
-        let prompt = assemble("-123", "", &HashMap::new(), &[mem]);
+        let prompt = assemble("-123", "", &HashMap::new(), None, &[mem]);
         assert!(prompt.contains("Tester"));
         assert!(prompt.contains("@testuser"));
         assert!(prompt.contains("Loves testing."));
@@ -145,10 +156,30 @@ mod tests {
         );
         let mut mem = Memory::new("111", "@u1");
         mem.frontmatter.call_name = "U1".into();
-        let prompt = assemble("-123", "chat prompt here", &skills, &[mem]);
+        let prompt = assemble("-123", "chat prompt here", &skills, None, &[mem]);
         assert!(prompt.contains("GlowBot"));
         assert!(prompt.contains("chat prompt here"));
         assert!(prompt.contains("s1"));
         assert!(prompt.contains("U1"));
+    }
+
+    #[test]
+    fn test_assemble_with_chat_memory() {
+        let mut chat_mem = Memory::new_chat();
+        chat_mem.frontmatter.call_name = "Study Group".into();
+        chat_mem.frontmatter.description = "We learn Rust together".into();
+
+        let prompt = assemble("-123", "", &HashMap::new(), Some(&chat_mem), &[]);
+        assert!(prompt.contains("About this conversation"));
+        assert!(prompt.contains("Study Group"));
+        assert!(prompt.contains("We learn Rust together"));
+    }
+
+    #[test]
+    fn test_assemble_with_empty_chat_memory() {
+        let chat_mem = Memory::new_chat();
+        let prompt = assemble("-123", "", &HashMap::new(), Some(&chat_mem), &[]);
+        // Empty chat memory should not produce a section header
+        assert!(!prompt.contains("About this conversation"));
     }
 }

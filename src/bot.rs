@@ -195,9 +195,15 @@ impl GlowBot {
             let state = self.state.lock().await;
             let skills = &state.skills;
             let memories = load_chat_memories(&state.chats_dir(), chat_id).unwrap_or_default();
+            let chat_memory = crate::memory::load_chat_memory(&state.chats_dir(), chat_id);
             let chat_config = state.config.chat_config(chat_id);
-            let system_prompt =
-                system_prompt::assemble(chat_id, &chat_config.system_prompt, skills, &memories);
+            let system_prompt = system_prompt::assemble(
+                chat_id,
+                &chat_config.system_prompt,
+                skills,
+                chat_memory.as_ref(),
+                &memories,
+            );
             let model = state.config.model_for_chat(chat_id).to_string();
             (system_prompt, model)
         };
@@ -264,6 +270,10 @@ impl GlowBot {
                             "bash" => self.execute_bash_tool(&args).await,
                             "read_memory" => self.execute_read_memory(chat_id, &args).await,
                             "update_memory" => self.execute_update_memory(chat_id, &args).await,
+                            "read_chat_memory" => self.execute_read_chat_memory(chat_id).await,
+                            "update_chat_memory" => {
+                                self.execute_update_chat_memory(chat_id, &args).await
+                            }
                             _ => format!("Unknown tool: {}", tool_call.function.name),
                         };
 
@@ -414,6 +424,60 @@ impl GlowBot {
             }
         } else {
             "No fields to update. Provide at least one of: username, call_name, description, log_entry.".into()
+        }
+    }
+
+    /// Execute a read_chat_memory tool call.
+    async fn execute_read_chat_memory(&self, chat_id: &str) -> String {
+        let state = self.state.lock().await;
+        match crate::memory::load_chat_memory(&state.chats_dir(), chat_id) {
+            Some(mem) => serde_json::json!({
+                "call_name": mem.frontmatter.call_name,
+                "description": mem.frontmatter.description,
+                "body": mem.body,
+            })
+            .to_string(),
+            None => format!("No chat memory yet for chat {}.", chat_id),
+        }
+    }
+
+    /// Execute an update_chat_memory tool call.
+    async fn execute_update_chat_memory(&self, chat_id: &str, args: &serde_json::Value) -> String {
+        let state = self.state.lock().await;
+        let chats_dir = state.chats_dir();
+
+        let mut mem =
+            crate::memory::load_chat_memory(&chats_dir, chat_id).unwrap_or_else(Memory::new_chat);
+
+        let mut changed = false;
+
+        if let Some(v) = args["call_name"].as_str() {
+            mem.frontmatter.call_name = v.to_string();
+            changed = true;
+        }
+        if let Some(v) = args["description"].as_str() {
+            mem.frontmatter.description = v.to_string();
+            changed = true;
+        }
+        if let Some(v) = args["log_entry"].as_str() {
+            mem.append_log(v);
+            changed = true;
+        }
+
+        if changed {
+            match crate::memory::save_chat_memory(&chats_dir, chat_id, &mem) {
+                Ok(()) => format!(
+                    "Chat memory updated. Current state: {}",
+                    serde_json::json!({
+                        "call_name": mem.frontmatter.call_name,
+                        "description": mem.frontmatter.description,
+                    })
+                ),
+                Err(e) => format!("Failed to save chat memory: {}", e),
+            }
+        } else {
+            "No fields to update. Provide at least one of: call_name, description, log_entry."
+                .into()
         }
     }
 }
@@ -1097,5 +1161,72 @@ mod tests {
         let mem = crate::memory::load_memory(&state.chats_dir(), "-123", "456").unwrap();
         assert_eq!(mem.frontmatter.call_name, "Learned");
         assert!(mem.body.contains("user said hello"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_read_chat_memory() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+
+        // Save some chat memory first
+        let state = bot.state.lock().await;
+        let mut mem = Memory::new_chat();
+        mem.frontmatter.call_name = "Test Group".into();
+        mem.frontmatter.description = "A test group".into();
+        crate::memory::save_chat_memory(&state.chats_dir(), "-123", &mem).unwrap();
+        drop(state);
+
+        let result = bot.execute_read_chat_memory("-123").await;
+        assert!(result.contains("Test Group"));
+        assert!(result.contains("A test group"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_read_chat_memory_nonexistent() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+        let result = bot.execute_read_chat_memory("-none").await;
+        assert!(result.contains("No chat memory"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_update_chat_memory() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+        let result = bot
+            .execute_update_chat_memory(
+                "-123",
+                &serde_json::json!({
+                    "call_name": "My Group",
+                    "description": "We talk about Rust",
+                    "log_entry": "first interaction"
+                }),
+            )
+            .await;
+        assert!(result.contains("Chat memory updated"));
+        assert!(result.contains("My Group"));
+
+        let state = bot.state.lock().await;
+        let mem = crate::memory::load_chat_memory(&state.chats_dir(), "-123").unwrap();
+        assert_eq!(mem.frontmatter.call_name, "My Group");
+        assert!(mem.body.contains("first interaction"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_update_chat_memory_partial() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+
+        // First update
+        bot.execute_update_chat_memory(
+            "-123",
+            &serde_json::json!({"call_name": "Original", "description": "Original desc"}),
+        )
+        .await;
+
+        // Partial update — only description
+        bot.execute_update_chat_memory("-123", &serde_json::json!({"description": "New desc"}))
+            .await;
+
+        let state = bot.state.lock().await;
+        let mem = crate::memory::load_chat_memory(&state.chats_dir(), "-123").unwrap();
+        assert_eq!(mem.frontmatter.call_name, "Original"); // unchanged
+        assert_eq!(mem.frontmatter.description, "New desc");
     }
 }
