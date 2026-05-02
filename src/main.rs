@@ -33,6 +33,12 @@ async fn run_bot() -> anyhow::Result<()> {
     let bot_username = tg_bot.get_me().await?.username.clone().unwrap_or_default();
     log::info!("Bot username: @{}", bot_username);
 
+    // Spawn heartbeat task runner in the background
+    let heartbeat_bot = Arc::clone(&bot);
+    tokio::spawn(async move {
+        run_heartbeat_loop(heartbeat_bot).await;
+    });
+
     log::info!("GlowBot is ready. Starting long-polling...");
 
     // Wrap polling in a loop to survive network timeouts/disconnects.
@@ -129,5 +135,73 @@ async fn handle_message(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, msg: Message, bot
         Err(e) => {
             log::error!("Error processing message: {}", e);
         }
+    }
+}
+
+/// Background heartbeat loop. Periodically processes pending tasks for all chats.
+async fn run_heartbeat_loop(bot: Arc<Mutex<GlowBot>>) {
+    // Wait 30s after startup before first tick
+    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+    loop {
+        // Collect chat IDs that have pending tasks and their heartbeat intervals
+        let chats_to_process: Vec<(String, u64)> = {
+            let inner = bot.lock().await;
+            let state = inner.state.lock().await;
+            let chats_dir = state.chats_dir();
+
+            // Discover all chat directories
+            let mut chat_ids = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(&chats_dir) {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            // Check if this chat has pending tasks
+                            if let Ok(list) = glowbot::tasks::TaskList::load(&chats_dir, name) {
+                                if list.has_tasks() {
+                                    if let Some(interval) = state.config.heartbeat_interval(name) {
+                                        chat_ids.push((name.to_string(), interval));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            chat_ids
+        };
+
+        // Process one task per chat with pending tasks
+        for (chat_id, _interval) in &chats_to_process {
+            let chat_id = chat_id.clone();
+            // Extract state and git_repo without blocking message processing
+            let (state, git_repo) = {
+                let inner = bot.lock().await;
+                (inner.state.clone(), inner.git_repo.clone())
+            };
+            glowbot::bot::run_heartbeat_task(state, git_repo, &chat_id).await;
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+
+        // Determine next sleep: use the minimum interval across all chats with tasks,
+        // or fall back to the global default
+        let sleep_secs = if chats_to_process.is_empty() {
+            // No tasks — check every 5 minutes
+            300
+        } else {
+            // Use the smallest interval, or 300s if empty
+            chats_to_process
+                .iter()
+                .map(|(_, i)| *i * 60)
+                .min()
+                .unwrap_or(300)
+        };
+
+        log::debug!(
+            "Heartbeat processed {} chats, sleeping {}s",
+            chats_to_process.len(),
+            sleep_secs
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(sleep_secs)).await;
     }
 }

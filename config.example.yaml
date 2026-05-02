@@ -8,6 +8,9 @@ openrouter_default_model: "anthropic/claude-sonnet-4"
 # Number of recent messages to include as conversation context (default: 20)
 conversation_window: 20
 
+# Heartbeat interval for autonomous task processing (default: 90 minutes, 0 = disabled)
+heartbeat_interval_minutes: 90
+
 # MCP servers for additional tools (Model Context Protocol)
 # mcp_servers:
 #   - name: "my-server"

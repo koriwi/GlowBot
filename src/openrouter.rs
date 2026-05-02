@@ -227,6 +227,9 @@ pub fn all_tool_definitions() -> Vec<ToolDefinition> {
         create_skill_tool_definition(),
         read_skill_tool_definition(),
         update_skill_tool_definition(),
+        add_task_tool_definition(),
+        list_tasks_tool_definition(),
+        remove_task_tool_definition(),
     ]
 }
 
@@ -349,6 +352,64 @@ pub fn update_skill_tool_definition() -> ToolDefinition {
                     }
                 },
                 "required": ["name"]
+            }),
+        },
+    }
+}
+
+/// The add_task tool definition.
+pub fn add_task_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "add_task".into(),
+            description: "Add a task to this chat's task list. The bot will work on tasks autonomously on a heartbeat timer.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "What needs to be done. Be specific and actionable."
+                    }
+                },
+                "required": ["description"]
+            }),
+        },
+    }
+}
+
+/// The list_tasks tool definition.
+pub fn list_tasks_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "list_tasks".into(),
+            description: "List all pending tasks for this chat.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+    }
+}
+
+/// The remove_task tool definition.
+pub fn remove_task_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "remove_task".into(),
+            description: "Remove a completed or obsolete task from this chat's task list.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "The ID of the task to remove (from list_tasks)."
+                    }
+                },
+                "required": ["id"]
             }),
         },
     }
@@ -521,7 +582,7 @@ mod tests {
     #[test]
     fn test_all_tool_definitions() {
         let tools = all_tool_definitions();
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 11);
         assert_eq!(tools[0].function.name, "bash");
         assert_eq!(tools[1].function.name, "read_memory");
         assert_eq!(tools[2].function.name, "update_memory");

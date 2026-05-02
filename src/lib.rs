@@ -9,6 +9,7 @@ pub mod memory;
 pub mod openrouter;
 pub mod skills;
 pub mod system_prompt;
+pub mod tasks;
 
 pub use bot::GlowBot;
 pub use config::Config;

@@ -212,7 +212,32 @@ mcp_servers:
 
 ---
 
-### 4.4 Memory System
+### 4.7 Heartbeat Task System
+
+Each chat can have a task list (`chats/<chat_id>/tasks.yaml`) that the bot processes autonomously on a timer.
+
+**Configuration:**
+```yaml
+heartbeat_interval_minutes: 90   # global (0 = disabled)
+chats:
+  "-123":
+    heartbeat_interval_minutes: 30   # per-chat override
+```
+
+**How it works:**
+- Users (or the LLM) add tasks via `add_task(description)`.
+- `list_tasks()` shows pending tasks, `remove_task(id)` removes them.
+- A background loop runs every N minutes per chat.
+- For each chat with pending tasks, the oldest task is given to a silent background agent.
+- The agent uses bash, MCP tools, and task tools to complete the work.
+- Agents do NOT send Telegram messages.
+- Task processing runs in its own task — does not block message handling.
+
+**Tools:** `add_task`, `list_tasks`, `remove_task`.
+
+---
+
+### 4.8 Memory System
 
 #### Short-term (conversation context)
 
@@ -269,7 +294,7 @@ description: |
 
 ---
 
-### 4.5 Bash Tool
+### 4.9 Bash Tool
 
 The bot exposes a **bash** tool for raw shell execution.
 
@@ -281,7 +306,7 @@ The bot exposes a **bash** tool for raw shell execution.
 - **Memory files should be accessed via `read_memory` / `update_memory` tools**, not raw bash — this guarantees correct YAML frontmatter format.
 - All file paths in bash commands are relative to the data directory (e.g. `chats/123/456.md`).
 
-### 4.7 Tool Call Logging
+### 4.10 Tool Call Logging
 
 Every tool invocation is logged for debugging and audit:
 - Written to `glowbot_data/tool_calls.log` (append-only).
@@ -291,7 +316,7 @@ Every tool invocation is logged for debugging and audit:
 
 ---
 
-### 4.8 Commands & Permissions
+### 4.11 Commands & Permissions
 
 Commands are Telegram bot commands (`/command`) used for control and settings.
 
@@ -326,6 +351,7 @@ Whitelists contain Telegram user IDs.
 - [x] `create_skill` / `update_skill` structured tools for skill management
 - [x] Tool call logging to `tool_calls.log`
 - [x] MCP server integration for external tool discovery
+- [x] Heartbeat task system with autonomous background agents
 - [x] Per-user `.md` memory with YAML frontmatter, freeform body
 - [x] Memory frontmatter injected into system prompt; full file readable via tools
 - [x] `/model`, `/mode`, `/reload`, `/status` commands

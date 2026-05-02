@@ -197,6 +197,7 @@ mod tests {
             conversation_window: 20,
             dm_whitelist: vec![],
             mcp_servers: vec![],
+            heartbeat_interval_minutes: 90,
             chats: std::collections::HashMap::new(),
         };
         let resp = handle_command(&Command::Model("custom/model".into()), &mut config, "-123");
@@ -213,6 +214,7 @@ mod tests {
             conversation_window: 20,
             dm_whitelist: vec![],
             mcp_servers: vec![],
+            heartbeat_interval_minutes: 90,
             chats: std::collections::HashMap::new(),
         };
         let resp = handle_command(&Command::Mode("every_message".into()), &mut config, "-123");
@@ -238,6 +240,7 @@ mod tests {
             conversation_window: 20,
             dm_whitelist: vec![],
             mcp_servers: vec![],
+            heartbeat_interval_minutes: 90,
             chats: std::collections::HashMap::new(),
         };
         let resp = handle_command(&Command::Reload, &mut config, "-123");
@@ -253,6 +256,7 @@ mod tests {
             conversation_window: 20,
             dm_whitelist: vec![],
             mcp_servers: vec![],
+            heartbeat_interval_minutes: 90,
             chats: std::collections::HashMap::new(),
         };
         let resp = handle_command(&Command::Status, &mut config.clone(), "-123");
@@ -272,6 +276,7 @@ mod tests {
             conversation_window: 20,
             dm_whitelist: vec![],
             mcp_servers: vec![],
+            heartbeat_interval_minutes: 90,
             chats: std::collections::HashMap::new(),
         };
         let resp = handle_command(&Command::Mode("every".into()), &mut config, "-123");

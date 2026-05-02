@@ -2,6 +2,7 @@ use anyhow::Context;
 use std::path::Path;
 
 /// Run git commands in the data directory.
+#[derive(Clone)]
 pub struct GitRepo {
     repo_path: std::path::PathBuf,
 }

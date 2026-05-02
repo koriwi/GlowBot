@@ -51,6 +51,10 @@ pub struct ChatConfig {
     /// Optional per-chat system prompt appended to the base.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub system_prompt: String,
+    /// Heartbeat interval in minutes for this chat (0 = disabled).
+    /// If unset, falls back to the global default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heartbeat_interval_minutes: Option<u64>,
 }
 
 /// Global application configuration.
@@ -76,6 +80,9 @@ pub struct Config {
     /// MCP servers to connect to for additional tools.
     #[serde(default)]
     pub mcp_servers: Vec<McpServer>,
+    /// Default heartbeat interval in minutes (default: 90).
+    #[serde(default = "default_heartbeat")]
+    pub heartbeat_interval_minutes: u64,
 }
 
 fn default_model() -> String {
@@ -84,6 +91,10 @@ fn default_model() -> String {
 
 fn default_conversation_window() -> usize {
     20
+}
+
+fn default_heartbeat() -> u64 {
+    90
 }
 
 impl Config {
@@ -125,6 +136,21 @@ impl Config {
         }
         self.dm_whitelist.contains(&user_id.to_string())
     }
+
+    /// Get the effective heartbeat interval for a chat (global default if not overridden).
+    /// Returns None if disabled (set to 0).
+    pub fn heartbeat_interval(&self, chat_id: &str) -> Option<u64> {
+        let interval = self
+            .chats
+            .get(chat_id)
+            .and_then(|c| c.heartbeat_interval_minutes)
+            .unwrap_or(self.heartbeat_interval_minutes);
+        if interval == 0 {
+            None
+        } else {
+            Some(interval)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -140,6 +166,7 @@ mod tests {
             conversation_window: 20,
             dm_whitelist: vec![],
             mcp_servers: vec![],
+            heartbeat_interval_minutes: 90,
             chats: HashMap::new(),
         }
     }
