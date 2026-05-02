@@ -1,0 +1,16 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Data directory - this is a volume, not committed with source
+/glowbot_data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Coverage
+lcov.info
+*.profraw

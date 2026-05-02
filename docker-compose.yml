@@ -1,0 +1,13 @@
+services:
+  glowbot:
+    build: .
+    container_name: glowbot
+    restart: unless-stopped
+    volumes:
+      - ./glowbot_data:/home/glowbot/glowbot_data
+    environment:
+      - GLOWBOT_DATA_DIR=/home/glowbot/glowbot_data
+      - RUST_LOG=info
+    # For git push in the data directory, mount SSH key:
+    # volumes:
+    #   - ~/.ssh:/home/glowbot/.ssh:ro
