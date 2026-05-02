@@ -48,22 +48,6 @@ async fn run_bot() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Escape MarkdownV2 reserved characters that LLMs commonly output in natural
-/// text, while preserving intentional formatting (*, _, `, ~) and lists (-, .).
-fn escape_v2_safe(text: &str) -> String {
-    // Always escape these: they appear in natural text but are V2 reserved.
-    // We skip - and . because LLMs use them for intentional lists.
-    let to_escape = ['!', '(', ')', '+', '=', '|', '{', '}', '#'];
-    let mut result = String::with_capacity(text.len() + 16);
-    for ch in text.chars() {
-        if to_escape.contains(&ch) {
-            result.push('\\');
-        }
-        result.push(ch);
-    }
-    result
-}
-
 async fn handle_message(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, msg: Message, bot_username: &str) {
     let text = match msg.text() {
         Some(t) => t,
@@ -104,7 +88,7 @@ async fn handle_message(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, msg: Message, bot
         Ok(Some(response)) => {
             // MarkdownV2: escape reserved chars that LLMs output in natural text,
             // but preserve formatting markers: * _ ` ~
-            let escaped = escape_v2_safe(&response);
+            let escaped = glowbot::escape_v2_safe(&response);
             let result = tg_bot
                 .send_message(chat, &escaped)
                 .parse_mode(teloxide::types::ParseMode::MarkdownV2)
