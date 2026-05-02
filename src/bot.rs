@@ -12,12 +12,17 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// Number of recent messages (user + assistant) to include as context.
+const CONVERSATION_WINDOW: usize = 20;
+
 /// Shared bot state accessible from all handlers.
 pub struct BotState {
     pub config: Config,
     pub skills: HashMap<String, Skill>,
     pub llm: Arc<dyn LlmBackend>,
     pub data_dir: std::path::PathBuf,
+    /// Per-chat conversation history (sliding window of recent messages).
+    pub conversation_history: HashMap<String, Vec<ChatMessage>>,
 }
 
 impl BotState {
@@ -62,6 +67,7 @@ impl GlowBot {
             skills,
             llm,
             data_dir: data_dir.to_path_buf(),
+            conversation_history: HashMap::new(),
         };
 
         Ok(Self {
@@ -203,72 +209,103 @@ impl GlowBot {
         self.ensure_memory_exists(chat_id, user_id, username)
             .await?;
 
-        // Build messages
-        let mut messages = vec![
-            ChatMessage::system(&system_prompt),
-            ChatMessage::user_with_name(text, username),
-        ];
+        // Build messages: system prompt + history + current message
+        let history = {
+            let state = self.state.lock().await;
+            state
+                .conversation_history
+                .get(chat_id)
+                .cloned()
+                .unwrap_or_default()
+        };
+
+        let current_msg = ChatMessage::user_with_name(text, username);
+        let mut messages = vec![ChatMessage::system(&system_prompt)];
+        messages.extend(history);
+        messages.push(current_msg.clone());
 
         let tools = crate::openrouter::all_tool_definitions();
         let max_tool_rounds = 10;
 
-        for _round in 0..max_tool_rounds {
-            let request = ChatCompletionRequest {
-                model: model.clone(),
-                messages: messages.clone(),
-                tools: Some(tools.clone()),
-                tool_choice: None,
-            };
+        // Run the LLM tool-use loop, capturing the final response.
+        let result = {
+            let mut result = None;
+            for _round in 0..max_tool_rounds {
+                let request = ChatCompletionRequest {
+                    model: model.clone(),
+                    messages: messages.clone(),
+                    tools: Some(tools.clone()),
+                    tool_choice: None,
+                };
 
-            let response = {
-                let state = self.state.lock().await;
-                state.llm.chat_completion(&request).await?
-            };
+                let response = {
+                    let state = self.state.lock().await;
+                    state.llm.chat_completion(&request).await?
+                };
 
-            let choice = match response.choices.into_iter().next() {
-                Some(c) => c,
-                None => return Ok(None),
-            };
+                let choice = match response.choices.into_iter().next() {
+                    Some(c) => c,
+                    None => break,
+                };
 
-            // Check for tool calls
-            if let Some(tool_calls) = &choice.message.tool_calls {
-                if tool_calls.is_empty() {
-                    let content = choice.message.content.clone().unwrap_or_default();
-                    return Ok(Some(content));
+                // Check for tool calls
+                if let Some(tool_calls) = &choice.message.tool_calls {
+                    if tool_calls.is_empty() {
+                        result = Some(choice.message.content.clone().unwrap_or_default());
+                        break;
+                    }
+
+                    // Add the assistant message with tool calls
+                    messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
+
+                    // Execute each tool call
+                    for tool_call in tool_calls {
+                        let args: serde_json::Value =
+                            serde_json::from_str(&tool_call.function.arguments).unwrap_or_default();
+
+                        let result_text = match tool_call.function.name.as_str() {
+                            "bash" => self.execute_bash_tool(&args).await,
+                            "read_memory" => self.execute_read_memory(chat_id, &args).await,
+                            "update_memory" => self.execute_update_memory(chat_id, &args).await,
+                            _ => format!("Unknown tool: {}", tool_call.function.name),
+                        };
+
+                        messages.push(ChatMessage::tool_result(&tool_call.id, &result_text));
+                    }
+
+                    // Auto-commit after tool execution (tools may have modified files)
+                    self.git_repo
+                        .auto_commit("Auto-commit after tool execution")?;
+                    continue;
                 }
 
-                // Add the assistant message with tool calls
-                messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
-
-                // Execute each tool call
-                for tool_call in tool_calls {
-                    let args: serde_json::Value =
-                        serde_json::from_str(&tool_call.function.arguments).unwrap_or_default();
-
-                    let result_text = match tool_call.function.name.as_str() {
-                        "bash" => self.execute_bash_tool(&args).await,
-                        "read_memory" => self.execute_read_memory(chat_id, &args).await,
-                        "update_memory" => self.execute_update_memory(chat_id, &args).await,
-                        _ => format!("Unknown tool: {}", tool_call.function.name),
-                    };
-
-                    messages.push(ChatMessage::tool_result(&tool_call.id, &result_text));
-                }
-
-                // Auto-commit after tool execution (tools may have modified files)
-                self.git_repo
-                    .auto_commit("Auto-commit after tool execution")?;
-                continue;
+                // No tool calls — final response
+                result = Some(choice.message.content.clone().unwrap_or_default());
+                break;
             }
 
-            // No tool calls — return content
-            let content = choice.message.content.clone().unwrap_or_default();
-            return Ok(Some(content));
+            // If we exhausted rounds, give a loop error
+            result.unwrap_or_else(|| {
+                "I ran into a loop processing your request. Please try again.".into()
+            })
+        };
+
+        // Store in conversation history
+        {
+            let mut state = self.state.lock().await;
+            let history = state
+                .conversation_history
+                .entry(chat_id.to_string())
+                .or_default();
+            history.push(current_msg);
+            history.push(ChatMessage::assistant(&result));
+            // Trim to window size
+            while history.len() > CONVERSATION_WINDOW {
+                history.remove(0);
+            }
         }
 
-        Ok(Some(
-            "I ran into a loop processing your request. Please try again.".into(),
-        ))
+        Ok(Some(result))
     }
 
     /// Ensure a memory file exists for the given user in the given chat.
@@ -640,7 +677,8 @@ mod tests {
             .process_message("-123", "456", "@testuser", "Hello", "mybot")
             .await
             .unwrap();
-        assert!(result.is_none());
+        // Empty choices falls through to the loop error message
+        assert!(result.unwrap().contains("loop"));
     }
 
     #[tokio::test]
