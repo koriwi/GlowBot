@@ -108,6 +108,7 @@ The data directory is a standalone git repository, not nested inside the applica
 - Model is set per chat in config (overridable via `/model`).
 - Handles tool-use responses with a multi-turn loop (up to 10 rounds).
 - Maintains a **sliding conversation window** (`conversation_window` in config, default 20) of recent user + assistant messages per chat, sent as context with each request.
+- Responses are sent with `ParseMode::MarkdownV2`. LLM output is converted via the `telegram-markdown-v2` crate, which parses standard Markdown and emits properly escaped V2. Falls back to plain text on conversion failure.
 - Three tools are exposed to the LLM:
   1. **`bash`** — raw shell execution for file ops, API calls, invoking skills.
   2. **`read_memory`** — returns a user's memory as structured JSON (frontmatter + body).
@@ -272,7 +273,7 @@ Whitelists contain Telegram user IDs.
 - [x] GitHub CI/CD with ≥95% test coverage (126 tests, 97.95% line coverage)
 - [x] Conversation history (sliding window, configurable size)
 - [x] Typing indicator while LLM is processing
-- [x] DMs always respond (mention_only only applies to groups)
+- [x] MarkdownV2 rendering via `telegram-markdown-v2` crate with plain text fallback
 
 ### Explicitly out of scope for v1
 
@@ -332,3 +333,9 @@ Everything in §5.
 
 ### Conversation history
 - Without a sliding window of recent messages, the bot has no short-term memory and can't follow multi-turn conversations. The window size should be configurable (`conversation_window`).
+
+### Markdown rendering
+- Telegram messages must be sent with a parse mode (`MarkdownV2` or `HTML`) or they render as plain text. Default `send_message` has no parse mode.
+- **Do not hand-roll MarkdownV2 escaping.** Telegram's V2 has many reserved characters (`_ * [ ] ( ) ~ \` > # + - = | { } . !`) and context-dependent escaping rules (e.g. `-` at line start vs mid-word). LLMs will constantly hit edge cases.
+- **Use the `telegram-markdown-v2` crate** (`convert()`). It parses the LLM's Markdown output and produces properly escaped MarkdownV2, handling headings→bold, lists→Unicode bullets, code blocks, links, and inline formatting correctly.
+- Fall back to plain text if conversion fails (rare with a good crate).
