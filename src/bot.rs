@@ -12,9 +12,6 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// Number of recent messages (user + assistant) to include as context.
-const CONVERSATION_WINDOW: usize = 20;
-
 /// Shared bot state accessible from all handlers.
 pub struct BotState {
     pub config: Config,
@@ -293,14 +290,14 @@ impl GlowBot {
         // Store in conversation history
         {
             let mut state = self.state.lock().await;
+            let window = state.config.conversation_window;
             let history = state
                 .conversation_history
                 .entry(chat_id.to_string())
                 .or_default();
             history.push(current_msg);
             history.push(ChatMessage::assistant(&result));
-            // Trim to window size
-            while history.len() > CONVERSATION_WINDOW {
+            while history.len() > window {
                 history.remove(0);
             }
         }
@@ -435,6 +432,7 @@ mod tests {
             telegram_token: "test-token".into(),
             openrouter_api_key: "test-key".into(),
             openrouter_default_model: "test/model".into(),
+            conversation_window: 20,
             chats: HashMap::new(),
         }
     }

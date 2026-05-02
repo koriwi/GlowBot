@@ -194,6 +194,7 @@ mod tests {
             telegram_token: "t".into(),
             openrouter_api_key: "k".into(),
             openrouter_default_model: "default".into(),
+            conversation_window: 20,
             chats: std::collections::HashMap::new(),
         };
         let resp = handle_command(&Command::Model("custom/model".into()), &mut config, "-123");
@@ -207,6 +208,7 @@ mod tests {
             telegram_token: "t".into(),
             openrouter_api_key: "k".into(),
             openrouter_default_model: "d".into(),
+            conversation_window: 20,
             chats: std::collections::HashMap::new(),
         };
         let resp = handle_command(&Command::Mode("every_message".into()), &mut config, "-123");
@@ -229,6 +231,7 @@ mod tests {
             telegram_token: "t".into(),
             openrouter_api_key: "k".into(),
             openrouter_default_model: "d".into(),
+            conversation_window: 20,
             chats: std::collections::HashMap::new(),
         };
         let resp = handle_command(&Command::Reload, &mut config, "-123");
@@ -241,6 +244,7 @@ mod tests {
             telegram_token: "t".into(),
             openrouter_api_key: "k".into(),
             openrouter_default_model: "default-model".into(),
+            conversation_window: 20,
             chats: std::collections::HashMap::new(),
         };
         let resp = handle_command(&Command::Status, &mut config.clone(), "-123");
@@ -257,6 +261,7 @@ mod tests {
             telegram_token: "t".into(),
             openrouter_api_key: "k".into(),
             openrouter_default_model: "d".into(),
+            conversation_window: 20,
             chats: std::collections::HashMap::new(),
         };
         let resp = handle_command(&Command::Mode("every".into()), &mut config, "-123");

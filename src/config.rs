@@ -43,6 +43,9 @@ pub struct Config {
     /// Default OpenRouter model.
     #[serde(default = "default_model")]
     pub openrouter_default_model: String,
+    /// Number of recent messages to include as conversation context.
+    #[serde(default = "default_conversation_window")]
+    pub conversation_window: usize,
     /// Per-chat configuration overrides, keyed by chat ID string.
     #[serde(default)]
     pub chats: HashMap<String, ChatConfig>,
@@ -50,6 +53,10 @@ pub struct Config {
 
 fn default_model() -> String {
     "anthropic/claude-sonnet-4".to_string()
+}
+
+fn default_conversation_window() -> usize {
+    20
 }
 
 impl Config {
@@ -94,6 +101,7 @@ mod tests {
             telegram_token: "test-token".into(),
             openrouter_api_key: "test-key".into(),
             openrouter_default_model: "test/model".into(),
+            conversation_window: 20,
             chats: HashMap::new(),
         }
     }

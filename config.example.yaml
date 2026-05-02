@@ -5,6 +5,9 @@ telegram_token: "your-telegram-bot-token-here"
 openrouter_api_key: "your-openrouter-api-key-here"
 openrouter_default_model: "anthropic/claude-sonnet-4"
 
+# Number of recent messages to include as conversation context (default: 20)
+conversation_window: 20
+
 # Chat-specific overrides (keyed by Telegram chat ID)
 chats:
   # "-1234567890":
