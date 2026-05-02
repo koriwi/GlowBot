@@ -8,7 +8,15 @@ pub struct GitRepo {
 
 impl GitRepo {
     /// Create a new GitRepo handler for the given path.
+    /// Also marks the directory as safe for git to avoid "dubious ownership" errors
+    /// when running inside Docker containers.
     pub fn new(repo_path: &Path) -> Self {
+        // Mark the data directory as safe for git (important in Docker where
+        // the volume may be owned by a different user).
+        let _ = std::process::Command::new("git")
+            .args(["config", "--global", "--add", "safe.directory"])
+            .arg(repo_path)
+            .output();
         Self {
             repo_path: repo_path.to_path_buf(),
         }
