@@ -116,7 +116,8 @@ The data directory is a standalone git repository, not nested inside the applica
   4. **`read_chat_memory`** — returns chat-level memory as JSON.
   5. **`update_chat_memory`** — partial update of chat memory; all fields optional.
   6. **`create_skill`** — create a new skill file (name, description, body). Triggers reload.
-  7. **`update_skill`** — update an existing skill (name, description?, body?). Triggers reload.
+  7. **`read_skill`** — read an existing skill's full content as JSON.
+  8. **`update_skill`** — update an existing skill (name, description?, body?). Triggers reload.
 
 **Important implementation detail:** Bash commands run with the data directory as working directory. All paths must be relative (e.g. `chats/123/456.md`, not `glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` so the LLM knows the exact memory file paths.
 
