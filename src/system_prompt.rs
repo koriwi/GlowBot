@@ -4,14 +4,15 @@ use std::collections::HashMap;
 
 /// Assemble the full system prompt for a given context.
 pub fn assemble(
+    chat_id: &str,
     chat_system_prompt: &str,
     skills: &HashMap<String, Skill>,
     memories: &[Memory],
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
 
-    // 1. Base prompt
-    parts.push(base_prompt());
+    // 1. Base prompt (with chat context)
+    parts.push(base_prompt(chat_id));
 
     // 2. Per-chat system prompt
     if !chat_system_prompt.is_empty() {
@@ -44,22 +45,26 @@ pub fn assemble(
 }
 
 /// The base system prompt that all messages start with.
-fn base_prompt() -> String {
-    r#"You are GlowBot, a helpful, friendly Telegram chatbot. You have access to a bash tool for executing commands in your container.
+fn base_prompt(chat_id: &str) -> String {
+    format!(
+        r#"You are GlowBot, a helpful, friendly Telegram chatbot. You have access to a bash tool for executing commands in your container.
 
 Your personality:
 - Be concise and helpful.
 - Address users by their call_name when you know it.
 - Use the bash tool freely for file operations, running skills, looking up information, or reading memory files.
 - When you learn something worth remembering about a user, use bash to update their memory file.
-- Memory files are at: glowbot_data/chats/<chat_id>/<user_id>.md — read and write them as needed.
+- Memory files are at: chats/{chat_id}/<user_id>.md — use RELATIVE paths only, your bash commands run in the data directory.
+  The current chat ID is: {chat_id}
+- To read a user's memory: cat chats/{chat_id}/<user_id>.md
+- To write/update memory: write to chats/{chat_id}/<user_id>.md (use YAML frontmatter with user_id, username, call_name, description fields, then markdown body)
 - You may use curl, jq, grep, find, and other standard Unix tools via bash.
 - Never run destructive commands (rm -rf, format, etc.) unless explicitly asked.
 - If a command fails, try to diagnose and fix it.
 
-Current date: "#
-        .to_string()
-        + &chrono::Utc::now().format("%Y-%m-%d").to_string()
+Current date: "#,
+        chat_id = chat_id,
+    ) + &chrono::Utc::now().format("%Y-%m-%d").to_string()
 }
 
 #[cfg(test)]
@@ -68,17 +73,24 @@ mod tests {
 
     #[test]
     fn test_assemble_basic() {
-        let prompt = assemble("", &HashMap::new(), &[]);
+        let prompt = assemble("-123", "", &HashMap::new(), &[]);
         assert!(prompt.contains("GlowBot"));
         assert!(prompt.contains("bash tool"));
-        // Should contain the current date
+        // Should contain the chat ID
+        assert!(prompt.contains("-123"));
+        // Should contain the date
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         assert!(prompt.contains(&today));
     }
 
     #[test]
     fn test_assemble_with_chat_prompt() {
-        let prompt = assemble("Be extra helpful in this chat.", &HashMap::new(), &[]);
+        let prompt = assemble(
+            "-123",
+            "Be extra helpful in this chat.",
+            &HashMap::new(),
+            &[],
+        );
         assert!(prompt.contains("Be extra helpful"));
         assert!(prompt.contains("Chat-specific instructions"));
     }
@@ -98,7 +110,7 @@ mod tests {
                 body: "Use curl to do things.\n".into(),
             },
         );
-        let prompt = assemble("", &skills, &[]);
+        let prompt = assemble("-123", "", &skills, &[]);
         assert!(prompt.contains("test-skill"));
         assert!(prompt.contains("A test skill"));
         assert!(prompt.contains("Use curl"));
@@ -110,7 +122,7 @@ mod tests {
         let mut mem = Memory::new("123", "@testuser");
         mem.frontmatter.call_name = "Tester".into();
         mem.frontmatter.description = "Loves testing.".into();
-        let prompt = assemble("", &HashMap::new(), &[mem]);
+        let prompt = assemble("-123", "", &HashMap::new(), &[mem]);
         assert!(prompt.contains("Tester"));
         assert!(prompt.contains("@testuser"));
         assert!(prompt.contains("Loves testing."));
@@ -134,7 +146,7 @@ mod tests {
         );
         let mut mem = Memory::new("111", "@u1");
         mem.frontmatter.call_name = "U1".into();
-        let prompt = assemble("chat prompt here", &skills, &[mem]);
+        let prompt = assemble("-123", "chat prompt here", &skills, &[mem]);
         assert!(prompt.contains("GlowBot"));
         assert!(prompt.contains("chat prompt here"));
         assert!(prompt.contains("s1"));

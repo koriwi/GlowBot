@@ -194,7 +194,7 @@ impl GlowBot {
             let memories = load_chat_memories(&state.chats_dir(), chat_id).unwrap_or_default();
             let chat_config = state.config.chat_config(chat_id);
             let system_prompt =
-                system_prompt::assemble(&chat_config.system_prompt, skills, &memories);
+                system_prompt::assemble(chat_id, &chat_config.system_prompt, skills, &memories);
             let model = state.config.model_for_chat(chat_id).to_string();
             (system_prompt, model)
         };
