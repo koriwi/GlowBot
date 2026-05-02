@@ -86,13 +86,13 @@ async fn handle_message(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, msg: Message, bot
         .await
     {
         Ok(Some(response)) => {
-            // Try MarkdownV2 first; fall back to plain text if parsing fails
+            // Use HTML parse mode (only < > & need escaping, unlike MarkdownV2)
             let result = tg_bot
                 .send_message(chat, &response)
-                .parse_mode(teloxide::types::ParseMode::MarkdownV2)
+                .parse_mode(teloxide::types::ParseMode::Html)
                 .await;
             if let Err(e) = result {
-                log::warn!("MarkdownV2 parse failed, sending as plain text: {}", e);
+                log::warn!("HTML parse failed, sending as plain text: {}", e);
                 if let Err(e2) = tg_bot.send_message(chat, &response).await {
                     log::error!("Failed to send message: {}", e2);
                 }
