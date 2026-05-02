@@ -54,6 +54,12 @@ conversation_window: 20
 # DM access control (empty = anyone can chat, tools disabled)
 dm_whitelist: []                           # user IDs for full DM tool access
 
+# MCP servers for additional tools
+# mcp_servers:
+#   - name: "my-server"
+#     url: "https://mcp.example.com/mcp"
+#     api_key: "optional-bearer-token"
+
 # Chat-specific overrides (keyed by Telegram chat ID)
 chats:
   "-1234567890":
@@ -132,6 +138,7 @@ This prevents random strangers from running arbitrary bash commands while keepin
   6. **`create_skill`** — create a new skill file (name, description, body). Triggers reload.
   7. **`read_skill`** — read an existing skill's full content as JSON.
   8. **`update_skill`** — update an existing skill (name, description?, body?). Triggers reload.
+- **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
 
 **Important implementation detail:** Bash commands run with the data directory as working directory. All paths must be relative (e.g. `chats/123/456.md`, not `glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` so the LLM knows the exact memory file paths.
 
@@ -179,6 +186,27 @@ Parse the results and summarize.
 - `create_skill(name, description, body)` — creates `skills/<name>/skill.md` and reloads.
 - `update_skill(name, description?, body?)` — updates an existing skill, only overwrites provided fields, then reloads.
 - (Phase 2) It can generate and compile Rust skills.
+
+### 4.6 MCP Integration
+
+GlowBot can connect to [MCP (Model Context Protocol)](https://modelcontextprotocol.io) servers to discover and use external tools.
+
+**Configuration:**
+```yaml
+mcp_servers:
+  - name: "my-server"
+    url: "https://mcp.example.com/mcp"
+    api_key: "optional-bearer-token"
+```
+
+**How it works:**
+- On startup, the bot connects to each configured MCP server.
+- Sends `initialize` (protocol version `2024-11-05`, Streamable HTTP transport).
+- Discovers tools via `tools/list`.
+- Exposes discovered tools to the LLM as `mcp_<server>_<tool_name>`.
+- When the LLM calls an MCP tool, the bot proxies `tools/call` to the server.
+- Failed server connections are non-fatal — logged as warnings, bot continues.
+- Authorization: `Bearer <api_key>` header on all requests if `api_key` is set.
 
 ---
 
@@ -261,7 +289,7 @@ Every tool invocation is logged for debugging and audit:
 
 ---
 
-### 4.6 Commands & Permissions
+### 4.8 Commands & Permissions
 
 Commands are Telegram bot commands (`/command`) used for control and settings.
 
@@ -295,6 +323,7 @@ Whitelists contain Telegram user IDs.
 - [x] `read_memory` / `update_memory` structured tools for per-user `.md` memory
 - [x] `create_skill` / `update_skill` structured tools for skill management
 - [x] Tool call logging to `tool_calls.log`
+- [x] MCP server integration for external tool discovery
 - [x] Per-user `.md` memory with YAML frontmatter, freeform body
 - [x] Memory frontmatter injected into system prompt; full file readable via tools
 - [x] `/model`, `/mode`, `/reload`, `/status` commands

@@ -3,6 +3,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+/// An MCP (Model Context Protocol) server configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServer {
+    /// Display name for this server.
+    #[serde(default)]
+    pub name: String,
+    /// HTTP endpoint URL for the MCP server (Streamable HTTP transport).
+    pub url: String,
+    /// Optional Bearer token for Authorization header.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+}
+
 /// Interaction mode for a chat.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum InteractionMode {
@@ -53,6 +66,9 @@ pub struct Config {
     /// Per-chat configuration overrides, keyed by chat ID string.
     #[serde(default)]
     pub chats: HashMap<String, ChatConfig>,
+    /// MCP servers to connect to for additional tools.
+    #[serde(default)]
+    pub mcp_servers: Vec<McpServer>,
 }
 
 fn default_model() -> String {
@@ -116,6 +132,7 @@ mod tests {
             openrouter_default_model: "test/model".into(),
             conversation_window: 20,
             dm_whitelist: vec![],
+            mcp_servers: vec![],
             chats: HashMap::new(),
         }
     }

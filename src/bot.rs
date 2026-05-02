@@ -20,6 +20,8 @@ pub struct BotState {
     pub data_dir: std::path::PathBuf,
     /// Per-chat conversation history (sliding window of recent messages).
     pub conversation_history: HashMap<String, Vec<ChatMessage>>,
+    /// Tools discovered from MCP servers.
+    pub mcp_tools: Vec<crate::mcp::McpTool>,
 }
 
 impl BotState {
@@ -59,12 +61,23 @@ impl GlowBot {
             git_repo.init()?;
         }
 
+        // Discover MCP server tools
+        let mcp_tools = crate::mcp::discover_all(&config.mcp_servers).await?;
+        if !mcp_tools.is_empty() {
+            log::info!(
+                "Loaded {} MCP tools from {} server(s)",
+                mcp_tools.len(),
+                config.mcp_servers.len()
+            );
+        }
+
         let state = BotState {
             config,
             skills,
             llm,
             data_dir: data_dir.to_path_buf(),
             conversation_history: HashMap::new(),
+            mcp_tools,
         };
 
         Ok(Self {
@@ -257,8 +270,23 @@ impl GlowBot {
         messages.extend(history);
         messages.push(current_msg.clone());
 
-        let tools = if tools_enabled {
-            crate::openrouter::all_tool_definitions()
+        let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
+            let mut t = crate::openrouter::all_tool_definitions();
+            // Add MCP tools
+            {
+                let state = self.state.lock().await;
+                for mt in &state.mcp_tools {
+                    t.push(crate::openrouter::ToolDefinition {
+                        def_type: "function".into(),
+                        function: crate::openrouter::FunctionDef {
+                            name: format!("mcp_{}_{}", mt.server_name, mt.name),
+                            description: format!("[MCP: {}] {}", mt.server_name, mt.description),
+                            parameters: mt.input_schema.clone(),
+                        },
+                    });
+                }
+            }
+            t
         } else {
             vec![]
         };
@@ -311,6 +339,9 @@ impl GlowBot {
                             "create_skill" => self.execute_create_skill(&args).await,
                             "read_skill" => self.execute_read_skill(&args).await,
                             "update_skill" => self.execute_update_skill(&args).await,
+                            name if name.starts_with("mcp_") => {
+                                self.execute_mcp_tool(name, &args).await
+                            }
                             _ => format!("Unknown tool: {}", tool_call.function.name),
                         };
 
@@ -644,6 +675,24 @@ impl GlowBot {
 
         log::info!("tool {}: {}", tool_name, args_summary);
     }
+
+    /// Execute an MCP tool by name. Finds the matching McpTool and invokes it.
+    async fn execute_mcp_tool(&self, full_name: &str, args: &serde_json::Value) -> String {
+        let state = self.state.lock().await;
+        // Find the matching tool: full_name is "mcp_{server}_{tool}"
+        let tool = state
+            .mcp_tools
+            .iter()
+            .find(|t| format!("mcp_{}_{}", t.server_name, t.name) == full_name);
+        match tool {
+            Some(t) => {
+                let tool_clone = t.clone();
+                drop(state);
+                crate::mcp::invoke_tool(&tool_clone, args).await
+            }
+            None => format!("MCP tool '{}' not found", full_name),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -662,6 +711,7 @@ mod tests {
             openrouter_default_model: "test/model".into(),
             conversation_window: 20,
             dm_whitelist: vec![],
+            mcp_servers: vec![],
             chats: HashMap::new(),
         }
     }

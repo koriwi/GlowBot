@@ -4,6 +4,7 @@ pub mod commands;
 pub mod config;
 pub mod git;
 pub mod llm;
+pub mod mcp;
 pub mod memory;
 pub mod openrouter;
 pub mod skills;
