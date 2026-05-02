@@ -195,16 +195,18 @@ GlowBot can connect to [MCP (Model Context Protocol)](https://modelcontextprotoc
 ```yaml
 mcp_servers:
   - name: "my-server"
+    transport: "streamable"          # "streamable" (session-based, default) or "http" (stateless)
     url: "https://mcp.example.com/mcp"
     api_key: "optional-bearer-token"
 ```
 
 **How it works:**
 - On startup, the bot connects to each configured MCP server.
-- Sends `initialize` (protocol version `2024-11-05`, Streamable HTTP transport).
+- Protocol version negotiation: tries `2025-11-25` → `2025-06-18` → `2024-11-05`.
+- For `streamable` transport: captures `Mcp-Session-Id` from initialize response and includes it on all subsequent requests.
 - Discovers tools via `tools/list`.
 - Exposes discovered tools to the LLM as `mcp_<server>_<tool_name>`.
-- When the LLM calls an MCP tool, the bot proxies `tools/call` to the server.
+- When the LLM calls an MCP tool, the bot proxies `tools/call` to the server (with session ID if streamable).
 - Failed server connections are non-fatal — logged as warnings, bot continues.
 - Authorization: `Bearer <api_key>` header on all requests if `api_key` is set.
 

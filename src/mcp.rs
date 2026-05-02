@@ -1,4 +1,5 @@
 use crate::config::McpServer;
+use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 
 /// A tool discovered from an MCP server.
@@ -16,6 +17,10 @@ pub struct McpTool {
     pub server_url: String,
     /// Optional auth token.
     pub api_key: Option<String>,
+    /// Session ID for streamable transport (if any).
+    pub session_id: Option<String>,
+    /// Transport type.
+    pub transport: String,
 }
 
 /// The JSON-RPC request body for MCP.
@@ -47,6 +52,7 @@ struct McpClient {
     server: McpServer,
     http: reqwest::Client,
     request_id: std::sync::atomic::AtomicU64,
+    session_id: std::sync::Mutex<Option<String>>,
 }
 
 impl McpClient {
@@ -55,6 +61,7 @@ impl McpClient {
             server,
             http: reqwest::Client::new(),
             request_id: std::sync::atomic::AtomicU64::new(1),
+            session_id: std::sync::Mutex::new(None),
         }
     }
 
@@ -63,12 +70,12 @@ impl McpClient {
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// Send a JSON-RPC request and return the result.
-    async fn rpc_call(
+    /// Send a JSON-RPC request and return the result + response headers.
+    async fn rpc_call_with_headers(
         &self,
         method: &str,
         params: Option<serde_json::Value>,
-    ) -> anyhow::Result<serde_json::Value> {
+    ) -> anyhow::Result<(serde_json::Value, HeaderMap)> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0".into(),
             id: self.next_id(),
@@ -79,14 +86,23 @@ impl McpClient {
         let mut req = self
             .http
             .post(&self.server.url)
-            .header("Content-Type", "application/json");
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json");
 
         if let Some(ref key) = self.server.api_key {
             req = req.header("Authorization", format!("Bearer {}", key));
         }
 
+        // Include session ID for streamable transport
+        if self.server.transport == "streamable" {
+            if let Some(ref sid) = *self.session_id.lock().unwrap() {
+                req = req.header("Mcp-Session-Id", sid);
+            }
+        }
+
         let response = req.json(&request).send().await?;
         let status = response.status();
+        let headers = response.headers().clone();
 
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
@@ -104,23 +120,74 @@ impl McpClient {
             anyhow::bail!("MCP RPC error from {}: {}", self.server.url, err.message);
         }
 
-        Ok(rpc_response.result.unwrap_or(serde_json::Value::Null))
+        Ok((
+            rpc_response.result.unwrap_or(serde_json::Value::Null),
+            headers,
+        ))
     }
 
-    /// Initialize the MCP connection and discover tools.
-    async fn discover_tools(&self) -> anyhow::Result<Vec<McpTool>> {
-        // Send initialize
-        let init_params = serde_json::json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {
-                "name": "GlowBot",
-                "version": "0.1.0"
-            }
-        });
-        let _init = self.rpc_call("initialize", Some(init_params)).await?;
+    /// Send a JSON-RPC request (convenience, discards headers).
+    async fn rpc_call(
+        &self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.rpc_call_with_headers(method, params)
+            .await
+            .map(|(r, _)| r)
+    }
 
-        // Send initialized notification (no response expected)
+    /// Initialize the MCP connection, trying protocol versions in order.
+    async fn initialize(&self) -> anyhow::Result<()> {
+        let versions = ["2025-11-25", "2025-06-18", "2024-11-05"];
+
+        for version in versions {
+            let init_params = serde_json::json!({
+                "protocolVersion": version,
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "GlowBot",
+                    "version": "0.1.0"
+                }
+            });
+
+            match self
+                .rpc_call_with_headers("initialize", Some(init_params))
+                .await
+            {
+                Ok((_result, headers)) => {
+                    // Capture session ID for streamable transport
+                    if self.server.transport == "streamable" {
+                        if let Some(sid) =
+                            headers.get("mcp-session-id").and_then(|v| v.to_str().ok())
+                        {
+                            *self.session_id.lock().unwrap() = Some(sid.to_string());
+                            log::info!(
+                                "MCP '{}': session established (protocol {})",
+                                self.server.name,
+                                version
+                            );
+                        }
+                    }
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::debug!(
+                        "MCP '{}': protocol {} failed: {}",
+                        self.server.name,
+                        version,
+                        e
+                    );
+                }
+            }
+        }
+
+        anyhow::bail!("All protocol versions failed for {}", self.server.url)
+    }
+
+    /// Discover tools from the server.
+    async fn discover_tools(&self) -> anyhow::Result<Vec<McpTool>> {
+        // Send initialized notification
         let _ = self.rpc_call("notifications/initialized", None).await;
 
         // List tools
@@ -131,6 +198,7 @@ impl McpClient {
             .cloned()
             .unwrap_or_default();
 
+        let session_id = self.session_id.lock().unwrap().clone();
         let tools: Vec<McpTool> = tools_array
             .into_iter()
             .filter_map(|t| {
@@ -141,6 +209,8 @@ impl McpClient {
                     input_schema: t.get("inputSchema")?.clone(),
                     server_url: self.server.url.clone(),
                     api_key: self.server.api_key.clone(),
+                    session_id: session_id.clone(),
+                    transport: self.server.transport.clone(),
                 })
             })
             .collect();
@@ -164,10 +234,17 @@ pub async fn invoke_tool(tool: &McpTool, arguments: &serde_json::Value) -> Strin
 
     let mut req = client
         .post(&tool.server_url)
-        .header("Content-Type", "application/json");
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json");
 
     if let Some(ref key) = tool.api_key {
         req = req.header("Authorization", format!("Bearer {}", key));
+    }
+
+    if tool.transport == "streamable" {
+        if let Some(ref sid) = tool.session_id {
+            req = req.header("Mcp-Session-Id", sid);
+        }
     }
 
     match req.json(&request).send().await {
@@ -193,6 +270,19 @@ pub async fn discover_all(servers: &[McpServer]) -> anyhow::Result<Vec<McpTool>>
 
     for server in servers {
         let client = McpClient::new(server.clone());
+
+        // Initialize (with protocol negotiation + session capture)
+        if let Err(e) = client.initialize().await {
+            log::warn!(
+                "Failed to initialize MCP server '{}' ({}): {}",
+                server.name,
+                server.url,
+                e
+            );
+            continue;
+        }
+
+        // Discover tools
         match client.discover_tools().await {
             Ok(tools) => {
                 log::info!(
@@ -204,7 +294,7 @@ pub async fn discover_all(servers: &[McpServer]) -> anyhow::Result<Vec<McpTool>>
             }
             Err(e) => {
                 log::warn!(
-                    "Failed to connect to MCP server '{}' ({}): {}",
+                    "Failed to discover tools from MCP server '{}' ({}): {}",
                     server.name,
                     server.url,
                     e
@@ -229,6 +319,8 @@ mod tests {
             input_schema: serde_json::json!({"type": "object"}),
             server_url: "https://example.com/mcp".into(),
             api_key: None,
+            session_id: None,
+            transport: "streamable".into(),
         };
         assert_eq!(tool.name, "test-tool");
         assert_eq!(tool.server_name, "test-server");
@@ -238,10 +330,19 @@ mod tests {
     fn test_mcp_server_config() {
         let server = McpServer {
             name: "my-server".into(),
+            transport: "streamable".into(),
             url: "https://example.com/mcp".into(),
             api_key: Some("secret".into()),
         };
         assert_eq!(server.url, "https://example.com/mcp");
         assert_eq!(server.api_key, Some("secret".into()));
+        assert_eq!(server.transport, "streamable");
+    }
+
+    #[test]
+    fn test_mcp_server_default_transport() {
+        let yaml = "name: test\nurl: https://example.com\n";
+        let server: McpServer = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server.transport, "streamable");
     }
 }

@@ -9,11 +9,18 @@ pub struct McpServer {
     /// Display name for this server.
     #[serde(default)]
     pub name: String,
-    /// HTTP endpoint URL for the MCP server (Streamable HTTP transport).
+    /// Transport type: "http" (stateless) or "streamable" (session-based). Default: "streamable".
+    #[serde(default = "default_transport")]
+    pub transport: String,
+    /// HTTP endpoint URL for the MCP server.
     pub url: String,
     /// Optional Bearer token for Authorization header.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
+}
+
+fn default_transport() -> String {
+    "streamable".into()
 }
 
 /// Interaction mode for a chat.

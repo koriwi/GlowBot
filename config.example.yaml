@@ -11,6 +11,7 @@ conversation_window: 20
 # MCP servers for additional tools (Model Context Protocol)
 # mcp_servers:
 #   - name: "my-server"
+#     transport: "streamable"     # "streamable" (default) or "http"
 #     url: "https://mcp.example.com/mcp"
 #     api_key: "optional-bearer-token"
 
