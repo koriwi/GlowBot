@@ -17,6 +17,13 @@ impl GitRepo {
             .args(["config", "--global", "--add", "safe.directory"])
             .arg(repo_path)
             .output();
+        // Set git user identity for commits.
+        let _ = std::process::Command::new("git")
+            .args(["config", "--global", "user.email", "glowy@glowythebot.com"])
+            .output();
+        let _ = std::process::Command::new("git")
+            .args(["config", "--global", "user.name", "GlowBot"])
+            .output();
         Self {
             repo_path: repo_path.to_path_buf(),
         }
