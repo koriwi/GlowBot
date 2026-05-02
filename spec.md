@@ -51,6 +51,9 @@ openrouter_default_model: "anthropic/claude-sonnet-4"
 # Conversation context window (number of recent messages, default: 20)
 conversation_window: 20
 
+# DM access control (empty = anyone can chat, tools disabled)
+dm_whitelist: []                           # user IDs for full DM tool access
+
 # Chat-specific overrides (keyed by Telegram chat ID)
 chats:
   "-1234567890":
@@ -97,6 +100,17 @@ The data directory is a standalone git repository, not nested inside the applica
 |------|----------|
 | `every_message` | Bot reads every message and may respond autonomously. |
 | `mention_only` | Bot only responds when explicitly @mentioned or replied to. **Only applies to group chats** (negative chat IDs). **DMs (private chats) always respond** regardless of this setting — users don't @mention bots in 1:1 conversations. |
+
+#### DM tool access (`dm_whitelist`)
+
+DMs have an additional access control separate from group interaction modes:
+
+| `dm_whitelist` | Behavior |
+|----------------|----------|
+| Empty (default) | Bot responds to all DMs, but **all tools are disabled** (text-only). The bot tells the user to add their ID to the whitelist to enable tools. |
+| Contains user IDs | Only whitelisted users can interact. Whitelisted users get full tool access. Non-whitelisted users are blocked with a message. |
+
+This prevents random strangers from running arbitrary bash commands while keeping DMs open for conversation.
 
 `/commands` are always recognised regardless of interaction mode.
 

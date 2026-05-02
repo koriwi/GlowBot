@@ -8,6 +8,11 @@ openrouter_default_model: "anthropic/claude-sonnet-4"
 # Number of recent messages to include as conversation context (default: 20)
 conversation_window: 20
 
+# DM access control (default: empty = anyone can chat, but tools disabled)
+# Add user IDs to grant full tool access in DMs.
+# dm_whitelist:
+#   - "54284684"
+
 # Chat-specific overrides (keyed by Telegram chat ID)
 chats:
   # "-1234567890":

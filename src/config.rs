@@ -46,6 +46,10 @@ pub struct Config {
     /// Number of recent messages to include as conversation context.
     #[serde(default = "default_conversation_window")]
     pub conversation_window: usize,
+    /// DM whitelist: user IDs allowed full tool access in DMs.
+    /// Empty = DMs respond but tools disabled. Non-empty = only listed users can interact.
+    #[serde(default)]
+    pub dm_whitelist: Vec<String>,
     /// Per-chat configuration overrides, keyed by chat ID string.
     #[serde(default)]
     pub chats: HashMap<String, ChatConfig>,
@@ -89,6 +93,15 @@ impl Config {
             .and_then(|c| c.model.as_deref())
             .unwrap_or(&self.openrouter_default_model)
     }
+
+    /// Check whether tools are enabled for a DM user.
+    /// Returns true if dm_whitelist is non-empty AND the user is in it.
+    pub fn dm_tools_enabled(&self, user_id: &str) -> bool {
+        if self.dm_whitelist.is_empty() {
+            return false;
+        }
+        self.dm_whitelist.contains(&user_id.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -102,6 +115,7 @@ mod tests {
             openrouter_api_key: "test-key".into(),
             openrouter_default_model: "test/model".into(),
             conversation_window: 20,
+            dm_whitelist: vec![],
             chats: HashMap::new(),
         }
     }
@@ -221,5 +235,19 @@ mod tests {
         };
         let yaml = serde_yaml::to_string(&chat).unwrap();
         assert!(yaml.contains("custom prompt"));
+    }
+
+    #[test]
+    fn test_dm_tools_disabled_when_whitelist_empty() {
+        let config = basic_config();
+        assert!(!config.dm_tools_enabled("anyone"));
+    }
+
+    #[test]
+    fn test_dm_tools_enabled_for_whitelisted_user() {
+        let mut config = basic_config();
+        config.dm_whitelist = vec!["123".into()];
+        assert!(config.dm_tools_enabled("123"));
+        assert!(!config.dm_tools_enabled("456"));
     }
 }

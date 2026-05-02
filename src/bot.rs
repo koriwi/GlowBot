@@ -138,8 +138,35 @@ impl GlowBot {
             return Ok(None);
         }
 
+        // DM whitelist check: if non-empty and user not listed, block entirely
+        let (tools_enabled, dm_blocked) = {
+            let state = self.state.lock().await;
+            let config = &state.config;
+            if is_dm {
+                if config.dm_whitelist.is_empty() {
+                    // Empty whitelist = respond but no tools
+                    (false, false)
+                } else if config.dm_whitelist.contains(&user_id.to_string()) {
+                    // User in whitelist = full access
+                    (true, false)
+                } else {
+                    // Non-empty whitelist, user not in it = blocked
+                    (false, true)
+                }
+            } else {
+                // Groups always have tools enabled
+                (true, false)
+            }
+        };
+
+        if dm_blocked {
+            return Ok(Some(
+                "Sorry, you're not authorized to interact with me in DMs.".into(),
+            ));
+        }
+
         // Process with LLM
-        self.process_with_llm(chat_id, user_id, username, text)
+        self.process_with_llm(chat_id, user_id, username, text, tools_enabled)
             .await
     }
 
@@ -190,6 +217,7 @@ impl GlowBot {
         user_id: &str,
         username: &str,
         text: &str,
+        tools_enabled: bool,
     ) -> anyhow::Result<Option<String>> {
         let (system_prompt, model) = {
             let state = self.state.lock().await;
@@ -203,6 +231,8 @@ impl GlowBot {
                 skills,
                 chat_memory.as_ref(),
                 &memories,
+                tools_enabled,
+                user_id,
             );
             let model = state.config.model_for_chat(chat_id).to_string();
             (system_prompt, model)
@@ -227,7 +257,11 @@ impl GlowBot {
         messages.extend(history);
         messages.push(current_msg.clone());
 
-        let tools = crate::openrouter::all_tool_definitions();
+        let tools = if tools_enabled {
+            crate::openrouter::all_tool_definitions()
+        } else {
+            vec![]
+        };
         let max_tool_rounds = 10;
 
         // Run the LLM tool-use loop, capturing the final response.
@@ -627,6 +661,7 @@ mod tests {
             openrouter_api_key: "test-key".into(),
             openrouter_default_model: "test/model".into(),
             conversation_window: 20,
+            dm_whitelist: vec![],
             chats: HashMap::new(),
         }
     }
@@ -1471,5 +1506,79 @@ mod tests {
             .execute_read_skill(&serde_json::json!({"name": "nope"}))
             .await;
         assert!(result.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_dm_tools_disabled_by_default() {
+        let (bot, _dir, mock) = setup_test_bot().await;
+
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: Some("Text-only response".into()),
+                    tool_calls: None,
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("stop".into()),
+            }],
+        });
+
+        // DM (positive chat ID), default empty whitelist = tools disabled
+        let result = bot
+            .process_message("123", "456", "@test", "Hello", "mybot")
+            .await
+            .unwrap();
+        assert_eq!(result, Some("Text-only response".into()));
+    }
+
+    #[tokio::test]
+    async fn test_dm_blocked_when_whitelist_nonempty_and_user_not_in_it() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let mut config = test_config();
+        config.dm_whitelist = vec!["999".into()]; // only user 999
+        config.save(&data_dir.join("config.yaml")).unwrap();
+
+        let mock_llm = Arc::new(MockLlmBackend::new());
+        let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+
+        // User 456 is NOT in whitelist = blocked
+        let result = bot
+            .process_message("123", "456", "@test", "Hello", "mybot")
+            .await
+            .unwrap();
+        assert!(result.unwrap().contains("not authorized"));
+    }
+
+    #[tokio::test]
+    async fn test_dm_allowed_when_whitelisted() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let mut config = test_config();
+        config.dm_whitelist = vec!["456".into()];
+        config.save(&data_dir.join("config.yaml")).unwrap();
+
+        let mock_llm = Arc::new(MockLlmBackend::new());
+        mock_llm.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: Some("Full access!".into()),
+                    tool_calls: None,
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("stop".into()),
+            }],
+        });
+
+        let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+        let result = bot
+            .process_message("123", "456", "@test", "Hello", "mybot")
+            .await
+            .unwrap();
+        assert_eq!(result, Some("Full access!".into()));
     }
 }

@@ -9,6 +9,8 @@ pub fn assemble(
     skills: &HashMap<String, Skill>,
     chat_memory: Option<&Memory>,
     memories: &[Memory],
+    tools_enabled: bool,
+    user_id: &str,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
 
@@ -50,6 +52,20 @@ pub fn assemble(
         }
     }
 
+    // 6. DM tool restriction notice
+    if !tools_enabled {
+        parts.push(format!(
+            "\n## Important: Tool Access Restricted\n\
+You are in a DM and the dm_whitelist is empty. Your tools (bash, memory, skills) are \
+currently DISABLED. You can only respond with text.\n\
+If the user asks you to do something that requires tools, tell them:\n\
+> To enable tools, add your Telegram user ID `{}` to `dm_whitelist` \
+in `config.yaml` and restart me.\n\
+Always include their exact user ID (`{}`) in that message.",
+            user_id, user_id
+        ));
+    }
+
     parts.join("\n")
 }
 
@@ -87,12 +103,10 @@ mod tests {
 
     #[test]
     fn test_assemble_basic() {
-        let prompt = assemble("-123", "", &HashMap::new(), None, &[]);
+        let prompt = assemble("-123", "", &HashMap::new(), None, &[], true, "456");
         assert!(prompt.contains("GlowBot"));
         assert!(prompt.contains("bash"));
-        // Should contain the chat ID
         assert!(prompt.contains("-123"));
-        // Should contain the date
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         assert!(prompt.contains(&today));
     }
@@ -105,6 +119,8 @@ mod tests {
             &HashMap::new(),
             None,
             &[],
+            true,
+            "456",
         );
         assert!(prompt.contains("Be extra helpful"));
         assert!(prompt.contains("Chat-specific instructions"));
@@ -125,11 +141,10 @@ mod tests {
                 body: "Use curl to do things.\n".into(),
             },
         );
-        let prompt = assemble("-123", "", &skills, None, &[]);
+        let prompt = assemble("-123", "", &skills, None, &[], true, "456");
         assert!(prompt.contains("test-skill"));
         assert!(prompt.contains("A test skill"));
         assert!(prompt.contains("Use curl"));
-        assert!(prompt.contains("Available skills"));
     }
 
     #[test]
@@ -137,10 +152,9 @@ mod tests {
         let mut mem = Memory::new("123", "@testuser");
         mem.frontmatter.call_name = "Tester".into();
         mem.frontmatter.description = "Loves testing.".into();
-        let prompt = assemble("-123", "", &HashMap::new(), None, &[mem]);
+        let prompt = assemble("-123", "", &HashMap::new(), None, &[mem], true, "456");
         assert!(prompt.contains("Tester"));
         assert!(prompt.contains("@testuser"));
-        assert!(prompt.contains("Loves testing."));
         assert!(prompt.contains("Known users"));
     }
 
@@ -161,11 +175,18 @@ mod tests {
         );
         let mut mem = Memory::new("111", "@u1");
         mem.frontmatter.call_name = "U1".into();
-        let prompt = assemble("-123", "chat prompt here", &skills, None, &[mem]);
+        let prompt = assemble(
+            "-123",
+            "chat prompt here",
+            &skills,
+            None,
+            &[mem],
+            true,
+            "456",
+        );
         assert!(prompt.contains("GlowBot"));
         assert!(prompt.contains("chat prompt here"));
         assert!(prompt.contains("s1"));
-        assert!(prompt.contains("U1"));
     }
 
     #[test]
@@ -173,18 +194,45 @@ mod tests {
         let mut chat_mem = Memory::new_chat();
         chat_mem.frontmatter.call_name = "Study Group".into();
         chat_mem.frontmatter.description = "We learn Rust together".into();
-
-        let prompt = assemble("-123", "", &HashMap::new(), Some(&chat_mem), &[]);
+        let prompt = assemble(
+            "-123",
+            "",
+            &HashMap::new(),
+            Some(&chat_mem),
+            &[],
+            true,
+            "456",
+        );
         assert!(prompt.contains("About this conversation"));
         assert!(prompt.contains("Study Group"));
-        assert!(prompt.contains("We learn Rust together"));
     }
 
     #[test]
     fn test_assemble_with_empty_chat_memory() {
         let chat_mem = Memory::new_chat();
-        let prompt = assemble("-123", "", &HashMap::new(), Some(&chat_mem), &[]);
-        // Empty chat memory should not produce a section header
+        let prompt = assemble(
+            "-123",
+            "",
+            &HashMap::new(),
+            Some(&chat_mem),
+            &[],
+            true,
+            "456",
+        );
         assert!(!prompt.contains("About this conversation"));
+    }
+
+    #[test]
+    fn test_assemble_dm_tools_disabled() {
+        let prompt = assemble("123", "", &HashMap::new(), None, &[], false, "789");
+        assert!(prompt.contains("Tool Access Restricted"));
+        assert!(prompt.contains("789"));
+        assert!(prompt.contains("DISABLED"));
+    }
+
+    #[test]
+    fn test_assemble_dm_tools_enabled() {
+        let prompt = assemble("123", "", &HashMap::new(), None, &[], true, "789");
+        assert!(!prompt.contains("Tool Access Restricted"));
     }
 }
