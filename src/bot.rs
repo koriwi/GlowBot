@@ -117,11 +117,14 @@ impl GlowBot {
             return Ok(None); // User not allowed to interact
         }
 
-        // In mention_only mode, only respond to mentions
-        if matches!(
-            chat_config.interaction_mode,
-            crate::config::InteractionMode::MentionOnly
-        ) && !is_command
+        // In mention_only mode, only respond to mentions (groups only; DMs always respond)
+        let is_dm = !chat_id.starts_with('-');
+        if !is_dm
+            && matches!(
+                chat_config.interaction_mode,
+                crate::config::InteractionMode::MentionOnly
+            )
+            && !is_command
             && !is_mention
         {
             return Ok(None);
@@ -305,7 +308,9 @@ impl GlowBot {
 mod tests {
     use super::*;
     use crate::llm::mock::MockLlmBackend;
-    use crate::openrouter::{AssistantMessage, ChatCompletionResponse, Choice, FunctionCall, ToolCall};
+    use crate::openrouter::{
+        AssistantMessage, ChatCompletionResponse, Choice, FunctionCall, ToolCall,
+    };
     use tempfile::TempDir;
 
     fn test_config() -> Config {
@@ -755,5 +760,30 @@ mod tests {
         let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
         let state = bot.state.lock().await;
         assert!(state.skills.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_dm_always_responds_even_in_mention_only_mode() {
+        // DMs have positive chat IDs (not starting with '-')
+        // They should always respond, even with mention_only default
+        let (bot, _dir, mock) = setup_test_bot().await;
+
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: Some("DM response!".into()),
+                    tool_calls: None,
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("stop".into()),
+            }],
+        });
+
+        // Positive chat ID = DM, default mention_only mode
+        let result = bot
+            .process_message("123456789", "456", "@testuser", "Hello in DM", "mybot")
+            .await
+            .unwrap();
+        assert_eq!(result, Some("DM response!".into()));
     }
 }
