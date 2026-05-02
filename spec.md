@@ -48,6 +48,9 @@ telegram_token: "..."
 openrouter_api_key: "..."
 openrouter_default_model: "anthropic/claude-sonnet-4"
 
+# Conversation context window (number of recent messages, default: 20)
+conversation_window: 20
+
 # Chat-specific overrides (keyed by Telegram chat ID)
 chats:
   "-1234567890":
@@ -72,6 +75,11 @@ This provides an audit trail and makes the bot's data portable and cloneable.
 
 The data directory is a standalone git repository, not nested inside the application source.
 
+**Git setup on startup:** The bot automatically configures git on boot to avoid common issues:
+- `git config --global --add safe.directory <data_dir>` — prevents "dubious ownership" errors in Docker where the volume owner differs from the container user.
+- `git config --global user.email "glowy@glowythebot.com"` — sets commit author email.
+- `git config --global user.name "GlowBot"` — sets commit author name.
+
 ---
 
 ## 4. Core Systems
@@ -81,13 +89,14 @@ The data directory is a standalone git repository, not nested inside the applica
 - Receives messages via long-polling or webhook (configurable, poll default).
 - Sends responses as plain text or Markdown.
 - Tracks chat context: group vs. DM, user identity (ID + username).
+- Shows **typing indicator** (`sendChatAction`) while the LLM is processing a response.
 
 #### Interaction modes
 
 | Mode | Behavior |
 |------|----------|
 | `every_message` | Bot reads every message and may respond autonomously. |
-| `mention_only` | Bot only responds when explicitly @mentioned or replied to. |
+| `mention_only` | Bot only responds when explicitly @mentioned or replied to. **Only applies to group chats** (negative chat IDs). **DMs (private chats) always respond** regardless of this setting — users don't @mention bots in 1:1 conversations. |
 
 `/commands` are always recognised regardless of interaction mode.
 
@@ -97,7 +106,14 @@ The data directory is a standalone git repository, not nested inside the applica
 
 - Sends chat context + tools + skills + memory to the configured model.
 - Model is set per chat in config (overridable via `/model`).
-- Handles tool-use responses (currently only `bash`).
+- Handles tool-use responses with a multi-turn loop (up to 10 rounds).
+- Maintains a **sliding conversation window** (`conversation_window` in config, default 20) of recent user + assistant messages per chat, sent as context with each request.
+- Three tools are exposed to the LLM:
+  1. **`bash`** — raw shell execution for file ops, API calls, invoking skills.
+  2. **`read_memory`** — returns a user's memory as structured JSON (frontmatter + body).
+  3. **`update_memory`** — partial update of a user's memory; all fields optional (username, call_name, description, log_entry). Only provided fields overwrite existing values.
+
+**Important implementation detail:** Bash commands run with the data directory as working directory. All paths must be relative (e.g. `chats/123/456.md`, not `glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` so the LLM knows the exact memory file paths.
 
 ---
 
@@ -148,9 +164,11 @@ Parse the results and summarize.
 
 #### Short-term (conversation context)
 
-- Standard sliding-window of recent messages sent to the LLM with each request.
+- Sliding-window of recent messages (user + assistant) sent to the LLM with each request.
+- Window size configurable via `conversation_window` in `config.yaml` (default: 20).
+- Stored in-memory per chat; resets on bot restart.
 
-#### Long-term (per-user `.md` files) — MVP
+#### Long-term (per-user `.md` files)
 
 ```
 chats/
@@ -178,9 +196,12 @@ description: |
 - 2026-05-02: Asked about async Rust patterns — comfortable with tokio.
 ```
 
-- The bot **autonomously** updates the frontmatter `description` and appends to the body with timestamped facts it considers worth remembering.
+- The LLM uses **structured tools** (`read_memory` and `update_memory`) to interact with memory files — it never edits the YAML by hand via bash. This guarantees correct format.
+  - `read_memory(user_id)` → returns the full memory as JSON: `{user_id, username, call_name, description, body}`.
+  - `update_memory(user_id, ...)` → partial update. All fields optional (`username`, `call_name`, `description`, `log_entry`). Only provided fields overwrite existing values. `log_entry` appends a timestamped line to the body.
+- The bot **autonomously** calls `update_memory` with facts it considers worth remembering.
 - **Only the YAML frontmatter** (user_id, username, call_name, description) is injected into the system prompt — keeping context usage minimal.
-- The bot can read the full file body on demand via its bash tool if it needs deeper recall.
+- The LLM can still read the full file body via `read_memory` (or raw `bash`) if it needs deeper recall.
 - The `call_name` is what the bot uses when addressing the user in conversation. It is inferred autonomously on first encounter, but the bot may ask the user directly if it is unsure what to call them.
 - A separate file per chat means the same user can have different context in different chats.
 
@@ -194,12 +215,15 @@ description: |
 
 ### 4.5 Bash Tool
 
-The bot has exactly **one tool**: raw bash execution.
+The bot exposes a **bash** tool for raw shell execution.
 
-- Commands run in a subprocess inside the Docker container.
+- Commands run in a subprocess inside the Docker container (working directory = data directory).
 - No interactive/session-based commands — each invocation is stateless (oneshot).
+- 30-second timeout per command.
 - The container provides isolation; no additional sandboxing is required.
-- The LLM uses bash to invoke skills, manipulate files, query APIs, read full memory files, etc.
+- The LLM uses bash to invoke skills, manipulate files, query APIs, etc.
+- **Memory files should be accessed via `read_memory` / `update_memory` tools**, not raw bash — this guarantees correct YAML frontmatter format.
+- All file paths in bash commands are relative to the data directory (e.g. `chats/123/456.md`).
 
 ---
 
@@ -230,17 +254,21 @@ Whitelists contain Telegram user IDs.
 ### Must have
 
 - [x] Telegram messaging (groups + DMs, long-polling)
-- [x] OpenRouter LLM integration
-- [x] YAML configuration with per-chat model & interaction mode
+- [x] OpenRouter LLM integration with multi-turn tool-use loop
+- [x] YAML configuration with per-chat model, interaction mode, and conversation window
 - [x] Simple skills (`skills/<name>/skill.md` with frontmatter)
-- [x] Bash tool (oneshot, container-isolated)
-- [x] Per-user `.md` memory with frontmatter header, freeform body
-- [x] Memory frontmatter injected into system prompt; full file readable via bash
+- [x] Bash tool (oneshot, container-isolated, 30s timeout)
+- [x] `read_memory` / `update_memory` structured tools for per-user `.md` memory
+- [x] Per-user `.md` memory with YAML frontmatter, freeform body
+- [x] Memory frontmatter injected into system prompt; full file readable via tools
 - [x] `/model`, `/mode`, `/reload`, `/status` commands
 - [x] Interaction & command whitelists per chat
-- [x] Git auto-commit + push on every data write
+- [x] Git auto-commit + push on every data write (with safe.directory and identity setup)
 - [x] Docker deployment with `glowbot_data/` as a volume
-- [x] GitHub CI/CD with ≥95% test coverage
+- [x] GitHub CI/CD with ≥95% test coverage (126 tests, 97.95% line coverage)
+- [x] Conversation history (sliding window, configurable size)
+- [x] Typing indicator while LLM is processing
+- [x] DMs always respond (mention_only only applies to groups)
 
 ### Explicitly out of scope for v1
 
@@ -279,3 +307,24 @@ Everything in §5.
 - `Dockerfile` is multi-stage: builder stage (Rust toolchain) → slim runtime stage.
 - The `glowbot_data/` directory (config, skills, chats) is mounted as a Docker volume — not baked into the image.
 - `glowbot_data/` is a standalone git repository. The container needs git installed and push access (SSH key or token).
+
+## 8. Operational Notes & Learnings
+
+### Docker / Git
+- **Git "dubious ownership":** When the data volume is mounted from the host, the directory owner differs from the container user. The bot runs `git config --global --add safe.directory` on startup to suppress this.
+- **Git identity:** Commit author name/email must be set (`git config --global user.name/email`) or commits fail silently.
+
+### Memory file paths
+- Bash commands run with the data dir as working directory. The LLM must use **relative paths** (`chats/123/456.md`), not absolute (`glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` to construct correct paths.
+
+### Memory format
+- Letting the LLM edit YAML frontmatter by hand via bash heredocs/sed is unreliable — it will invent its own format. Use **structured JSON tools** (`read_memory` / `update_memory`) instead. The tool guarantees correct format.
+
+### DMs vs Groups
+- Telegram DMs have positive chat IDs, groups have negative. The `mention_only` interaction mode should **only apply to groups** — DMs always respond since users don't @mention in 1:1 chats.
+
+### Typing indicator
+- Send `sendChatAction(Typing)` before starting LLM processing so the user sees the "..." animation while waiting.
+
+### Conversation history
+- Without a sliding window of recent messages, the bot has no short-term memory and can't follow multi-turn conversations. The window size should be configurable (`conversation_window`).
