@@ -35,15 +35,40 @@ async fn run_bot() -> anyhow::Result<()> {
 
     log::info!("GlowBot is ready. Starting long-polling...");
 
-    teloxide::repl(tg_bot, move |tg_bot: Bot, msg: Message| {
-        let bot = Arc::clone(&bot);
-        let bot_username = bot_username.clone();
-        async move {
-            handle_message(tg_bot, bot, msg, &bot_username).await;
-            Ok(())
+    // Wrap polling in a loop to survive network timeouts/disconnects.
+    // teloxide's repl returns () and swallows internal errors, but if the
+    // underlying connection dies, the task completes. Restart it.
+    loop {
+        let handler_bot = Arc::clone(&bot);
+        let handler_username = bot_username.clone();
+        let handler_tg = tg_bot.clone();
+
+        let handle = tokio::spawn(async move {
+            teloxide::repl(handler_tg, move |tg_bot: Bot, msg: Message| {
+                let bot = Arc::clone(&handler_bot);
+                let bot_username = handler_username.clone();
+                async move {
+                    handle_message(tg_bot, bot, msg, &bot_username).await;
+                    Ok(())
+                }
+            })
+            .await;
+        });
+
+        match handle.await {
+            Ok(()) => {
+                log::error!("Polling loop exited unexpectedly, restarting in 5s");
+            }
+            Err(e) => {
+                if e.is_cancelled() {
+                    log::info!("Polling task cancelled, shutting down");
+                    break;
+                }
+                log::error!("Polling task panicked, restarting in 5s: {}", e);
+            }
         }
-    })
-    .await;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
 
     Ok(())
 }
