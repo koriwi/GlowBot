@@ -225,6 +225,7 @@ pub fn all_tool_definitions() -> Vec<ToolDefinition> {
         read_chat_memory_tool_definition(),
         update_chat_memory_tool_definition(),
         create_skill_tool_definition(),
+        read_skill_tool_definition(),
         update_skill_tool_definition(),
     ]
 }
@@ -298,6 +299,27 @@ pub fn create_skill_tool_definition() -> ToolDefinition {
                     }
                 },
                 "required": ["name", "description", "body"]
+            }),
+        },
+    }
+}
+
+/// The read_skill tool definition.
+pub fn read_skill_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "read_skill".into(),
+            description: "Read an existing skill's full content. Returns JSON with name, description, and body. Use before updating a skill so you know what's already there.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the skill to read."
+                    }
+                },
+                "required": ["name"]
             }),
         },
     }
@@ -499,7 +521,7 @@ mod tests {
     #[test]
     fn test_all_tool_definitions() {
         let tools = all_tool_definitions();
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 8);
         assert_eq!(tools[0].function.name, "bash");
         assert_eq!(tools[1].function.name, "read_memory");
         assert_eq!(tools[2].function.name, "update_memory");

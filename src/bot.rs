@@ -275,6 +275,7 @@ impl GlowBot {
                                 self.execute_update_chat_memory(chat_id, &args).await
                             }
                             "create_skill" => self.execute_create_skill(&args).await,
+                            "read_skill" => self.execute_read_skill(&args).await,
                             "update_skill" => self.execute_update_skill(&args).await,
                             _ => format!("Unknown tool: {}", tool_call.function.name),
                         };
@@ -516,6 +517,25 @@ impl GlowBot {
                 format!("Skill '{}' created successfully.", name)
             }
             Err(e) => format!("Failed to create skill: {}", e),
+        }
+    }
+
+    /// Execute a read_skill tool call.
+    async fn execute_read_skill(&self, args: &serde_json::Value) -> String {
+        let name = args["name"].as_str().unwrap_or("");
+        if name.is_empty() {
+            return "Error: name is required.".into();
+        }
+        let state = self.state.lock().await;
+        let skill_path = state.skills_dir().join(name).join("skill.md");
+        match crate::skills::load_skill(&skill_path) {
+            Ok(skill) => serde_json::json!({
+                "name": skill.frontmatter.name,
+                "description": skill.frontmatter.description,
+                "body": skill.body,
+            })
+            .to_string(),
+            Err(_) => format!("Skill '{}' not found.", name),
         }
     }
 
@@ -1422,5 +1442,34 @@ mod tests {
         let content = std::fs::read_to_string(&log_path).unwrap();
         assert!(content.contains("bash"));
         assert!(content.contains("echo hi"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_read_skill() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+
+        // Create a skill first
+        bot.execute_create_skill(&serde_json::json!({
+            "name": "readable",
+            "description": "Can be read",
+            "body": "echo test"
+        }))
+        .await;
+
+        let result = bot
+            .execute_read_skill(&serde_json::json!({"name": "readable"}))
+            .await;
+        assert!(result.contains("readable"));
+        assert!(result.contains("Can be read"));
+        assert!(result.contains("echo test"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_read_skill_not_found() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+        let result = bot
+            .execute_read_skill(&serde_json::json!({"name": "nope"}))
+            .await;
+        assert!(result.contains("not found"));
     }
 }
