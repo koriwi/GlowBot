@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::git::GitRepo;
 use crate::llm::LlmBackend;
 use crate::memory::{load_chat_memories, save_memory, Memory};
-use crate::openrouter::{bash_tool_definition, ChatCompletionRequest, ChatMessage};
+use crate::openrouter::{ChatCompletionRequest, ChatMessage};
 use crate::skills::{load_all_skills, Skill};
 use crate::system_prompt;
 use std::collections::HashMap;
@@ -209,7 +209,7 @@ impl GlowBot {
             ChatMessage::user_with_name(text, username),
         ];
 
-        let tools = vec![bash_tool_definition()];
+        let tools = crate::openrouter::all_tool_definitions();
         let max_tool_rounds = 10;
 
         for _round in 0..max_tool_rounds {
@@ -242,33 +242,17 @@ impl GlowBot {
 
                 // Execute each tool call
                 for tool_call in tool_calls {
-                    if tool_call.function.name == "bash" {
-                        let args: serde_json::Value =
-                            serde_json::from_str(&tool_call.function.arguments).unwrap_or_default();
-                        let command = args["command"].as_str().unwrap_or("");
-                        let data_dir = {
-                            let state = self.state.lock().await;
-                            state.data_dir.clone()
-                        };
-                        let result = bash::execute_in_dir(command, &data_dir).await;
-                        let result_text = match result {
-                            Ok(r) => {
-                                let mut out = String::new();
-                                if !r.stdout.is_empty() {
-                                    out.push_str(&format!("stdout:\n{}", r.stdout));
-                                }
-                                if !r.stderr.is_empty() {
-                                    out.push_str(&format!("stderr:\n{}", r.stderr));
-                                }
-                                if r.stdout.is_empty() && r.stderr.is_empty() {
-                                    out.push_str(&format!("exit code: {}", r.exit_code));
-                                }
-                                out
-                            }
-                            Err(e) => format!("Error executing command: {}", e),
-                        };
-                        messages.push(ChatMessage::tool_result(&tool_call.id, &result_text));
-                    }
+                    let args: serde_json::Value =
+                        serde_json::from_str(&tool_call.function.arguments).unwrap_or_default();
+
+                    let result_text = match tool_call.function.name.as_str() {
+                        "bash" => self.execute_bash_tool(&args).await,
+                        "read_memory" => self.execute_read_memory(chat_id, &args).await,
+                        "update_memory" => self.execute_update_memory(chat_id, &args).await,
+                        _ => format!("Unknown tool: {}", tool_call.function.name),
+                    };
+
+                    messages.push(ChatMessage::tool_result(&tool_call.id, &result_text));
                 }
 
                 // Auto-commit after tool execution (tools may have modified files)
@@ -301,6 +285,102 @@ impl GlowBot {
             save_memory(&state.chats_dir(), chat_id, user_id, &mem)?;
         }
         Ok(())
+    }
+
+    /// Execute a bash tool call.
+    async fn execute_bash_tool(&self, args: &serde_json::Value) -> String {
+        let command = args["command"].as_str().unwrap_or("");
+        let data_dir = {
+            let state = self.state.lock().await;
+            state.data_dir.clone()
+        };
+        match bash::execute_in_dir(command, &data_dir).await {
+            Ok(r) => {
+                let mut out = String::new();
+                if !r.stdout.is_empty() {
+                    out.push_str(&format!("stdout:\n{}", r.stdout));
+                }
+                if !r.stderr.is_empty() {
+                    out.push_str(&format!("stderr:\n{}", r.stderr));
+                }
+                if r.stdout.is_empty() && r.stderr.is_empty() {
+                    out.push_str(&format!("exit code: {}", r.exit_code));
+                }
+                out
+            }
+            Err(e) => format!("Error executing command: {}", e),
+        }
+    }
+
+    /// Execute a read_memory tool call. Returns memory as JSON.
+    async fn execute_read_memory(&self, chat_id: &str, args: &serde_json::Value) -> String {
+        let user_id = args["user_id"].as_str().unwrap_or("");
+        let state = self.state.lock().await;
+        match crate::memory::load_memory(&state.chats_dir(), chat_id, user_id) {
+            Some(mem) => serde_json::json!({
+                "user_id": mem.frontmatter.user_id,
+                "username": mem.frontmatter.username,
+                "call_name": mem.frontmatter.call_name,
+                "description": mem.frontmatter.description,
+                "body": mem.body,
+            })
+            .to_string(),
+            None => format!(
+                "No memory file found for user_id={} in chat {}",
+                user_id, chat_id
+            ),
+        }
+    }
+
+    /// Execute an update_memory tool call. Only overwrites provided fields.
+    async fn execute_update_memory(&self, chat_id: &str, args: &serde_json::Value) -> String {
+        let user_id = args["user_id"].as_str().unwrap_or("");
+        if user_id.is_empty() {
+            return "Error: user_id is required".into();
+        }
+
+        let state = self.state.lock().await;
+        let chats_dir = state.chats_dir();
+
+        let mut mem = crate::memory::load_memory(&chats_dir, chat_id, user_id)
+            .unwrap_or_else(|| Memory::new(user_id, ""));
+
+        let mut changed = false;
+
+        if let Some(v) = args["username"].as_str() {
+            mem.frontmatter.username = v.to_string();
+            changed = true;
+        }
+        if let Some(v) = args["call_name"].as_str() {
+            mem.frontmatter.call_name = v.to_string();
+            changed = true;
+        }
+        if let Some(v) = args["description"].as_str() {
+            mem.frontmatter.description = v.to_string();
+            changed = true;
+        }
+        if let Some(v) = args["log_entry"].as_str() {
+            mem.append_log(v);
+            changed = true;
+        }
+
+        if changed {
+            match crate::memory::save_memory(&chats_dir, chat_id, user_id, &mem) {
+                Ok(()) => format!(
+                    "Memory updated for user_id={}. Current state: {}",
+                    user_id,
+                    serde_json::json!({
+                        "user_id": mem.frontmatter.user_id,
+                        "username": mem.frontmatter.username,
+                        "call_name": mem.frontmatter.call_name,
+                        "description": mem.frontmatter.description,
+                    })
+                ),
+                Err(e) => format!("Failed to save memory: {}", e),
+            }
+        } else {
+            "No fields to update. Provide at least one of: username, call_name, description, log_entry.".into()
+        }
     }
 }
 
@@ -785,5 +865,201 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result, Some("DM response!".into()));
+    }
+
+    #[tokio::test]
+    async fn test_execute_read_memory_existing() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+
+        // First ensure a memory file exists
+        bot.ensure_memory_exists("-123", "456", "@testuser")
+            .await
+            .unwrap();
+
+        let result = bot
+            .execute_read_memory("-123", &serde_json::json!({"user_id": "456"}))
+            .await;
+        assert!(result.contains("456"));
+        assert!(result.contains("@testuser"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_read_memory_nonexistent() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+        let result = bot
+            .execute_read_memory("-123", &serde_json::json!({"user_id": "nonexistent"}))
+            .await;
+        assert!(result.contains("No memory file found"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_update_memory_new() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+        let result = bot
+            .execute_update_memory(
+                "-123",
+                &serde_json::json!({
+                    "user_id": "789",
+                    "call_name": "TestUser",
+                    "description": "A test user",
+                    "log_entry": "first interaction"
+                }),
+            )
+            .await;
+        assert!(result.contains("Memory updated"));
+        assert!(result.contains("TestUser"));
+
+        // Verify the file was written
+        let state = bot.state.lock().await;
+        let mem = crate::memory::load_memory(&state.chats_dir(), "-123", "789").unwrap();
+        assert_eq!(mem.frontmatter.call_name, "TestUser");
+        assert_eq!(mem.frontmatter.description, "A test user");
+        assert!(mem.body.contains("first interaction"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_update_memory_partial() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+
+        // Create initial memory
+        bot.execute_update_memory(
+            "-123",
+            &serde_json::json!({
+                "user_id": "111",
+                "call_name": "Original",
+                "description": "Original desc"
+            }),
+        )
+        .await;
+
+        // Partial update — only change call_name
+        let result = bot
+            .execute_update_memory(
+                "-123",
+                &serde_json::json!({
+                    "user_id": "111",
+                    "call_name": "Updated"
+                }),
+            )
+            .await;
+        assert!(result.contains("Updated"));
+
+        let state = bot.state.lock().await;
+        let mem = crate::memory::load_memory(&state.chats_dir(), "-123", "111").unwrap();
+        assert_eq!(mem.frontmatter.call_name, "Updated");
+        assert_eq!(mem.frontmatter.description, "Original desc"); // unchanged
+    }
+
+    #[tokio::test]
+    async fn test_execute_update_memory_no_fields() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+        let result = bot
+            .execute_update_memory("-123", &serde_json::json!({"user_id": "999"}))
+            .await;
+        assert!(result.contains("No fields to update"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_update_memory_empty_user_id() {
+        let (bot, _dir, _mock) = setup_test_bot().await;
+        let result = bot
+            .execute_update_memory("-123", &serde_json::json!({"user_id": ""}))
+            .await;
+        assert!(result.contains("Error"));
+    }
+
+    #[tokio::test]
+    async fn test_process_message_with_read_memory_tool() {
+        let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+        // First ensure memory exists
+        bot.ensure_memory_exists("-123", "456", "@testuser")
+            .await
+            .unwrap();
+
+        // LLM calls read_memory
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: None,
+                    tool_calls: Some(vec![ToolCall {
+                        id: "call_read".into(),
+                        call_type: "function".into(),
+                        function: FunctionCall {
+                            name: "read_memory".into(),
+                            arguments: r#"{"user_id":"456"}"#.into(),
+                        },
+                    }]),
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("tool_calls".into()),
+            }],
+        });
+
+        // Then LLM responds after reading memory
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: Some("I remember you, @testuser!".into()),
+                    tool_calls: None,
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("stop".into()),
+            }],
+        });
+
+        let result = bot
+            .process_message("-123", "456", "@testuser", "Who am I?", "mybot")
+            .await
+            .unwrap();
+        assert_eq!(result, Some("I remember you, @testuser!".into()));
+    }
+
+    #[tokio::test]
+    async fn test_process_message_with_update_memory_tool() {
+        let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+        // LLM calls update_memory
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: None,
+                    tool_calls: Some(vec![ToolCall {
+                        id: "call_update".into(),
+                        call_type: "function".into(),
+                        function: FunctionCall {
+                            name: "update_memory".into(),
+                            arguments: r#"{"user_id":"456","call_name":"Learned","log_entry":"user said hello"}"#.into(),
+                        },
+                    }]),
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("tool_calls".into()),
+            }],
+        });
+
+        // LLM confirms
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: Some("I've noted that!".into()),
+                    tool_calls: None,
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("stop".into()),
+            }],
+        });
+
+        let result = bot
+            .process_message("-123", "456", "@testuser", "My name is Learned", "mybot")
+            .await
+            .unwrap();
+        assert_eq!(result, Some("I've noted that!".into()));
+
+        // Verify memory was actually updated
+        let state = bot.state.lock().await;
+        let mem = crate::memory::load_memory(&state.chats_dir(), "-123", "456").unwrap();
+        assert_eq!(mem.frontmatter.call_name, "Learned");
+        assert!(mem.body.contains("user said hello"));
     }
 }

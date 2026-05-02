@@ -143,7 +143,7 @@ pub fn bash_tool_definition() -> ToolDefinition {
         def_type: "function".into(),
         function: FunctionDef {
             name: "bash".into(),
-            description: "Execute a bash command in the container. Use for file operations, API calls, invoking skills, and reading memory files. Commands are stateless and oneshot.".into(),
+            description: "Execute a bash command in the container. Use for file operations, API calls, invoking skills, and reading raw files. Commands are stateless and oneshot.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -156,6 +156,73 @@ pub fn bash_tool_definition() -> ToolDefinition {
             }),
         },
     }
+}
+
+/// The read_memory tool definition.
+pub fn read_memory_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "read_memory".into(),
+            description: "Read a user's memory file. Returns the full memory as JSON with frontmatter fields (user_id, username, call_name, description) and body (log entries).".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "The Telegram user ID whose memory to read."
+                    }
+                },
+                "required": ["user_id"]
+            }),
+        },
+    }
+}
+
+/// The update_memory tool definition.
+pub fn update_memory_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "update_memory".into(),
+            description: "Update a user's memory file. All fields are optional — only provided fields are overwritten. Use log_entry to append a timestamped line to the body. Use call_name to set what you should call them. Use description to update your summary of the user.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "The Telegram user ID whose memory to update."
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Optional: update the Telegram @username."
+                    },
+                    "call_name": {
+                        "type": "string",
+                        "description": "Optional: update what you call this user."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional: update the summary/description of this user."
+                    },
+                    "log_entry": {
+                        "type": "string",
+                        "description": "Optional: a fact or event to append as a timestamped log entry."
+                    }
+                },
+                "required": ["user_id"]
+            }),
+        },
+    }
+}
+
+/// All tool definitions.
+pub fn all_tool_definitions() -> Vec<ToolDefinition> {
+    vec![
+        bash_tool_definition(),
+        read_memory_tool_definition(),
+        update_memory_tool_definition(),
+    ]
 }
 
 /// A request to OpenRouter's chat completions API.
@@ -311,13 +378,38 @@ mod tests {
         let req = ChatCompletionRequest {
             model: "test/model".into(),
             messages: vec![ChatMessage::system("sys"), ChatMessage::user("hi")],
-            tools: Some(vec![bash_tool_definition()]),
+            tools: Some(all_tool_definitions()),
             tool_choice: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("test/model"));
         assert!(json.contains("sys"));
         assert!(json.contains("bash"));
+        assert!(json.contains("read_memory"));
+        assert!(json.contains("update_memory"));
+    }
+
+    #[test]
+    fn test_all_tool_definitions() {
+        let tools = all_tool_definitions();
+        assert_eq!(tools.len(), 3);
+        assert_eq!(tools[0].function.name, "bash");
+        assert_eq!(tools[1].function.name, "read_memory");
+        assert_eq!(tools[2].function.name, "update_memory");
+    }
+
+    #[test]
+    fn test_read_memory_tool_definition() {
+        let def = read_memory_tool_definition();
+        assert_eq!(def.function.name, "read_memory");
+        assert!(!def.function.description.is_empty());
+    }
+
+    #[test]
+    fn test_update_memory_tool_definition() {
+        let def = update_memory_tool_definition();
+        assert_eq!(def.function.name, "update_memory");
+        assert!(!def.function.description.is_empty());
     }
 
     #[test]
