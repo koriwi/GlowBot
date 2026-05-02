@@ -108,7 +108,7 @@ The data directory is a standalone git repository, not nested inside the applica
 - Model is set per chat in config (overridable via `/model`).
 - Handles tool-use responses with a multi-turn loop (up to 10 rounds).
 - Maintains a **sliding conversation window** (`conversation_window` in config, default 20) of recent user + assistant messages per chat, sent as context with each request.
-- Responses are sent with `ParseMode::MarkdownV2`. LLM output is converted via the `telegram-markdown-v2` crate, which parses standard Markdown and emits properly escaped V2. Falls back to plain text on conversion failure.
+- Responses are sent with `ParseMode::MarkdownV2`. LLM output is converted via the `telegram-markdown-v2` crate (`convert_with_strategy` with `UnsupportedTagsStrategy::Escape`), which parses standard Markdown and emits properly escaped V2. Unsupported constructs (tables, blockquotes, raw HTML) are escaped as plain text rather than crashing. Falls back to plain text on conversion failure.
 - Seven tools are exposed to the LLM:
   1. **`bash`** — raw shell execution for file ops, API calls, invoking skills.
   2. **`read_memory`** — returns a user's memory as structured JSON (frontmatter + body).

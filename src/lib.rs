@@ -15,7 +15,10 @@ pub use config::Config;
 /// Escape LLM output for Telegram MarkdownV2 using telegram-markdown-v2.
 /// Parses the Markdown the LLM wrote and emits properly escaped V2.
 pub fn escape_v2_safe(text: &str) -> String {
-    match telegram_markdown_v2::convert(text) {
+    match telegram_markdown_v2::convert_with_strategy(
+        text,
+        telegram_markdown_v2::UnsupportedTagsStrategy::Escape,
+    ) {
         Ok(escaped) => escaped.trim_end().to_string(),
         Err(e) => {
             log::warn!("Markdown parse failed, using plain text: {}", e);
