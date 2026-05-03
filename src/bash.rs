@@ -13,20 +13,9 @@ pub struct BashResult {
 }
 
 /// Execute a oneshot bash command. Stateless, non-interactive.
+/// Delegates to `execute_in_dir` with the process's current working directory.
 pub async fn execute(command: &str) -> anyhow::Result<BashResult> {
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(BASH_TIMEOUT_SECS),
-        Command::new("bash").args(["-c", command]).output(),
-    )
-    .await
-    .context("Bash command timed out")?
-    .context("Failed to execute bash command")?;
-
-    Ok(BashResult {
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        exit_code: output.status.code().unwrap_or(-1),
-    })
+    execute_in_dir(command, &std::env::current_dir()?).await
 }
 
 /// Execute a bash command in a specific working directory.
