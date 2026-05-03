@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::git::GitRepo;
 use crate::llm::LlmBackend;
 use crate::memory::{save_memory, Memory};
-use crate::openrouter::{ChatCompletionRequest, ChatMessage};
+use crate::openrouter::{ChatCompletionRequest, ChatMessage, ToolCall};
 use crate::skills::{load_all_skills, Skill};
 use std::collections::HashMap;
 use std::path::Path;
@@ -341,29 +341,16 @@ impl GlowBot {
                     // Add the assistant message with tool calls
                     messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
 
-                    // Execute each tool call
-                    for tool_call in tool_calls {
-                        let args: serde_json::Value =
-                            serde_json::from_str(&tool_call.function.arguments).unwrap_or_default();
-
-                        let result_text = dispatch_tool(
-                            &self.state,
-                            chat_id,
-                            tool_call.function.name.as_str(),
-                            &args,
-                        )
-                        .await;
-
-                        // Log the tool call
-                        self.log_tool_call(
-                            &tool_call.function.name,
-                            &tool_call.function.arguments,
-                            &result_text,
-                        )
-                        .await;
-
-                        messages.push(ChatMessage::tool_result(&tool_call.id, &result_text));
-                    }
+                    // Dispatch all tool calls (with logging)
+                    let data_dir = { self.state.lock().await.data_dir.clone() };
+                    let results = dispatch_tool_calls(
+                        &self.state,
+                        chat_id,
+                        tool_calls,
+                        Some(&data_dir),
+                    )
+                    .await;
+                    messages.extend(results);
 
                     // Auto-commit after tool execution (tools may have modified files)
                     self.git_repo
@@ -419,28 +406,7 @@ impl GlowBot {
     /// Log a tool call to the tool_calls.log file in the data directory.
     async fn log_tool_call(&self, tool_name: &str, args: &str, result: &str) {
         let state = self.state.lock().await;
-        let log_path = state.data_dir.join("tool_calls.log");
-        drop(state);
-
-        let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
-        let result_summary: String = result.chars().take(200).collect();
-        let args_summary: String = args.chars().take(200).collect();
-        let line = format!(
-            "[{}] {} | args: {} | result: {}\n",
-            timestamp, tool_name, args_summary, result_summary
-        );
-
-        // Best-effort append — don't block on log write errors
-        let _ = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)
-            .and_then(|mut f| {
-                use std::io::Write;
-                f.write_all(line.as_bytes())
-            });
-
-        log::info!("tool {}: {}", tool_name, args_summary);
+        log_tool_call_to(&state.data_dir, tool_name, args, result);
     }
 }
 
@@ -531,13 +497,7 @@ pub async fn run_heartbeat_task(
                     break;
                 }
                 messages.push(ChatMessage::assistant_tool_calls(tcs.clone()));
-                for tc in tcs {
-                    let args: serde_json::Value =
-                        serde_json::from_str(&tc.function.arguments).unwrap_or_default();
-                    let result =
-                        dispatch_tool(&state, &cid, tc.function.name.as_str(), &args).await;
-                    messages.push(ChatMessage::tool_result(&tc.id, &result));
-                }
+                messages.extend(dispatch_tool_calls(&state, &cid, tcs, None).await);
                 let _ = git_repo.auto_commit("Heartbeat");
                 continue;
             }
@@ -549,6 +509,50 @@ pub async fn run_heartbeat_task(
     if processed > 0 {
         log::info!("Heartbeat chat {}: processed {} task(s)", cid, processed);
     }
+}
+
+/// Log a tool call to `tool_calls.log` in the given data directory.
+fn log_tool_call_to(data_dir: &std::path::Path, tool_name: &str, args: &str, result: &str) {
+    let log_path = data_dir.join("tool_calls.log");
+    let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
+    let result_summary: String = result.chars().take(200).collect();
+    let args_summary: String = args.chars().take(200).collect();
+    let line = format!(
+        "[{}] {} | args: {} | result: {}\n",
+        timestamp, tool_name, args_summary, result_summary
+    );
+    // Best-effort append — don't block on log write errors
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(line.as_bytes())
+        });
+    log::info!("tool {}: {}", tool_name, args_summary);
+}
+
+/// Dispatch a batch of tool calls and return the result messages.
+/// Optionally logs each call if `data_dir` is provided.
+async fn dispatch_tool_calls(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: &str,
+    tool_calls: &[ToolCall],
+    data_dir: Option<&std::path::Path>,
+) -> Vec<ChatMessage> {
+    let mut results = Vec::new();
+    for tc in tool_calls {
+        let args: serde_json::Value =
+            serde_json::from_str(&tc.function.arguments).unwrap_or_default();
+        let result_text =
+            dispatch_tool(state, chat_id, tc.function.name.as_str(), &args).await;
+        if let Some(dir) = data_dir {
+            log_tool_call_to(dir, &tc.function.name, &tc.function.arguments, &result_text);
+        }
+        results.push(ChatMessage::tool_result(&tc.id, &result_text));
+    }
+    results
 }
 
 /// Shared tool dispatch — used by both normal messages and heartbeat tasks.
