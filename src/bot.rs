@@ -10,6 +10,7 @@ use crate::system_prompt;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use teloxide::prelude::*;
 use tokio::sync::Mutex;
 
 /// Shared bot state accessible from all handlers.
@@ -742,6 +743,7 @@ pub async fn run_heartbeat_task(
     state: Arc<Mutex<BotState>>,
     git_repo: crate::git::GitRepo,
     chat_id: &str,
+    tg_bot: teloxide::Bot,
 ) {
     let cid = chat_id.to_string();
     let mut processed = 0;
@@ -795,6 +797,13 @@ pub async fn run_heartbeat_task(
                     Ok(r) => r,
                     Err(e) => {
                         log::error!("Heartbeat LLM error: {}", e);
+                        let msg = format!("⚠️ Task '{}' failed: LLM error — {}", task_id, e);
+                        let _ = tg_bot
+                            .send_message(
+                                teloxide::types::ChatId(cid.parse().unwrap_or_default()),
+                                &msg,
+                            )
+                            .await;
                         break;
                     }
                 }
@@ -876,6 +885,24 @@ pub async fn run_heartbeat_task(
             break;
         }
         log::info!("Heartbeat chat {}: task '{}' done", cid, task_id);
+
+        // Check if the task was actually removed; if not, notify the chat
+        {
+            let s = state.lock().await;
+            let list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            if list.tasks.iter().any(|t| t.id == task_id) {
+                let msg = format!(
+                    "⚠️ Task '{}' could not be completed: {}",
+                    task_id, task_desc
+                );
+                let _ = tg_bot
+                    .send_message(
+                        teloxide::types::ChatId(cid.parse().unwrap_or_default()),
+                        &msg,
+                    )
+                    .await;
+            }
+        }
     }
 
     if processed > 0 {

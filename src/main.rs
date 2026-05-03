@@ -35,8 +35,9 @@ async fn run_bot() -> anyhow::Result<()> {
 
     // Spawn heartbeat task runner in the background
     let heartbeat_bot = Arc::clone(&bot);
+    let heartbeat_tg = tg_bot.clone();
     tokio::spawn(async move {
-        run_heartbeat_loop(heartbeat_bot).await;
+        run_heartbeat_loop(heartbeat_bot, heartbeat_tg).await;
     });
 
     log::info!("GlowBot is ready. Starting long-polling...");
@@ -139,7 +140,7 @@ async fn handle_message(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, msg: Message, bot
 }
 
 /// Background heartbeat loop. Periodically processes pending tasks for all chats.
-async fn run_heartbeat_loop(bot: Arc<Mutex<GlowBot>>) {
+async fn run_heartbeat_loop(bot: Arc<Mutex<GlowBot>>, tg_bot: Bot) {
     // Wait 30s after startup before first tick
     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
@@ -179,7 +180,7 @@ async fn run_heartbeat_loop(bot: Arc<Mutex<GlowBot>>) {
                 let inner = bot.lock().await;
                 (inner.state.clone(), inner.git_repo.clone())
             };
-            glowbot::bot::run_heartbeat_task(state, git_repo, &chat_id).await;
+            glowbot::bot::run_heartbeat_task(state, git_repo, &chat_id, tg_bot.clone()).await;
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
 
