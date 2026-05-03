@@ -84,12 +84,9 @@ impl BotState {
     }
 
     /// Get the effective heartbeat interval for a chat (seconds).
-    pub fn heartbeat_interval_secs(&self, chat_id: &str) -> u64 {
-        let interval_min = self
-            .config
-            .heartbeat_interval(chat_id)
-            .unwrap_or(self.config.heartbeat_interval_minutes);
-        interval_min * 60
+    /// Returns None if heartbeat is disabled (interval = 0).
+    pub fn heartbeat_interval_secs(&self, chat_id: &str) -> Option<u64> {
+        self.config.heartbeat_interval(chat_id).map(|m| m * 60)
     }
 
     /// Check if a chat has pending tasks.
@@ -1483,8 +1480,8 @@ mod tests {
         let mock_llm = Arc::new(MockLlmBackend::new());
         let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
         let state = bot.state.lock().await;
-        assert_eq!(state.heartbeat_interval_secs("-123"), 30 * 60);
-        assert_eq!(state.heartbeat_interval_secs("-999"), 90 * 60);
+        assert_eq!(state.heartbeat_interval_secs("-123"), Some(30 * 60));
+        assert_eq!(state.heartbeat_interval_secs("-999"), Some(90 * 60));
     }
 
     #[tokio::test]

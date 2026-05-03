@@ -164,8 +164,9 @@ async fn run_heartbeat_loop(bot: Arc<Mutex<GlowBot>>, tg_bot: Bot) {
                     if entry.path().is_dir() {
                         if let Some(name) = entry.file_name().to_str() {
                             if name.parse::<i64>().is_ok() && state.has_pending_tasks(name) {
-                                let interval_secs = state.heartbeat_interval_secs(name);
-                                result.push((name.to_string(), interval_secs));
+                                if let Some(interval_secs) = state.heartbeat_interval_secs(name) {
+                                    result.push((name.to_string(), interval_secs));
+                                }
                             }
                         }
                     }
@@ -220,6 +221,19 @@ async fn run_chat_heartbeat(
         };
 
         glowbot::bot::run_heartbeat_task(state, git_repo, &chat_id, tg_bot.clone()).await;
+
+        // After running tasks, check if there are any tasks remaining.
+        // If the task list is empty, exit the loop so the chat becomes
+        // eligible for re-discovery by the scheduler when new tasks arrive.
+        let has_tasks = {
+            let inner = bot.lock().await;
+            let state = inner.state.lock().await;
+            state.has_pending_tasks(&chat_id)
+        };
+        if !has_tasks {
+            log::info!("Heartbeat chat {}: no tasks remaining, exiting loop", chat_id);
+            break;
+        }
 
         // Sleep until next interval for this specific chat
         tokio::time::sleep(Duration::from_secs(interval_secs)).await;
