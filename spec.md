@@ -129,15 +129,16 @@ This prevents random strangers from running arbitrary bash commands while keepin
 - Handles tool-use responses with a multi-turn loop (up to 10 rounds).
 - Maintains a **sliding conversation window** (`conversation_window` in config, default 20) of recent user + assistant messages per chat, sent as context with each request.
 - Responses are sent with `ParseMode::MarkdownV2`. LLM output is converted via the `telegram-markdown-v2` crate (`convert_with_strategy` with `UnsupportedTagsStrategy::Escape`), which parses standard Markdown and emits properly escaped V2. Unsupported constructs (tables, blockquotes, raw HTML) are escaped as plain text rather than crashing. The system prompt instructs the LLM to wrap tables in code blocks (```) so they render as preformatted text. Falls back to plain text on conversion failure.
-- Seven tools are exposed to the LLM:
-  1. **`bash`** — raw shell execution for file ops, API calls, invoking skills.
-  2. **`read_memory`** — returns a user's memory as structured JSON (frontmatter + body).
-  3. **`update_memory`** — partial update of a user's memory; all fields optional.
-  4. **`read_chat_memory`** — returns chat-level memory as JSON.
-  5. **`update_chat_memory`** — partial update of chat memory; all fields optional.
-  6. **`create_skill`** — create a new skill file (name, description, body). Triggers reload.
-  7. **`read_skill`** — read an existing skill's full content as JSON.
-  8. **`update_skill`** — update an existing skill (name, description?, body?). Triggers reload.
+- Hardcoded tools exposed to the LLM:
+  - **`bash`** — raw shell execution for file ops, API calls, invoking skills.
+  - **`read_memory`** — returns a user's memory as structured JSON (frontmatter + body).
+  - **`update_memory`** — partial update of a user's memory; all fields optional.
+  - **`read_chat_memory`** — returns chat-level memory as JSON.
+  - **`update_chat_memory`** — partial update of chat memory; all fields optional.
+  - **`create_skill`** — create a new skill file (name, description, body). Triggers reload.
+  - **`read_skill`** — read an existing skill's full content as JSON.
+  - **`update_skill`** — update an existing skill (name, description?, body?). Triggers reload.
+  - **`add_task`, `list_tasks`, `remove_task`** — manage the chat's task list.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
 
 **Important implementation detail:** Bash commands run with the data directory as working directory. All paths must be relative (e.g. `chats/123/456.md`, not `glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` so the LLM knows the exact memory file paths.
@@ -358,7 +359,7 @@ Whitelists contain Telegram user IDs.
 - [x] Interaction & command whitelists per chat
 - [x] Git auto-commit + push on every data write (with safe.directory and identity setup)
 - [x] Docker deployment with `glowbot_data/` as a volume
-- [x] GitHub CI/CD with ≥95% test coverage (126 tests, 97.95% line coverage)
+- [x] GitHub CI/CD with ≥95% test coverage enforced
 - [x] Conversation history (sliding window, configurable size)
 - [x] Typing indicator while LLM is processing
 - [x] MarkdownV2 rendering via `telegram-markdown-v2` crate with plain text fallback
