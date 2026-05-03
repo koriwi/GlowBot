@@ -230,6 +230,7 @@ pub fn all_tool_definitions() -> Vec<ToolDefinition> {
         add_task_tool_definition(),
         list_tasks_tool_definition(),
         remove_task_tool_definition(),
+        get_recent_messages_tool_definition(),
         send_message_tool_definition(),
     ]
 }
@@ -411,6 +412,27 @@ pub fn remove_task_tool_definition() -> ToolDefinition {
                     }
                 },
                 "required": ["id"]
+            }),
+        },
+    }
+}
+
+/// The get_recent_messages tool definition.
+pub fn get_recent_messages_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "get_recent_messages".into(),
+            description: "Get the last N messages from this conversation. Call this when you need to recall something from earlier in the chat. Returns a JSON array of recent messages with role, content, and sender name.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of recent messages to retrieve (default: 10, max: 50)"
+                    }
+                },
+                "required": []
             }),
         },
     }
@@ -604,7 +626,7 @@ mod tests {
     #[test]
     fn test_all_tool_definitions() {
         let tools = all_tool_definitions();
-        assert_eq!(tools.len(), 12);
+        assert_eq!(tools.len(), 13);
         assert_eq!(tools[0].function.name, "bash");
         assert_eq!(tools[1].function.name, "read_memory");
         assert_eq!(tools[2].function.name, "update_memory");

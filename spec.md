@@ -127,7 +127,8 @@ This prevents random strangers from running arbitrary bash commands while keepin
 - Sends chat context + tools + skills + memory to the configured model.
 - Model is set per chat in config (overridable via `/model`).
 - Handles tool-use responses with a multi-turn loop (up to 10 rounds).
-- Maintains a **sliding conversation window** (`conversation_window` in config, default 20) of recent user + assistant messages per chat, sent as context with each request.
+- Maintains a **conversation history** per chat, stored in-memory. Past messages are **not** automatically sent to the LLM. Instead, the bot sends only the current user message along with the system prompt. The LLM can call `get_recent_messages(count)` to retrieve prior messages on demand when it needs context.
+- Previous messages are still kept for tracking purposes but do not consume context tokens unless explicitly requested.
 - Responses are sent with `ParseMode::MarkdownV2`. LLM output is converted via the `telegram-markdown-v2` crate (`convert_with_strategy` with `UnsupportedTagsStrategy::Escape`), which parses standard Markdown and emits properly escaped V2. Unsupported constructs (tables, blockquotes, raw HTML) are escaped as plain text rather than crashing. The system prompt instructs the LLM to wrap tables in code blocks (```) so they render as preformatted text. Falls back to plain text on conversion failure.
 - Hardcoded tools exposed to the LLM:
   - `read_memory` – returns a user's memory as structured JSON (frontmatter + body).
@@ -139,6 +140,7 @@ This prevents random strangers from running arbitrary bash commands while keepin
   - `update_skill` – update an existing skill (name, description?, body?). Triggers reload.
   - **`add_task`, `list_tasks`, `remove_task`** — manage the chat's task list.
   - **`send_message`** — send a plain text message to the current chat. **Only exposed during heartbeat/background task processing**; normal conversation relies on the assistant reply being sent automatically. The agent uses this sparingly (at most once per task) to report completion or deliver results that the user explicitly requested.
+  - **`get_recent_messages`** — returns the last N messages from the conversation history. The bot does NOT automatically send past messages — only the current user message is included in each request. The LLM must call this tool when it needs context from earlier in the conversation.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
 
 **Important implementation detail:** Bash commands run with the data directory as working directory. All paths must be relative (e.g. `chats/123/456.md`, not `glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` so the LLM knows the exact memory file paths.
@@ -243,9 +245,10 @@ chats:
 
 #### Short-term (conversation context)
 
-- Sliding-window of recent messages (user + assistant) sent to the LLM with each request.
-- Window size configurable via `conversation_window` in `config.yaml` (default: 20).
-- Stored in-memory per chat; resets on bot restart.
+- Only the **current user message** is sent to the LLM with each request, along with the system prompt. Previous messages are stored in an in-memory history but not transmitted unless explicitly requested.
+- The bot provides a **`get_recent_messages(count)`** tool that returns the last N messages from the chat history. The LLM should call this when it needs to recall earlier parts of the conversation.
+- The `conversation_window` config value controls how many messages are retained in memory (default: 20), but this is only relevant for the `get_recent_messages` tool — it does not affect what the LLM sees by default.
+- History resets on bot restart.
 
 #### Long-term (per-user `.md` files)
 
@@ -361,7 +364,7 @@ Whitelists contain Telegram user IDs.
 - [x] Git auto-commit + push on every data write (with safe.directory and identity setup)
 - [x] Docker deployment with `glowbot_data/` as a volume
 - [x] GitHub CI/CD with ≥95% test coverage enforced
-- [x] Conversation history (sliding window, configurable size)
+- [x] Conversation history (stored in-memory, retrievable via `get_recent_messages` tool, configurable size)
 - [x] Typing indicator while LLM is processing
 - [x] MarkdownV2 rendering via `telegram-markdown-v2` crate with plain text fallback
 
@@ -421,8 +424,12 @@ Everything in §5.
 ### Typing indicator
 - Send `sendChatAction(Typing)` before starting LLM processing so the user sees the "..." animation while waiting.
 
-### Conversation history
-- Without a sliding window of recent messages, the bot has no short-term memory and can't follow multi-turn conversations. The window size should be configurable (`conversation_window`).
+### Short-term conversation context
+
+- The bot stores a history of recent messages per chat (configurable via `conversation_window`), but **does not automatically include them** in LLM requests.
+- Only the current user message is sent to the LLM, keeping latency low for simple prompts.
+- When the user references something earlier ("What did I say before?"), the LLM should call `get_recent_messages(count)` to retrieve the needed context.
+- Without this mechanism, the bot cannot follow multi-turn conversations unless the LLM explicitly requests history.
 
 ### Markdown rendering
 - Telegram messages must be sent with a parse mode (`MarkdownV2` or `HTML`) or they render as plain text. Default `send_message` has no parse mode.

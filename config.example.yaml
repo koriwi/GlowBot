@@ -5,7 +5,7 @@ telegram_token: "your-telegram-bot-token-here"
 openrouter_api_key: "your-openrouter-api-key-here"
 openrouter_default_model: "anthropic/claude-sonnet-4"
 
-# Number of recent messages to include as conversation context (default: 20)
+# Maximum number of past messages kept in memory for get_recent_messages (default: 20)
 conversation_window: 20
 
 # Heartbeat interval for autonomous task processing (default: 90 minutes, 0 = disabled)

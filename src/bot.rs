@@ -301,20 +301,12 @@ impl GlowBot {
         self.ensure_memory_exists(chat_id, user_id, username)
             .await?;
 
-        // Build messages: system prompt + history + current message
-        let history = {
-            let state = self.state.lock().await;
-            state
-                .conversation_history
-                .get(chat_id)
-                .cloned()
-                .unwrap_or_default()
-        };
-
+        // Build messages: system prompt + current message only (history on demand)
         let current_msg = ChatMessage::user_with_name(text, username);
-        let mut messages = vec![ChatMessage::system(&system_prompt)];
-        messages.extend(history);
-        messages.push(current_msg.clone());
+        let mut messages = vec![
+            ChatMessage::system(&system_prompt),
+            current_msg.clone(),
+        ];
 
         let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
             let state = self.state.lock().await;
@@ -822,6 +814,23 @@ async fn dispatch_tool(
                 }
                 None => format!("MCP tool not found: {}", name),
             }
+        }
+        "get_recent_messages" => {
+            let count = args["count"].as_i64().unwrap_or(10) as usize;
+            let count = count.clamp(1, 50);
+            let history = {
+                let s = state.lock().await;
+                s.conversation_history.get(&cid).cloned().unwrap_or_default()
+            };
+            let start = history.len().saturating_sub(count);
+            let items: Vec<_> = history[start..].iter()
+                .map(|m| serde_json::json!({
+                    "role": &m.role,
+                    "content": m.text_content(),
+                    "name": m.name.as_deref().unwrap_or("")
+                }))
+                .collect();
+            serde_json::json!({"messages": items}).to_string()
         }
         _ => format!("Unknown tool: {}", tool_name),
     }
@@ -1544,7 +1553,7 @@ mod tests {
 
         // No MCP tools yet — normal conversation set (send_message excluded)
         let tools = state.build_tools(false);
-        assert_eq!(tools.len(), 11);
+        assert_eq!(tools.len(), 12);
 
         // Add a fake MCP tool
         state.mcp_tools.push(crate::mcp::McpTool {
@@ -1559,12 +1568,67 @@ mod tests {
         });
 
         let tools = state.build_tools(false);
-        assert_eq!(tools.len(), 12);
+        assert_eq!(tools.len(), 13);
         assert!(tools.iter().any(|t| t.function.name == "mcp_test-srv_test_tool"));
 
         // Heartbeat set includes send_message
         let hb_tools = state.build_tools(true);
-        assert_eq!(hb_tools.len(), 13);
+        assert_eq!(hb_tools.len(), 14);
         assert!(hb_tools.iter().any(|t| t.function.name == "send_message"));
+    }
+
+    #[tokio::test]
+    async fn test_get_recent_messages_tool() {
+        let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+        // Pre-seed some conversation history
+        {
+            let mut state = bot.state.lock().await;
+            let history = state
+                .conversation_history
+                .entry("-123".to_string())
+                .or_default();
+            history.push(ChatMessage::user_with_name("Hello bot", "Alice"));
+            history.push(ChatMessage::assistant("Hi Alice!"));
+            history.push(ChatMessage::user_with_name("What's my name?", "Alice"));
+            history.push(ChatMessage::assistant("Your name is Alice."));
+        }
+
+        // LLM calls get_recent_messages(count: 2)
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: None,
+                    tool_calls: Some(vec![ToolCall {
+                        id: "call_recent".into(),
+                        call_type: "function".into(),
+                        function: FunctionCall {
+                            name: "get_recent_messages".into(),
+                            arguments: r#"{"count":2}"#.into(),
+                        },
+                    }]),
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("tool_calls".into()),
+            }],
+        });
+
+        // After reading context, LLM responds
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: Some("I recall our conversation!".into()),
+                    tool_calls: None,
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("stop".into()),
+            }],
+        });
+
+        let result = bot
+            .process_message("-123", "456", "@alice", "Recall what I said", "mybot")
+            .await
+            .unwrap();
+        assert_eq!(result, Some("I recall our conversation!".into()));
     }
 }
