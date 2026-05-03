@@ -1,4 +1,3 @@
-use crate::bash;
 use crate::commands::{can_interact, can_run_command, handle_command, parse_command};
 use crate::config::Config;
 use crate::git::GitRepo;
@@ -401,31 +400,6 @@ impl GlowBot {
         Ok(())
     }
 
-    /// Execute a bash tool call.
-    async fn execute_bash_tool(&self, args: &serde_json::Value) -> String {
-        let command = args["command"].as_str().unwrap_or("");
-        let data_dir = {
-            let state = self.state.lock().await;
-            state.data_dir.clone()
-        };
-        match bash::execute_in_dir(command, &data_dir).await {
-            Ok(r) => {
-                let mut out = String::new();
-                if !r.stdout.is_empty() {
-                    out.push_str(&format!("stdout:\n{}", r.stdout));
-                }
-                if !r.stderr.is_empty() {
-                    out.push_str(&format!("stderr:\n{}", r.stderr));
-                }
-                if r.stdout.is_empty() && r.stderr.is_empty() {
-                    out.push_str(&format!("exit code: {}", r.exit_code));
-                }
-                out
-            }
-            Err(e) => format!("Error executing command: {}", e),
-        }
-    }
-
     /// Execute a read_memory tool call. Returns memory as JSON.
     async fn execute_read_memory(&self, chat_id: &str, args: &serde_json::Value) -> String {
         let user_id = args["user_id"].as_str().unwrap_or("");
@@ -668,62 +642,6 @@ impl GlowBot {
             });
 
         log::info!("tool {}: {}", tool_name, args_summary);
-    }
-
-    /// Execute an MCP tool by name. Finds the matching McpTool and invokes it.
-    async fn execute_mcp_tool(&self, full_name: &str, args: &serde_json::Value) -> String {
-        let state = self.state.lock().await;
-        // Find the matching tool: full_name is "mcp_{server}_{tool}"
-        let tool = state
-            .mcp_tools
-            .iter()
-            .find(|t| format!("mcp_{}_{}", t.server_name, t.name) == full_name);
-        match tool {
-            Some(t) => {
-                let tool_clone = t.clone();
-                drop(state);
-                crate::mcp::invoke_tool(&tool_clone, args).await
-            }
-            None => format!("MCP tool '{}' not found", full_name),
-        }
-    }
-
-    async fn execute_add_task(&self, chat_id: &str, args: &serde_json::Value) -> String {
-        let desc = args["description"].as_str().unwrap_or("");
-        if desc.is_empty() {
-            return "Error: description required".into();
-        }
-        let state = self.state.lock().await;
-        let mut list =
-            crate::tasks::TaskList::load(&state.chats_dir(), chat_id).unwrap_or_default();
-        let id = list.add(desc);
-        let _ = list.save(&state.chats_dir(), chat_id);
-        format!("Task '{}' added: {}", id, desc)
-    }
-
-    async fn execute_list_tasks(&self, chat_id: &str) -> String {
-        let state = self.state.lock().await;
-        let list = crate::tasks::TaskList::load(&state.chats_dir(), chat_id).unwrap_or_default();
-        if list.tasks.is_empty() {
-            return "No pending tasks.".into();
-        }
-        serde_json::to_string_pretty(&list.tasks).unwrap_or_default()
-    }
-
-    async fn execute_remove_task(&self, chat_id: &str, args: &serde_json::Value) -> String {
-        let id = args["id"].as_str().unwrap_or("");
-        if id.is_empty() {
-            return "Error: id required".into();
-        }
-        let state = self.state.lock().await;
-        let mut list =
-            crate::tasks::TaskList::load(&state.chats_dir(), chat_id).unwrap_or_default();
-        if list.remove(id) {
-            let _ = list.save(&state.chats_dir(), chat_id);
-            format!("Task '{}' removed. {} remaining.", id, list.tasks.len())
-        } else {
-            format!("Task '{}' not found.", id)
-        }
     }
 }
 
