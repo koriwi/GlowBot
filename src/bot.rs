@@ -264,6 +264,23 @@ impl GlowBot {
             return Ok(Some("You are not authorized to run bot commands.".into()));
         }
 
+        // /tasks is handled here because it needs access to the chats directory
+        if matches!(command, crate::commands::Command::Tasks) {
+            let state = self.state.lock().await;
+            let list = crate::tasks::TaskList::load(&state.chats_dir(), chat_id)
+                .unwrap_or_default();
+            let response = if list.tasks.is_empty() {
+                "No pending tasks for this chat.".to_string()
+            } else {
+                let mut lines = vec![format!("*{} pending task(s):*", list.tasks.len())];
+                for (i, t) in list.tasks.iter().enumerate() {
+                    lines.push(format!("{}. `{}` — {}", i + 1, t.id, t.description));
+                }
+                lines.join("\n")
+            };
+            return Ok(Some(response));
+        }
+
         let response = {
             let mut state = self.state.lock().await;
             handle_command(command, &mut state.config, chat_id)
@@ -1031,6 +1048,37 @@ mod tests {
             .await
             .unwrap();
         assert!(result.unwrap().contains("Stop command received"));
+    }
+
+    #[tokio::test]
+    async fn test_process_message_command_tasks_empty() {
+        let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+        let result = bot
+            .process_message("-123", "456", "@testuser", "/tasks", "mybot")
+            .await
+            .unwrap();
+        assert!(result.unwrap().contains("No pending tasks"));
+    }
+
+    #[tokio::test]
+    async fn test_process_message_command_tasks_with_tasks() {
+        let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+        // Add a task first
+        {
+            let state = bot.state.lock().await;
+            let mut list = crate::tasks::TaskList::load(&state.chats_dir(), "-123").unwrap_or_default();
+            list.add("Test task one");
+            list.add("Test task two");
+            list.save(&state.chats_dir(), "-123").unwrap();
+        }
+        let result = bot
+            .process_message("-123", "456", "@testuser", "/tasks", "mybot")
+            .await
+            .unwrap();
+        let resp = result.unwrap();
+        assert!(resp.contains("2 pending task"));
+        assert!(resp.contains("Test task one"));
+        assert!(resp.contains("Test task two"));
     }
 
     #[tokio::test]

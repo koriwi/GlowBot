@@ -7,6 +7,8 @@ pub enum Command {
     Status,
     /// /stop
     Stop,
+    /// /tasks
+    Tasks,
 }
 
 /// Parse a Telegram message to see if it's a bot command.
@@ -24,6 +26,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
     match cmd {
         "/status" => Some(Command::Status),
         "/stop" => Some(Command::Stop),
+        "/tasks" => Some(Command::Tasks),
         _ => None,
     }
 }
@@ -72,7 +75,8 @@ pub fn handle_command(command: &Command, config: &mut Config, chat_id: &str) -> 
                 },
             )
         }
-        Command::Stop => "Stop command received.".to_string()
+        Command::Stop => "Stop command received.".to_string(),
+        Command::Tasks => String::new(), // handled in handle_bot_command
     }
 }
 

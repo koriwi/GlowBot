@@ -328,6 +328,7 @@ Commands are Telegram bot commands (`/command`) used for control and settings. *
 | Command | Purpose | Requires |
 |---------|---------|----------|
 | `/status` | Show current config for this chat | command whitelist |
+| `/tasks` | List all pending tasks for this chat | command whitelist |
 | `/stop` | Stop the bot | command whitelist |
 
 #### Whitelist rules
@@ -357,7 +358,7 @@ Whitelists contain Telegram user IDs.
 - [x] Heartbeat task system with autonomous background agents
 - [x] Per-user `.md` memory with YAML frontmatter, freeform body
 - [x] Memory frontmatter injected into system prompt; full file readable via tools
-- [x] `/status`, `/stop` commands
+- [x] `/status`, `/tasks`, `/stop` commands
 - [x] Interaction & command whitelists per chat
 - [x] Git auto-commit + push on every data write (with safe.directory and identity setup)
 - [x] Docker deployment with `glowbot_data/` as a volume

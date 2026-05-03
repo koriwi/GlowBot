@@ -39,6 +39,7 @@ async fn run_bot() -> anyhow::Result<()> {
     // Register slash commands with Telegram so they show in the menu and autocomplete
     let commands = vec![
       BotCommand::new("status", "Show current config for this chat"),
+      BotCommand::new("tasks", "Show pending tasks for this chat"),
       BotCommand::new("stop", "Stop the bot"),
     ];
     if let Err(e) = tg_bot.set_my_commands(commands).await {
