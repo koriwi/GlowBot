@@ -32,3 +32,4 @@ chats:
   #   command_whitelist: []                # user IDs; empty = nobody allowed
   #   system_prompt: ""                    # optional per-chat system prompt
   #   heartbeat_interval_minutes: 30       # optional, override global default; 0 = disabled
+  #   heartbeat_interval_minutes: 30       # optional, override global default; 0 = disabled

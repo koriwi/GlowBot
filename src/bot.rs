@@ -414,7 +414,9 @@ impl GlowBot {
 }
 
 /// Run a heartbeat background task for a chat. Uses the state directly
-/// (not through GlowBot) so the heartbeat loop doesn't block message processing.
+/// Run a heartbeat background task for a chat. Processes every pending task
+/// at most once per invocation. Cycles through tasks in order; if we loop back
+/// to a task already handled this cycle, or the queue becomes empty, we exit.
 pub async fn run_heartbeat_task(
     state: Arc<Mutex<BotState>>,
     git_repo: crate::git::GitRepo,
@@ -422,10 +424,9 @@ pub async fn run_heartbeat_task(
     tg_bot: teloxide::Bot,
 ) {
     let cid = chat_id.to_string();
-    let mut processed = 0;
-    let max_per_cycle = 20;
+    let mut tried_this_cycle: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    while processed < max_per_cycle {
+    loop {
         let (task_id, task_desc) = {
             let s = state.lock().await;
             let list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
@@ -435,11 +436,13 @@ pub async fn run_heartbeat_task(
             }
         };
 
-        processed += 1;
+        if tried_this_cycle.contains(&task_id) {
+            break;
+        }
+        tried_this_cycle.insert(task_id.clone());
+
         log::info!("Heartbeat chat {}: working on task '{}'", cid, task_id);
 
-        // Build the full system prompt (same as normal chat: personality, skills, memory)
-        // plus the task-specific header
         let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
         let task_header = format!(
             "## Background Task\n\
@@ -449,7 +452,8 @@ pub async fn run_heartbeat_task(
             - Use your available tools to complete the task.\n\
             - When done, call remove_task(\"{task_id}\") to mark it complete.\n\
             - If the task spawns follow-up work, call add_task(\"...\") for each.\n\
-            - If the task cannot be completed yet (e.g. download still in progress, waiting for external event),\n              just leave it — do NOT remove it. It will run again next cycle.\n\
+            - If the task cannot be completed yet (e.g. download still in progress, waiting for external event),\n\
+              just leave it — do NOT remove it. It will run again next cycle.\n\
             - Do NOT send Telegram messages. This is a background process.\n\
             Current date: {date}",
             task_desc = task_desc,
@@ -512,8 +516,8 @@ pub async fn run_heartbeat_task(
         log::info!("Heartbeat chat {}: task '{}' done", cid, task_id);
     }
 
-    if processed > 0 {
-        log::info!("Heartbeat chat {}: processed {} task(s)", cid, processed);
+    if !tried_this_cycle.is_empty() {
+        log::info!("Heartbeat chat {}: processed {} task(s) this cycle", cid, tried_this_cycle.len());
     }
 }
 
