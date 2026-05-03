@@ -553,7 +553,7 @@ pub async fn run_heartbeat_task(
             - When done, call remove_task(\"{task_id}\") to mark it complete.\n\
             - If the task spawns follow-up work, call add_task(\"...\") for each.\n\
             - If the task cannot be completed yet (e.g. download still in progress, waiting for external event),\n\
-              just leave it — do NOT remove it. It will run again next cycle.\n\
+              just leave it — do NOT remove it, do NOT add a new identical one. It will automatically run again next cycle.\n\
             - You may send at most ONE message to the chat to report completion or deliver results, using the send_message tool. Do NOT spam progress updates.\n\
             Current date: {date}",
             task_desc = task_desc,
