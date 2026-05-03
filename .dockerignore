@@ -1,0 +1,4 @@
+target/
+glowbot_data/
+.git/
+*.md

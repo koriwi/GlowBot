@@ -3,10 +3,21 @@
 FROM rust:1.95-bookworm AS builder
 
 WORKDIR /app
-COPY Cargo.toml Cargo.lock* ./
-COPY src ./src
 
-RUN cargo build --release
+# Cache dependency builds: copy manifests first, build deps with dummy src,
+# then copy real source and build the app. This way dependency compilation
+# is cached in a Docker layer and only re-runs when Cargo.toml changes.
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && \
+    echo 'fn main() {}' > src/main.rs && \
+    echo '' > src/lib.rs && \
+    cargo build --release && \
+    rm -rf src
+
+COPY src ./src
+# Touch lib.rs/main.rs so cargo rebuilds the app (deps stay cached)
+RUN touch src/lib.rs src/main.rs && \
+    cargo build --release
 
 # Stage 2: Slim runtime
 FROM debian:bookworm-slim
