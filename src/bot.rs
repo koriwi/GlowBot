@@ -202,8 +202,8 @@ impl GlowBot {
         let path = state.config_path();
         state.config.save(&path)?;
         drop(state);
-        self.git_repo
-            .auto_commit("Update configuration via /command")?;
+        // self.git_repo
+        //     .auto_commit("Update configuration via /command")?;
         Ok(())
     }
 
@@ -471,7 +471,7 @@ async fn process_with_llm_impl(
                 let results = dispatch_tool_calls(state, chat_id, tool_calls, Some(&data_dir), None).await;
                 turn_messages.extend(results);
 
-                git_repo.auto_commit("Auto-commit after tool execution")?;
+                // git_repo.auto_commit("Auto-commit after tool execution")?;
 
                 if check_stopped() {
                     return Ok(Some("⏹ Stopped.".into()));
@@ -644,7 +644,7 @@ pub async fn run_heartbeat_task(
                 }
                 messages.push(ChatMessage::assistant_tool_calls(tcs.clone()));
                 messages.extend(dispatch_tool_calls(&state, &cid, tcs, None, Some(&tg_bot)).await);
-                let _ = git_repo.auto_commit("Heartbeat");
+                // let _ = git_repo.auto_commit("Heartbeat");
                 continue;
             }
             break;
@@ -1288,7 +1288,7 @@ mod tests {
         let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 
         // Continuously return tool calls to trigger the loop limit
-        for _ in 0..10 {
+        for _ in 0..64 {
             mock.add_response(ChatCompletionResponse {
                 choices: vec![Choice {
                     message: AssistantMessage {
