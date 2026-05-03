@@ -1,7 +1,7 @@
 use glowbot::bot::GlowBot;
 use glowbot::config::Config;
 use glowbot::llm::OpenRouterBackend;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
@@ -55,22 +55,31 @@ async fn run_bot() -> anyhow::Result<()> {
         run_heartbeat_loop(heartbeat_bot, heartbeat_tg).await;
     });
 
+    // Per-chat locks: ensures only one message per chat is processed at a time,
+    // while /stop commands can bypass the lock to signal cancellation.
+    let chat_locks: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
+        Arc::new(std::sync::Mutex::new(HashMap::new()));
+
     log::info!("GlowBot is ready. Starting long-polling...");
 
     // Wrap polling in a loop to survive network timeouts/disconnects.
-    // teloxide's repl returns () and swallows internal errors, but if the
-    // underlying connection dies, the task completes. Restart it.
     loop {
         let handler_bot = Arc::clone(&bot);
         let handler_username = bot_username.clone();
         let handler_tg = tg_bot.clone();
+        let handler_locks = Arc::clone(&chat_locks);
 
         let handle = tokio::spawn(async move {
             teloxide::repl(handler_tg, move |tg_bot: Bot, msg: Message| {
                 let bot = Arc::clone(&handler_bot);
                 let bot_username = handler_username.clone();
+                let locks = Arc::clone(&handler_locks);
                 async move {
-                    handle_message(tg_bot, bot, msg, &bot_username).await;
+                    // Spawn each message handler so /stop can interrupt ongoing processing.
+                    // Per-chat serialization is handled inside handle_message.
+                    tokio::spawn(async move {
+                        handle_message(tg_bot, bot, locks, msg, &bot_username).await;
+                    });
                     Ok(())
                 }
             })
@@ -95,7 +104,13 @@ async fn run_bot() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_message(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, msg: Message, bot_username: &str) {
+async fn handle_message(
+    tg_bot: Bot,
+    bot: Arc<Mutex<GlowBot>>,
+    chat_locks: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
+    msg: Message,
+    bot_username: &str,
+) {
     let text = match msg.text() {
         Some(t) => t,
         None => return,
@@ -127,12 +142,50 @@ async fn handle_message(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, msg: Message, bot
         .send_chat_action(chat, teloxide::types::ChatAction::Typing)
         .await;
 
-    let bot_inner = bot.lock().await;
-    // Extract components and release the lock so /stop can interrupt ongoing processing
-    let state = bot_inner.state.clone();
-    let git_repo = bot_inner.git_repo.clone();
-    let stop_signals = bot_inner.stop_signals.clone();
-    drop(bot_inner);
+    // Extract bot components
+    let (state, git_repo, stop_signals) = {
+        let bot_inner = bot.lock().await;
+        (
+            bot_inner.state.clone(),
+            bot_inner.git_repo.clone(),
+            bot_inner.stop_signals.clone(),
+        )
+    };
+
+    // /stop bypasses the per-chat lock: just set the stop signal and return
+    if text.trim() == "/stop" {
+        if let Ok(signals) = stop_signals.lock() {
+            if let Some(signal) = signals.get(&chat_id) {
+                signal.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let _ = tg_bot
+            .send_message(chat, "⏹ Stop signal sent. Current operations will be cancelled.")
+            .await;
+        return;
+    }
+
+    // Acquire per-chat lock for normal message processing
+    let chat_lock = {
+        let mut locks = chat_locks.lock().unwrap();
+        locks
+            .entry(chat_id.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    };
+    let _guard = chat_lock.lock().await;
+
+    // Check if we were stopped while waiting for the lock
+    {
+        let stopped = stop_signals
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&chat_id).map(|sig| sig.load(std::sync::atomic::Ordering::SeqCst)))
+            .unwrap_or(false);
+        if stopped {
+            return;
+        }
+    }
 
     match glowbot::bot::process_message_impl(
         &state,
