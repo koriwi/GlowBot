@@ -230,7 +230,7 @@ chats:
 - `list_tasks()` shows pending tasks, `remove_task(id)` removes them.
 - A background **scheduler** loop runs every 60s, scanning all chat directories for `chats/<chat_id>/tasks.yaml`.
 - For each chat with pending tasks, a **dedicated timer loop** is spawned with that chat's configured interval (in seconds). If the chat has no custom interval, the global default is used. DMs always use the global default since they can't be preconfigured.
-- Each per-chat loop independently: picks the oldest task → runs the LLM agent → sleeps for its interval → repeats. If heartbeat is disabled (interval = 0) the loop exits and will be respawned on the next scheduler scan if it becomes enabled again.
+- Each per-chat loop independently: picks the oldest task → runs the LLM agent → sleeps for its interval → repeats. If heartbeat is disabled (interval = 0) the loop exits and will be respawned on the next scheduler scan if it becomes enabled again. If the agent completes all tasks, the loop exits immediately so the chat becomes eligible for re-discovery when new tasks are added.
 - The agent uses bash, MCP tools, and task tools to complete the work.
 - The agent is **silent by default** — it only sends Telegram messages in two cases:
   1. **On LLM error** (e.g. API failure, timeout), it notifies the chat that the task failed.
