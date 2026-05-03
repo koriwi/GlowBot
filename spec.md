@@ -147,6 +147,15 @@ This prevents random strangers from running arbitrary bash commands while keepin
 
 ---
 
+#### Context usage tracking
+
+- Each LLM response includes a `usage` object with `prompt_tokens`, `completion_tokens`, and `total_tokens`.
+- The bot stores the last `prompt_tokens` per chat and uses it for `/status` display.
+- Model context lengths (max tokens) are fetched once from OpenRouter's `/api/v1/models` endpoint on startup and cached in-memory.
+- `/status` shows context usage as `"37k/252k (15%)"` — prompt tokens / model limit with percentage.
+- If the model context length is not yet cached (e.g. OpenRouter fetch failed), `/status` shows `"unknown"`.
+- Heartbeat tasks also track usage, so `/status` reflects the most recent activity even from background processing.
+
 ### 4.3 Skills System
 
 Skills extend the bot's capabilities. Each skill is a directory under `skills/`:
@@ -327,9 +336,23 @@ Commands are Telegram bot commands (`/command`) used for control and settings. *
 
 | Command | Purpose | Requires |
 |---------|---------|----------|
-| `/status` | Show current config for this chat | command whitelist |
+| `/status` | Show current config + context usage for this chat | command whitelist |
 | `/tasks` | List all pending tasks for this chat | command whitelist |
 | `/stop` | Interrupt ongoing LLM processing for this chat | none (always available) |
+
+#### `/status` output format
+
+```
+Chat ID: -1234567890
+Model: anthropic/claude-sonnet-4
+Context usage: 37k/252k (15%)
+Interaction mode: EveryMessage
+Interaction whitelist: everyone
+Command whitelist: 123456789, 987654321
+```
+
+- `Context usage` shows the last known prompt token count against the model's context limit, with percentage.
+- Before any messages are processed, or if model metadata is unavailable, it shows `unknown`.
 
 #### Whitelist rules
 
@@ -359,6 +382,8 @@ Whitelists contain Telegram user IDs.
 - [x] Per-user `.md` memory with YAML frontmatter, freeform body
 - [x] Memory frontmatter injected into system prompt; full file readable via tools
 - [x] `/status`, `/tasks`, `/stop` commands
+- [x] `/status` shows context usage (prompt tokens / model limit + percentage)
+- [x] Model context lengths fetched and cached from OpenRouter on startup
 - [x] Interaction & command whitelists per chat
 - [x] Git auto-commit + push on every data write (with safe.directory and identity setup)
 - [x] Docker deployment with `glowbot_data/` as a volume

@@ -50,7 +50,12 @@ pub fn can_interact(chat_config: &ChatConfig, user_id: &str) -> bool {
 }
 
 /// Handle a command and return the response text, optionally mutating config.
-pub fn handle_command(command: &Command, config: &mut Config, chat_id: &str) -> String {
+pub fn handle_command(
+    command: &Command,
+    config: &mut Config,
+    chat_id: &str,
+    context_usage: &str,
+) -> String {
     match command {
         Command::Status => {
             let chat = config.chat_config(chat_id);
@@ -59,9 +64,10 @@ pub fn handle_command(command: &Command, config: &mut Config, chat_id: &str) -> 
                 .as_deref()
                 .unwrap_or(&config.openrouter_default_model);
             format!(
-                "Chat ID: {}\nModel: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
+                "Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
                 chat_id,
                 model,
+                context_usage,
                 chat.interaction_mode,
                 if chat.interaction_whitelist.is_empty() {
                     "everyone".to_string()
@@ -136,9 +142,10 @@ mod tests {
     fn test_handle_status_command() {
         let mut config = crate::config::basic_config();
         config.openrouter_default_model = "default-model".into();
-        let resp = handle_command(&Command::Status, &mut config, "-123");
+        let resp = handle_command(&Command::Status, &mut config, "-123", "1k/10k (10%)");
         assert!(resp.contains("-123"));
         assert!(resp.contains("default-model"));
+        assert!(resp.contains("1k/10k (10%)"));
         assert!(resp.contains("MentionOnly"));
         assert!(resp.contains("everyone"));
         assert!(resp.contains("nobody"));
@@ -147,7 +154,7 @@ mod tests {
     #[test]
     fn test_handle_stop_command() {
         let mut config = crate::config::basic_config();
-        let resp = handle_command(&Command::Stop, &mut config, "-123");
+        let resp = handle_command(&Command::Stop, &mut config, "-123", "");
         assert!(resp.contains("Stop command received"));
     }
 }

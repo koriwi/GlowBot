@@ -31,6 +31,16 @@ async fn run_bot() -> anyhow::Result<()> {
     let bot = GlowBot::new_with_llm(&data_dir, llm).await?;
     let bot = Arc::new(Mutex::new(bot));
 
+    // Fetch model context lengths from OpenRouter in the background
+    {
+        let bot_clone = Arc::clone(&bot);
+        tokio::spawn(async move {
+            if let Err(e) = bot_clone.lock().await.fetch_model_contexts().await {
+                log::warn!("Failed to fetch model context lengths: {}", e);
+            }
+        });
+    }
+
     log::info!("Initializing Telegram bot...");
     let tg_bot = Bot::new(telegram_token);
     let bot_username = tg_bot.get_me().await?.username.clone().unwrap_or_default();

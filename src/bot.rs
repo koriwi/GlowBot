@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::git::GitRepo;
 use crate::llm::LlmBackend;
 use crate::memory::{save_memory, Memory};
-use crate::openrouter::{ChatCompletionRequest, ChatMessage, ToolCall};
+use crate::openrouter::{ChatCompletionRequest, ChatMessage, ToolCall, Usage};
 use crate::skills::{load_all_skills, Skill};
 use std::collections::HashMap;
 use std::path::Path;
@@ -21,6 +21,10 @@ pub struct BotState {
     pub conversation_history: HashMap<String, Vec<ChatMessage>>,
     /// Tools discovered from MCP servers.
     pub mcp_tools: Vec<crate::mcp::McpTool>,
+    /// Cached model context lengths from OpenRouter.
+    pub model_context_lengths: HashMap<String, u64>,
+    /// Per-chat last token usage from the most recent LLM call.
+    pub last_usage: HashMap<String, Usage>,
 }
 
 impl BotState {
@@ -94,6 +98,14 @@ impl BotState {
         let list = crate::tasks::TaskList::load(&self.chats_dir(), chat_id).unwrap_or_default();
         list.has_tasks()
     }
+
+    /// Get the formatted context usage string for a chat, e.g. "37k/252k (15%)"
+    pub fn context_usage(&self, chat_id: &str) -> String {
+        let model = self.effective_model(chat_id);
+        let limit = self.model_context_lengths.get(&model).copied().unwrap_or(0);
+        let usage = self.last_usage.get(chat_id).cloned().unwrap_or_default();
+        crate::openrouter::format_context_usage(usage.prompt_tokens, limit)
+    }
 }
 
 /// Main GlowBot orchestrator.
@@ -137,6 +149,8 @@ impl GlowBot {
             data_dir: data_dir.to_path_buf(),
             conversation_history: HashMap::new(),
             mcp_tools,
+            model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         };
 
         Ok(Self {
@@ -144,6 +158,27 @@ impl GlowBot {
             git_repo,
             stop_signals: Arc::new(std::sync::Mutex::new(HashMap::new())),
         })
+    }
+
+    /// Fetch model context lengths from OpenRouter and populate the cache.
+    pub async fn fetch_model_contexts(&self) -> anyhow::Result<()> {
+        let api_key = {
+            let s = self.state.lock().await;
+            s.config.openrouter_api_key.clone()
+        };
+
+        let client = crate::openrouter::OpenRouterClient::new(api_key);
+        let models = client.fetch_models().await?;
+
+        let mut s = self.state.lock().await;
+        for m in models {
+            s.model_context_lengths.insert(m.id, m.context_length);
+        }
+        log::info!(
+            "Cached {} model context lengths from OpenRouter",
+            s.model_context_lengths.len()
+        );
+        Ok(())
     }
 
     /// Reload skills from disk.
@@ -304,7 +339,8 @@ async fn handle_bot_command_impl(
 
     let response = {
         let mut s = state.lock().await;
-        handle_command(command, &mut s.config, chat_id)
+        let usage = s.context_usage(chat_id);
+        handle_command(command, &mut s.config, chat_id, &usage)
     };
 
     Ok(Some(response))
@@ -370,10 +406,16 @@ async fn process_with_llm_impl(
                 tool_choice: None,
             };
 
-            let response = {
+            let (response, usage) = {
                 let s = state.lock().await;
-                s.llm.chat_completion(&request).await?
+                let resp = s.llm.chat_completion(&request).await?;
+                let usage = resp.usage.clone().unwrap_or_default();
+                (resp, usage)
             };
+            {
+                let mut s = state.lock().await;
+                s.last_usage.insert(chat_id.to_string(), usage);
+            }
 
             if check_stopped() {
                 return Ok(Some("⏹ Stopped.".into()));
@@ -512,10 +554,13 @@ pub async fn run_heartbeat_task(
                 tools: Some(tools.clone()),
                 tool_choice: None,
             };
-            let response = {
+            let (response, usage) = {
                 let s = state.lock().await;
                 match s.llm.chat_completion(&request).await {
-                    Ok(r) => r,
+                    Ok(r) => {
+                        let usage = r.usage.clone().unwrap_or_default();
+                        (r, usage)
+                    }
                     Err(e) => {
                         log::error!("Heartbeat LLM error: {}", e);
                         let msg = format!("⚠️ Task '{}' failed: LLM error — {}", task_id, e);
@@ -529,6 +574,10 @@ pub async fn run_heartbeat_task(
                     }
                 }
             };
+            {
+                let mut s = state.lock().await;
+                s.last_usage.insert(cid.clone(), usage);
+            }
             let choice = match response.choices.into_iter().next() {
                 Some(c) => c,
                 None => break,
@@ -993,7 +1042,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let result = bot
             .process_message("-123", "456", "@testuser", "@mybot Hello!", "mybot")
@@ -1015,7 +1064,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let result = bot
             .process_message("-123", "456", "@testuser", "Hello", "mybot")
@@ -1122,7 +1171,7 @@ mod tests {
                 },
                 finish_reason: Some("tool_calls".into()),
             }],
-        });
+        ..Default::default()});
 
         // Second response: final text after tool result
         mock.add_response(ChatCompletionResponse {
@@ -1134,7 +1183,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let result = bot
             .process_message("-123", "456", "@testuser", "Run echo", "mybot")
@@ -1147,7 +1196,7 @@ mod tests {
     async fn test_process_message_empty_choices() {
         let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 
-        mock.add_response(ChatCompletionResponse { choices: vec![] });
+        mock.add_response(ChatCompletionResponse { choices: vec![], ..Default::default() });
 
         let result = bot
             .process_message("-123", "456", "@testuser", "Hello", "mybot")
@@ -1170,7 +1219,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let result = bot
             .process_message("-123", "456", "@testuser", "Hello", "mybot")
@@ -1201,7 +1250,7 @@ mod tests {
                     },
                     finish_reason: Some("tool_calls".into()),
                 }],
-            });
+            ..Default::default()});
         }
 
         let result = bot
@@ -1238,7 +1287,7 @@ mod tests {
                 },
                 finish_reason: Some("tool_calls".into()),
             }],
-        });
+        ..Default::default()});
 
         mock.add_response(ChatCompletionResponse {
             choices: vec![Choice {
@@ -1249,7 +1298,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let result = bot
             .process_message("-123", "456", "@testuser", "Run bad command", "mybot")
@@ -1287,7 +1336,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
         let result = bot
@@ -1331,7 +1380,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         // Positive chat ID = DM, default mention_only mode
         let result = bot
@@ -1367,7 +1416,7 @@ mod tests {
                 },
                 finish_reason: Some("tool_calls".into()),
             }],
-        });
+        ..Default::default()});
 
         // Then LLM responds after reading memory
         mock.add_response(ChatCompletionResponse {
@@ -1379,7 +1428,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let result = bot
             .process_message("-123", "456", "@testuser", "Who am I?", "mybot")
@@ -1409,7 +1458,7 @@ mod tests {
                 },
                 finish_reason: Some("tool_calls".into()),
             }],
-        });
+        ..Default::default()});
 
         // LLM confirms
         mock.add_response(ChatCompletionResponse {
@@ -1421,7 +1470,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let result = bot
             .process_message("-123", "456", "@testuser", "My name is Learned", "mybot")
@@ -1464,7 +1513,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         // DM (positive chat ID), default empty whitelist = tools disabled
         let result = bot
@@ -1515,7 +1564,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
         let result = bot
@@ -1641,7 +1690,7 @@ mod tests {
                 },
                 finish_reason: Some("tool_calls".into()),
             }],
-        });
+        ..Default::default()});
 
         // After reading context, LLM responds
         mock.add_response(ChatCompletionResponse {
@@ -1653,7 +1702,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let result = bot
             .process_message("-123", "456", "@alice", "Recall what I said", "mybot")
@@ -1678,6 +1727,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "send_message", &serde_json::json!({"text":""}), None).await;
         assert_eq!(out, "Error: text required");
@@ -1697,6 +1748,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "send_message", &serde_json::json!({"text":"hi"}), None).await;
         assert_eq!(out, "Error: send_message not available in this context.");
@@ -1716,6 +1769,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "bash", &serde_json::json!({"command":""}), None).await;
         assert!(out.contains("exit code"));
@@ -1735,6 +1790,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "read_memory", &serde_json::json!({"user_id":"999"}), None).await;
         assert!(out.contains("No memory file found"));
@@ -1754,6 +1811,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "update_memory", &serde_json::json!({"user_id":"999"}), None).await;
         assert_eq!(out, "No fields to update.");
@@ -1773,6 +1832,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "add_task", &serde_json::json!({"description":""}), None).await;
         assert_eq!(out, "Error: description required");
@@ -1792,6 +1853,8 @@ mod tests {
             data_dir: data_dir.clone(),
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         // Add a task first
         dispatch_tool(&state, "-123", "add_task", &serde_json::json!({"description":"do the thing"}), None).await;
@@ -1813,6 +1876,8 @@ mod tests {
             data_dir: data_dir.clone(),
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "remove_task", &serde_json::json!({"id":""}), None).await;
         assert_eq!(out, "Error: id required");
@@ -1834,6 +1899,8 @@ mod tests {
             data_dir: data_dir.clone(),
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "create_skill", &serde_json::json!({"name":"","description":"","body":""}), None).await;
         assert!(out.contains("required"));
@@ -1853,6 +1920,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "read_skill", &serde_json::json!({"name":"ghost"}), None).await;
         assert!(out.contains("not found"));
@@ -1872,6 +1941,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "update_skill", &serde_json::json!({"name":"missing","description":"d","body":"b"}), None).await;
         assert!(out.contains("not found"));
@@ -1891,6 +1962,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "narnia", &serde_json::json!({}), None).await;
         assert!(out.contains("Unknown tool"));
@@ -1910,6 +1983,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "mcp_no_no", &serde_json::json!({}), None).await;
         assert!(out.contains("MCP tool not found"));
@@ -1929,6 +2004,8 @@ mod tests {
             data_dir,
             conversation_history: HashMap::new(),
             mcp_tools: vec![],
+                    model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
         }));
         let out = dispatch_tool(&state, "-123", "get_recent_messages", &serde_json::json!({"count":5}), None).await;
         assert!(out.contains("messages"));
@@ -1967,7 +2044,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
         let _ = bot.process_message("-123", "456", "user", "hello", "mybot").await.unwrap();
         let h_len = {
             let state = bot.state.lock().await;
@@ -2021,7 +2098,7 @@ mod tests {
                 },
                 finish_reason: Some("tool_calls".into()),
             }],
-        });
+        ..Default::default()});
 
         mock_llm.add_response(ChatCompletionResponse {
             choices: vec![Choice {
@@ -2032,7 +2109,7 @@ mod tests {
                 },
                 finish_reason: Some("stop".into()),
             }],
-        });
+        ..Default::default()});
 
         let tg_bot = teloxide::Bot::new("ignored");
         run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
@@ -2063,6 +2140,32 @@ mod tests {
         // task should still be there after error
         let list = crate::tasks::TaskList::load(&data_dir.join("chats"), "-123").unwrap_or_default();
         assert_eq!(list.tasks.len(), 1);
+    }
+
+    #[test]
+    fn test_context_usage_formatting() {
+        let mut state = BotState {
+            config: crate::config::basic_config(),
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir: std::path::PathBuf::from("/tmp"),
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+            model_context_lengths: HashMap::new(),
+            last_usage: HashMap::new(),
+        };
+        // No context cached -> unknown
+        assert_eq!(state.context_usage("-123"), "unknown");
+        // Cache context length for the default model
+        state.model_context_lengths.insert("test/model".into(), 200000);
+        assert_eq!(state.context_usage("-123"), "0k/200k (0%)");
+        // Set usage
+        state.last_usage.insert("-123".into(), crate::openrouter::Usage {
+            prompt_tokens: 37000,
+            completion_tokens: 500,
+            total_tokens: 37500,
+        });
+        assert_eq!(state.context_usage("-123"), "37k/200k (19%)");
     }
 
 }

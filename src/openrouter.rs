@@ -470,14 +470,31 @@ pub struct ChatCompletionRequest {
     pub tool_choice: Option<String>,
 }
 
+/// Token usage from a chat completion response.
+#[derive(Debug, Deserialize, Default, Clone)]
+pub struct Usage {
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub total_tokens: u64,
+}
+
+/// Model metadata from OpenRouter's /api/v1/models endpoint.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ModelInfo {
+    pub id: String,
+    pub context_length: u64,
+}
+
 /// A response from OpenRouter's chat completions API.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct ChatCompletionResponse {
     pub choices: Vec<Choice>,
+    #[serde(default)]
+    pub usage: Option<Usage>,
 }
 
 /// A choice in the chat completion response.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Choice {
     pub message: AssistantMessage,
     #[serde(default)]
@@ -485,7 +502,7 @@ pub struct Choice {
 }
 
 /// The assistant message from the API.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct AssistantMessage {
     #[serde(default)]
     pub content: Option<String>,
@@ -494,7 +511,16 @@ pub struct AssistantMessage {
     pub role: Option<String>,
 }
 
-/// OpenRouter API client.
+/// Format token usage as a human-readable string like "37k/252k (15%)".
+pub fn format_context_usage(used: u64, limit: u64) -> String {
+    if limit == 0 {
+        return "unknown".to_string();
+    }
+    let pct = ((used as f64 / limit as f64) * 100.0).round() as u64;
+    let used_k = used / 1000;
+    let limit_k = limit / 1000;
+    format!("{}k/{}k ({}%)", used_k, limit_k, pct)
+}
 pub struct OpenRouterClient {
     api_key: String,
     http_client: reqwest::Client,
@@ -506,6 +532,30 @@ impl OpenRouterClient {
             api_key,
             http_client: reqwest::Client::new(),
         }
+    }
+
+    /// Fetch available models and their context lengths from OpenRouter.
+    pub async fn fetch_models(&self) -> anyhow::Result<Vec<ModelInfo>> {
+        let response = self
+            .http_client
+            .get("https://openrouter.ai/api/v1/models")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("OpenRouter API error ({}): {}", status, body);
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct ModelsApiResponse {
+            data: Vec<ModelInfo>,
+        }
+
+        let resp: ModelsApiResponse = response.json().await?;
+        Ok(resp.data)
     }
 
     /// Send a chat completion request to OpenRouter.
@@ -797,6 +847,74 @@ mod tests {
         });
         let resp: ChatCompletionResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.choices[0].message.role, None);
+    }
+
+    #[test]
+    fn test_format_context_usage() {
+        assert_eq!(format_context_usage(37000, 252000), "37k/252k (15%)");
+        assert_eq!(format_context_usage(0, 100000), "0k/100k (0%)");
+        assert_eq!(format_context_usage(1000, 10000), "1k/10k (10%)");
+        assert_eq!(format_context_usage(999, 1000), "0k/1k (100%)");
+        assert_eq!(format_context_usage(500, 0), "unknown");
+    }
+
+    #[test]
+    fn test_deserialize_usage() {
+        let json = serde_json::json!({
+            "prompt_tokens": 1234,
+            "completion_tokens": 56,
+            "total_tokens": 1290
+        });
+        let u: Usage = serde_json::from_value(json).unwrap();
+        assert_eq!(u.prompt_tokens, 1234);
+        assert_eq!(u.completion_tokens, 56);
+        assert_eq!(u.total_tokens, 1290);
+    }
+
+    #[test]
+    fn test_deserialize_model_info() {
+        let json = serde_json::json!({
+            "id": "anthropic/claude-sonnet-4",
+            "context_length": 200000
+        });
+        let m: ModelInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(m.id, "anthropic/claude-sonnet-4");
+        assert_eq!(m.context_length, 200000);
+    }
+
+    #[test]
+    fn test_deserialize_response_with_usage() {
+        let json = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": "hi",
+                    "role": "assistant"
+                }
+            }],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 10,
+                "total_tokens": 110
+            }
+        });
+        let resp: ChatCompletionResponse = serde_json::from_value(json).unwrap();
+        let usage = resp.usage.unwrap();
+        assert_eq!(usage.prompt_tokens, 100);
+        assert_eq!(usage.completion_tokens, 10);
+    }
+
+    #[test]
+    fn test_deserialize_response_without_usage() {
+        let json = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": "hi",
+                    "role": "assistant"
+                }
+            }]
+        });
+        let resp: ChatCompletionResponse = serde_json::from_value(json).unwrap();
+        assert!(resp.usage.is_none());
     }
 
     #[test]

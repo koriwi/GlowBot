@@ -89,7 +89,7 @@ pub mod mock {
                         },
                         finish_reason: Some("stop".into()),
                     }],
-                })
+                ..Default::default()})
             } else {
                 Ok(responses.remove(0))
             }
@@ -129,7 +129,7 @@ pub mod mock {
                     },
                     finish_reason: Some("stop".into()),
                 }],
-            });
+            ..Default::default()});
             mock.add_response(ChatCompletionResponse {
                 choices: vec![crate::openrouter::Choice {
                     message: crate::openrouter::AssistantMessage {
@@ -146,7 +146,7 @@ pub mod mock {
                     },
                     finish_reason: Some("tool_calls".into()),
                 }],
-            });
+            ..Default::default()});
 
             let req = ChatCompletionRequest {
                 model: "test".into(),
