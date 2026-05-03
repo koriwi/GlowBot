@@ -247,11 +247,17 @@ impl GlowBot {
         chat_id: &str,
         user_id: &str,
     ) -> anyhow::Result<Option<String>> {
-        // Check command permissions
+        // Check command permissions.
+        // In DMs, also allow users in the global dm_whitelist to run commands.
         let allowed = {
             let state = self.state.lock().await;
             let chat_config = state.config.chat_config(chat_id);
-            can_run_command(&chat_config, user_id)
+            let is_dm = !chat_id.starts_with('-');
+            if is_dm && state.config.dm_whitelist.contains(&user_id.to_string()) {
+                true
+            } else {
+                can_run_command(&chat_config, user_id)
+            }
         };
 
         if !allowed {
