@@ -73,14 +73,10 @@ impl BotState {
     }
 
     /// Build the full list of tool definitions including MCP tools.
-    /// `include_send_message` controls whether the `send_message` tool is
-    /// included (used by heartbeat tasks); normal conversation filters it out
-    /// because the assistant reply itself is the message.
+    /// `send_message` is always included — in normal conversations it's for
+    /// headsup/intermediate messages; in heartbeat tasks it's for completion reports.
     pub fn build_tools(&self, include_send_message: bool) -> Vec<crate::openrouter::ToolDefinition> {
         let mut t = crate::openrouter::all_tool_definitions();
-        if !include_send_message {
-            t.retain(|tool| tool.function.name != "send_message");
-        }
         for mt in &self.mcp_tools {
             t.push(crate::openrouter::ToolDefinition {
                 def_type: "function".into(),
@@ -217,7 +213,7 @@ impl GlowBot {
         text: &str,
         bot_username: &str,
     ) -> anyhow::Result<Option<String>> {
-        process_message_impl(&self.state, &self.git_repo, &self.stop_signals, chat_id, user_id, username, text, bot_username).await
+        process_message_impl(&self.state, &self.git_repo, &self.stop_signals, chat_id, user_id, username, text, bot_username, None).await
     }
 
     /// Ensure a memory file exists (delegates to free function, used by tests).
@@ -241,6 +237,7 @@ pub async fn process_message_impl(
     username: &str,
     text: &str,
     bot_username: &str,
+    tg_bot: Option<&teloxide::Bot>,
 ) -> anyhow::Result<Option<String>> {
     let is_command = text.trim().starts_with('/');
     let is_mention = text.contains(&format!("@{}", bot_username));
@@ -293,7 +290,7 @@ pub async fn process_message_impl(
         return Ok(Some("Sorry, you're not authorized to interact with me in DMs.".into()));
     }
 
-    process_with_llm_impl(state, git_repo, stop_signals, chat_id, user_id, username, text, tools_enabled).await
+    process_with_llm_impl(state, git_repo, stop_signals, chat_id, user_id, username, text, tools_enabled, tg_bot).await
 }
 
 /// Handle a bot command (free function).
@@ -363,6 +360,7 @@ async fn process_with_llm_impl(
     username: &str,
     text: &str,
     tools_enabled: bool,
+    tg_bot: Option<&teloxide::Bot>,
 ) -> anyhow::Result<Option<String>> {
     // Set up stop signal for this chat (clear any previous signal)
     {
@@ -468,7 +466,7 @@ async fn process_with_llm_impl(
                 turn_messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
 
                 let data_dir = { state.lock().await.data_dir.clone() };
-                let results = dispatch_tool_calls(state, chat_id, tool_calls, Some(&data_dir), None).await;
+                let results = dispatch_tool_calls(state, chat_id, tool_calls, Some(&data_dir), tg_bot).await;
                 turn_messages.extend(results);
 
                 // git_repo.auto_commit("Auto-commit after tool execution")?;
@@ -1685,9 +1683,10 @@ mod tests {
         let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
         let mut state = bot.state.lock().await;
 
-        // No MCP tools yet — normal conversation set (send_message excluded)
+        // No MCP tools yet — all tool definitions (always includes send_message)
         let tools = state.build_tools(false);
-        assert_eq!(tools.len(), 12);
+        assert_eq!(tools.len(), 13);
+        assert!(tools.iter().any(|t| t.function.name == "send_message"));
 
         // Add a fake MCP tool
         state.mcp_tools.push(crate::mcp::McpTool {
@@ -1702,13 +1701,8 @@ mod tests {
         });
 
         let tools = state.build_tools(false);
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 14);
         assert!(tools.iter().any(|t| t.function.name == "mcp_test-srv_test_tool"));
-
-        // Heartbeat set includes send_message
-        let hb_tools = state.build_tools(true);
-        assert_eq!(hb_tools.len(), 14);
-        assert!(hb_tools.iter().any(|t| t.function.name == "send_message"));
     }
 
     #[tokio::test]

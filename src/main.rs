@@ -206,6 +206,7 @@ async fn handle_message(
         username,
         text,
         bot_username,
+        Some(&tg_bot),
     )
     .await
     {

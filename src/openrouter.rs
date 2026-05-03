@@ -444,7 +444,7 @@ pub fn send_message_tool_definition() -> ToolDefinition {
         def_type: "function".into(),
         function: FunctionDef {
             name: "send_message".into(),
-            description: "Send a plain text message to the current chat. Use sparingly — in normal conversation the assistant reply is the message, but in background tasks you may use this once to report completion or deliver results.".into(),
+            description: "Send a plain text message to the current chat. In normal conversations, use this ONLY for headsup/intermediate messages (e.g. 'ok, give me a second, taking a look now...') — never for your final answer, which is sent automatically. In background tasks, use this once to report completion or deliver results. Use sparingly.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
