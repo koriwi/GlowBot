@@ -1226,6 +1226,76 @@ async fn test_heartbeat_llm_error() {
 }
 
 #[tokio::test]
+async fn test_heartbeat_two_tasks_first_uncompleted() {
+    // Bug fix: when the first task is left uncompleted (no remove_task),
+    // the heartbeat must still process the second task.
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone()).await.unwrap();
+
+    let mut list = crate::tasks::TaskList::default();
+    let id1 = list.add("task one — not done yet");
+    let id2 = list.add("task two — can complete");
+    list.save(&data_dir.join("chats"), "-123").unwrap();
+
+    // First LLM response: no tool calls (task left pending)
+    mock_llm.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Still waiting…".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+        ..Default::default()
+    });
+
+    // Second LLM response: remove_task for the second task
+    mock_llm.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "call_rm".into(),
+                    call_type: "function".into(),
+                    function: FunctionCall {
+                        name: "remove_task".into(),
+                        arguments: format!(r#"{{"id":"{}"}}"#, id2),
+                    },
+                }]),
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("tool_calls".into()),
+        }],
+        ..Default::default()
+    });
+
+    // Third response: after remove_task, LLM finishes
+    mock_llm.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Done!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+        ..Default::default()
+    });
+
+    let tg_bot = teloxide::Bot::new("ignored");
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+
+    let list = crate::tasks::TaskList::load(&data_dir.join("chats"), "-123").unwrap_or_default();
+    assert_eq!(list.tasks.len(), 1, "task one should still be pending");
+    assert_eq!(list.tasks[0].id, id1, "only task one should remain");
+}
+
+#[tokio::test]
 async fn test_process_message_command_run_no_tg_bot() {
     let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
     // /run via process_message (no tg_bot) should say not available

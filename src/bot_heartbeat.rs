@@ -5,10 +5,10 @@ use std::sync::Arc;
 use teloxide::prelude::*;
 use tokio::sync::Mutex;
 
-/// Run a heartbeat background task for a chat. Uses the state directly
-/// Processes every pending task at most once per invocation. Cycles through
-/// tasks in order; if we loop back to a task already handled this cycle,
-/// or the queue becomes empty, we exit.
+/// Run a heartbeat background task for a chat. Uses the state directly.
+/// Each task is processed at most once per cycle. We iterate through
+/// all tasks, skipping any already handled this cycle. The loop exits
+/// when every remaining task has been tried.
 pub async fn run_heartbeat_task(
     state: Arc<Mutex<BotState>>,
     _git_repo: crate::git::GitRepo,
@@ -22,15 +22,12 @@ pub async fn run_heartbeat_task(
         let (task_id, task_desc) = {
             let s = state.lock().await;
             let list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
-            match list.oldest() {
+            match list.tasks.iter().find(|t| !tried_this_cycle.contains(&t.id)) {
                 Some(t) => (t.id.clone(), t.description.clone()),
                 None => break,
             }
         };
 
-        if tried_this_cycle.contains(&task_id) {
-            break;
-        }
         tried_this_cycle.insert(task_id.clone());
 
         log::info!("Heartbeat chat {}: working on task '{}'", cid, task_id);
