@@ -2,10 +2,9 @@ use crate::commands::{can_interact, can_run_command, handle_command, parse_comma
 use crate::config::Config;
 use crate::git::GitRepo;
 use crate::llm::LlmBackend;
-use crate::memory::{load_chat_memories, save_memory, Memory};
+use crate::memory::{save_memory, Memory};
 use crate::openrouter::{ChatCompletionRequest, ChatMessage};
 use crate::skills::{load_all_skills, Skill};
-use crate::system_prompt;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -38,6 +37,34 @@ impl BotState {
     /// Get the path to the config file.
     pub fn config_path(&self) -> std::path::PathBuf {
         self.data_dir.join("config.yaml")
+    }
+
+    /// Assemble the full system prompt for a chat, loading memories and skills.
+    pub fn assemble_system_prompt(
+        &self,
+        chat_id: &str,
+        tools_enabled: bool,
+        user_id: &str,
+    ) -> String {
+        let skills = &self.skills;
+        let memories =
+            crate::memory::load_chat_memories(&self.chats_dir(), chat_id).unwrap_or_default();
+        let chat_memory = crate::memory::load_chat_memory(&self.chats_dir(), chat_id);
+        let chat_config = self.config.chat_config(chat_id);
+        crate::system_prompt::assemble(
+            chat_id,
+            &chat_config.system_prompt,
+            skills,
+            chat_memory.as_ref(),
+            &memories,
+            tools_enabled,
+            user_id,
+        )
+    }
+
+    /// Get the effective model for a chat.
+    pub fn effective_model(&self, chat_id: &str) -> String {
+        self.config.model_for_chat(chat_id).to_string()
     }
 }
 
@@ -236,20 +263,9 @@ impl GlowBot {
     ) -> anyhow::Result<Option<String>> {
         let (system_prompt, model) = {
             let state = self.state.lock().await;
-            let skills = &state.skills;
-            let memories = load_chat_memories(&state.chats_dir(), chat_id).unwrap_or_default();
-            let chat_memory = crate::memory::load_chat_memory(&state.chats_dir(), chat_id);
-            let chat_config = state.config.chat_config(chat_id);
-            let system_prompt = system_prompt::assemble(
-                chat_id,
-                &chat_config.system_prompt,
-                skills,
-                chat_memory.as_ref(),
-                &memories,
-                tools_enabled,
-                user_id,
-            );
-            let model = state.config.model_for_chat(chat_id).to_string();
+            let system_prompt =
+                state.assemble_system_prompt(chat_id, tools_enabled, user_id);
+            let model = state.effective_model(chat_id);
             (system_prompt, model)
         };
 
@@ -474,21 +490,8 @@ pub async fn run_heartbeat_task(
 
         let (full_prompt, model) = {
             let s = state.lock().await;
-            let skills = &s.skills;
-            let memories =
-                crate::memory::load_chat_memories(&s.chats_dir(), &cid).unwrap_or_default();
-            let chat_memory = crate::memory::load_chat_memory(&s.chats_dir(), &cid);
-            let chat_config = s.config.chat_config(&cid);
-            let base = crate::system_prompt::assemble(
-                &cid,
-                &chat_config.system_prompt,
-                skills,
-                chat_memory.as_ref(),
-                &memories,
-                true, // tools enabled
-                "",   // no user_id in heartbeat context
-            );
-            let model = s.config.model_for_chat(&cid).to_string();
+            let base = s.assemble_system_prompt(&cid, true, "");
+            let model = s.effective_model(&cid);
             (format!("{}\n\n{}", task_header, base), model)
         };
 
