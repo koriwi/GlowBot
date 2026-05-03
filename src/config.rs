@@ -83,6 +83,10 @@ pub struct Config {
     /// Default heartbeat interval in minutes (default: 90).
     #[serde(default = "default_heartbeat")]
     pub heartbeat_interval_minutes: u64,
+    /// How often (in seconds) the scheduler scans for chats with pending tasks.
+    /// Default: 60s. Increase this if you have many chats and want less filesystem churn.
+    #[serde(default = "default_heartbeat_scan_interval")]
+    pub heartbeat_scan_interval_seconds: u64,
 }
 
 fn default_model() -> String {
@@ -95,6 +99,10 @@ fn default_conversation_window() -> usize {
 
 fn default_heartbeat() -> u64 {
     90
+}
+
+fn default_heartbeat_scan_interval() -> u64 {
+    60
 }
 
 impl Config {
@@ -164,6 +172,7 @@ pub(crate) fn basic_config() -> Config {
         dm_whitelist: vec![],
         mcp_servers: vec![],
         heartbeat_interval_minutes: 90,
+        heartbeat_scan_interval_seconds: 60,
         chats: HashMap::new(),
     }
 }
