@@ -130,14 +130,13 @@ This prevents random strangers from running arbitrary bash commands while keepin
 - Maintains a **sliding conversation window** (`conversation_window` in config, default 20) of recent user + assistant messages per chat, sent as context with each request.
 - Responses are sent with `ParseMode::MarkdownV2`. LLM output is converted via the `telegram-markdown-v2` crate (`convert_with_strategy` with `UnsupportedTagsStrategy::Escape`), which parses standard Markdown and emits properly escaped V2. Unsupported constructs (tables, blockquotes, raw HTML) are escaped as plain text rather than crashing. The system prompt instructs the LLM to wrap tables in code blocks (```) so they render as preformatted text. Falls back to plain text on conversion failure.
 - Hardcoded tools exposed to the LLM:
-  - **`bash`** — raw shell execution for file ops, API calls, invoking skills.
-  - **`read_memory`** — returns a user's memory as structured JSON (frontmatter + body).
-  - **`update_memory`** — partial update of a user's memory; all fields optional.
-  - **`read_chat_memory`** — returns chat-level memory as JSON.
-  - **`update_chat_memory`** — partial update of chat memory; all fields optional.
-  - **`create_skill`** — create a new skill file (name, description, body). Triggers reload.
-  - **`read_skill`** — read an existing skill's full content as JSON.
-  - **`update_skill`** — update an existing skill (name, description?, body?). Triggers reload.
+  - `read_memory` – returns a user's memory as structured JSON (frontmatter + body).
+  - `update_memory` – partial update of a user's memory; all fields optional.
+  - `read_chat_memory` – returns chat-level memory as JSON.
+  - `update_chat_memory` – partial update of chat memory; all fields optional.
+  - `create_skill` – create a new skill file (name, description, body). Triggers reload.
+  - `read_skill` – read an existing skill's full content as JSON.
+  - `update_skill` – update an existing skill (name, description?, body?). Triggers reload.
   - **`add_task`, `list_tasks`, `remove_task`** — manage the chat's task list.
   - **`send_message`** — send a plain text message to the current chat. **Only exposed during heartbeat/background task processing**; normal conversation relies on the assistant reply being sent automatically. The agent uses this sparingly (at most once per task) to report completion or deliver results that the user explicitly requested.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
@@ -172,7 +171,7 @@ curl -s "https://html.duckduckgo.com/html/?q=<urlencoded query>" | ...
 Parse the results and summarize.
 ```
 
-- The body is injected into the system prompt or tool description so the LLM knows what bash commands to run.
+- The **name and description** of each skill are injected into the system prompt as a compact list. The full body is **not** included — the LLM can call `read_skill(name)` to load the complete content on demand.
 - Skills are loaded at startup from `skills/*/skill.md` and can be reloaded at runtime via `/reload`.
 
 #### Compiled skills (Phase 2)

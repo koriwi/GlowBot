@@ -27,11 +27,13 @@ pub fn assemble(
 
     // 3. Skills
     if !skills.is_empty() {
-        parts.push("\n## Available skills\n".to_string());
+        parts.push(
+            "\n## Available skills\n\nYou have the following skills available. Each skill contains bash commands, workflows, or other instructions. Use the `read_skill` tool to load the full content of a skill when you need it. Do not include the full body here.\n".to_string(),
+        );
         for skill in skills.values() {
             parts.push(format!(
-                "### {}\n{}\n\n{}",
-                skill.frontmatter.name, skill.frontmatter.description, skill.body
+                "- **{}** – {}",
+                skill.frontmatter.name, skill.frontmatter.description
             ));
         }
     }
@@ -144,7 +146,8 @@ mod tests {
         let prompt = assemble("-123", "", &skills, None, &[], true, "456");
         assert!(prompt.contains("test-skill"));
         assert!(prompt.contains("A test skill"));
-        assert!(prompt.contains("Use curl"));
+        assert!(!prompt.contains("Use curl"));
+        assert!(prompt.contains("read_skill"));
     }
 
     #[test]
