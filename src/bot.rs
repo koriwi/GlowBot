@@ -1,5 +1,6 @@
 use crate::commands::{can_interact, can_run_command, handle_command, parse_command};
 use crate::config::Config;
+use crate::db::Database;
 use crate::git::GitRepo;
 use crate::llm::LlmBackend;
 use crate::memory::{save_memory, Memory};
@@ -17,8 +18,8 @@ pub struct BotState {
     pub skills: HashMap<String, Skill>,
     pub llm: Arc<dyn LlmBackend>,
     pub data_dir: std::path::PathBuf,
-    /// Per-chat conversation history (sliding window of recent messages).
-    pub conversation_history: HashMap<String, Vec<ChatMessage>>,
+    /// SQLite-backed conversation history (one row per message).
+    pub db: Database,
     /// Tools discovered from MCP servers.
     pub mcp_tools: Vec<crate::mcp::McpTool>,
     /// Cached model context lengths from OpenRouter.
@@ -147,7 +148,7 @@ impl GlowBot {
             skills,
             llm,
             data_dir: data_dir.to_path_buf(),
-            conversation_history: HashMap::new(),
+            db: Database::new(&data_dir.join("conversations.db"))?,
             mcp_tools,
             model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -382,9 +383,14 @@ async fn process_with_llm_impl(
     ensure_memory_exists_impl(state, chat_id, user_id, username).await?;
 
     // Read existing conversation history upfront
-    let history = {
+    let (history, _window) = {
         let s = state.lock().await;
-        s.conversation_history.get(chat_id).cloned().unwrap_or_default()
+        let win = s.config.conversation_window;
+        let hist = s
+            .db
+            .load_messages(chat_id, win)
+            .unwrap_or_default();
+        (hist, win)
     };
 
     let current_msg = ChatMessage::user_with_name(text, username);
@@ -472,13 +478,8 @@ async fn process_with_llm_impl(
 
     // Store the completed turn in conversation history
     {
-        let mut s = state.lock().await;
-        let window = s.config.conversation_window;
-        let history = s.conversation_history.entry(chat_id.to_string()).or_default();
-        history.extend(turn_messages);
-        while history.len() > window {
-            history.remove(0);
-        }
+        let s = state.lock().await;
+        let _ = s.db.save_messages(chat_id, &turn_messages);
     }
 
     Ok(Some(result))
@@ -914,10 +915,9 @@ async fn dispatch_tool(
             let count = count.clamp(1, 50);
             let history = {
                 let s = state.lock().await;
-                s.conversation_history.get(&cid).cloned().unwrap_or_default()
+                s.db.load_messages(&cid, count).unwrap_or_default()
             };
-            let start = history.len().saturating_sub(count);
-            let items: Vec<_> = history[start..].iter()
+            let items: Vec<_> = history.iter()
                 .map(|m| serde_json::json!({
                     "role": &m.role,
                     "content": m.text_content(),
@@ -1678,15 +1678,14 @@ mod tests {
 
         // Pre-seed some conversation history
         {
-            let mut state = bot.state.lock().await;
-            let history = state
-                .conversation_history
-                .entry("-123".to_string())
-                .or_default();
-            history.push(ChatMessage::user_with_name("Hello bot", "Alice"));
-            history.push(ChatMessage::assistant("Hi Alice!"));
-            history.push(ChatMessage::user_with_name("What's my name?", "Alice"));
-            history.push(ChatMessage::assistant("Your name is Alice."));
+            let state = bot.state.lock().await;
+            let msgs = vec![
+                ChatMessage::user_with_name("Hello bot", "Alice"),
+                ChatMessage::assistant("Hi Alice!"),
+                ChatMessage::user_with_name("What's my name?", "Alice"),
+                ChatMessage::assistant("Your name is Alice."),
+            ];
+            state.db.save_messages("-123", &msgs).unwrap();
         }
 
         // LLM calls get_recent_messages(count: 2)
@@ -1741,7 +1740,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1762,7 +1761,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1783,7 +1782,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1804,7 +1803,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1825,7 +1824,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1846,7 +1845,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1867,7 +1866,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir: data_dir.clone(),
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1890,7 +1889,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir: data_dir.clone(),
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1913,7 +1912,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir: data_dir.clone(),
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1934,7 +1933,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1955,7 +1954,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1976,7 +1975,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -1997,7 +1996,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -2018,7 +2017,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir,
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
                     model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -2042,15 +2041,19 @@ mod tests {
     async fn test_conversation_history_window_trims() {
         let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
         // Seed history with exactly 20 items (default conversation_window=20)
+        let msgs: Vec<ChatMessage> = (0..10)
+            .flat_map(|i| {
+                vec![
+                    ChatMessage::user(&format!("msg{i}")),
+                    ChatMessage::assistant(&format!("reply{i}")),
+                ]
+            })
+            .collect();
         {
-            let mut state = bot.state.lock().await;
-            let h = state.conversation_history.entry("-123".into()).or_default();
-            for i in 0..20 {
-                h.push(ChatMessage::user(&format!("msg{i}")));
-                h.push(ChatMessage::assistant(&format!("reply{i}")));
-            }
+            let state = bot.state.lock().await;
+            state.db.save_messages("-123", &msgs).unwrap();
         }
-        // one more exchange will trigger trimming
+        // one more exchange will trigger trimming via the query window
         mock.add_response(ChatCompletionResponse {
             choices: vec![Choice {
                 message: AssistantMessage {
@@ -2064,7 +2067,7 @@ mod tests {
         let _ = bot.process_message("-123", "456", "user", "hello", "mybot").await.unwrap();
         let h_len = {
             let state = bot.state.lock().await;
-            state.conversation_history.get("-123").unwrap().len()
+            state.db.load_messages("-123", 20).unwrap().len()
         };
         assert_eq!(h_len, 20);
     }
@@ -2165,7 +2168,7 @@ mod tests {
             skills: HashMap::new(),
             llm: Arc::new(MockLlmBackend::new()),
             data_dir: std::path::PathBuf::from("/tmp"),
-            conversation_history: HashMap::new(),
+            db: crate::db::Database::open_in_memory().unwrap(),
             mcp_tools: vec![],
             model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),

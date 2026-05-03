@@ -2,6 +2,7 @@ pub mod bash;
 pub mod bot;
 pub mod commands;
 pub mod config;
+pub mod db;
 pub mod git;
 pub mod llm;
 pub mod mcp;

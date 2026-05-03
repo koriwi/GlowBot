@@ -254,10 +254,11 @@ chats:
 
 #### Short-term (conversation context)
 
-- Only the **current user message** is sent to the LLM with each request, along with the system prompt. Previous messages are stored in an in-memory history but not transmitted unless explicitly requested.
-- The bot provides a **`get_recent_messages(count)`** tool that returns the last N messages from the chat history. The LLM should call this when it needs to recall earlier parts of the conversation.
-- The `conversation_window` config value controls how many messages are retained in memory (default: 20), but this is only relevant for the `get_recent_messages` tool — it does not affect what the LLM sees by default.
-- History resets on bot restart.
+- Only the **current user message** is sent to the LLM with each request, along with the system prompt. Previous messages are stored persistently in **SQLite** (`glowbot_data/conversations.db`) but not transmitted unless explicitly requested.
+- The bot provides a **`get_recent_messages(count)`** tool that queries the database and returns the last N messages. The LLM should call this when it needs to recall earlier parts of the conversation.
+- The `conversation_window` config value controls the query `LIMIT` (default: 20). Older messages remain in the database but are excluded from default context.
+- History **survives bot restarts** because it's stored in SQLite, not in-memory.
+- Each message is a row with columns: `chat_id`, `role`, `content` (JSON), `name`, `tool_calls` (JSON), `tool_call_id`, `created_at`. This schema supports adding an `embedding` column later for vector search (Phase 2 RAG).
 
 #### Long-term (per-user `.md` files)
 
@@ -450,10 +451,11 @@ Everything in §5.
 
 ### Short-term conversation context
 
-- The bot stores a history of recent messages per chat (configurable via `conversation_window`), but **does not automatically include them** in LLM requests.
-- Only the current user message is sent to the LLM, keeping latency low for simple prompts.
-- When the user references something earlier ("What did I say before?"), the LLM should call `get_recent_messages(count)` to retrieve the needed context.
-- Without this mechanism, the bot cannot follow multi-turn conversations unless the LLM explicitly requests history.
+- Messages are stored in **SQLite** (`conversations.db`) — one row per message — so history **survives restarts**.
+- The bot only sends the **current user message** to the LLM by default (plus the system prompt). Earlier messages are not included automatically, keeping latency low.
+- When the user references something earlier, the LLM calls `get_recent_messages(count)` to fetch the needed context from the database.
+- The `conversation_window` config controls the query `LIMIT` (default: 20), acting as a sliding window. Older messages stay in the DB but are excluded from default context.
+- This one-row-per-message design supports adding an `embedding` column later for vector/RAG search (Phase 2).
 
 ### Markdown rendering
 - Telegram messages must be sent with a parse mode (`MarkdownV2` or `HTML`) or they render as plain text. Default `send_message` has no parse mode.
