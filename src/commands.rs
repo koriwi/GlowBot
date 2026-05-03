@@ -9,6 +9,8 @@ pub enum Command {
     Stop,
     /// /tasks
     Tasks,
+    /// /run — trigger heartbeat/task agent immediately
+    Run,
 }
 
 /// Parse a Telegram message to see if it's a bot command.
@@ -31,6 +33,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "/status" => Some(Command::Status),
         "/stop" => Some(Command::Stop),
         "/tasks" => Some(Command::Tasks),
+        "/run" => Some(Command::Run),
         _ => None,
     }
 }
@@ -87,6 +90,7 @@ pub fn handle_command(
         }
         Command::Stop => "Stop command received.".to_string(),
         Command::Tasks => String::new(), // handled in handle_bot_command
+        Command::Run => String::new(),   // handled in handle_bot_command
     }
 }
 
@@ -111,6 +115,12 @@ mod tests {
         assert_eq!(parse_command("/stop@somebot"), Some(Command::Stop));
         // With arguments
         assert_eq!(parse_command("/tasks@glowythebot extra"), Some(Command::Tasks));
+    }
+
+    #[test]
+    fn test_parse_command_run() {
+        assert_eq!(parse_command("/run"), Some(Command::Run));
+        assert_eq!(parse_command("/run@glowythebot"), Some(Command::Run));
     }
 
     #[test]

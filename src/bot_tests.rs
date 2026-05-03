@@ -1225,6 +1225,31 @@ async fn test_heartbeat_llm_error() {
     assert_eq!(list.tasks.len(), 1);
 }
 
+#[tokio::test]
+async fn test_process_message_command_run_no_tg_bot() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // /run via process_message (no tg_bot) should say not available
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/run", "mybot")
+        .await
+        .unwrap();
+    assert!(result.unwrap().contains("cannot be used in this context"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_run_unauthorized() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // Default: command_whitelist is empty, so nobody can run commands
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/run", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(
+        result,
+        Some("You are not authorized to run bot commands.".into())
+    );
+}
+
 #[test]
 fn test_context_usage_formatting() {
     let mut state = BotState {

@@ -249,7 +249,7 @@ pub async fn process_message_impl(
 
     // Check if it's a bot command
     if let Some(command) = parse_command(text) {
-        return handle_bot_command_impl(state, stop_signals, chat_id, user_id, &command).await;
+        return handle_bot_command_impl(state, stop_signals, chat_id, user_id, &command, tg_bot, git_repo).await;
     }
 
     // Check interaction permissions
@@ -305,6 +305,8 @@ async fn handle_bot_command_impl(
     chat_id: &str,
     user_id: &str,
     command: &crate::commands::Command,
+    tg_bot: Option<&teloxide::Bot>,
+    _git_repo: &GitRepo,
 ) -> anyhow::Result<Option<String>> {
     // /stop sets the stop signal and returns immediately
     if matches!(command, crate::commands::Command::Stop) {
@@ -344,6 +346,21 @@ async fn handle_bot_command_impl(
             lines.join("\n")
         };
         return Ok(Some(response));
+    }
+
+    // /run triggers the heartbeat task agent immediately for this chat
+    if matches!(command, crate::commands::Command::Run) {
+        if let Some(bot) = tg_bot {
+            let state_clone = Arc::clone(state);
+            let git_clone = _git_repo.clone();
+            let cid = chat_id.to_string();
+            let tg_clone = bot.clone();
+            tokio::spawn(async move {
+                crate::bot::run_heartbeat_task(state_clone, git_clone, &cid, tg_clone).await;
+            });
+            return Ok(Some("🔄 Running task agent for this chat now...".into()));
+        }
+        return Ok(Some("Run command cannot be used in this context.".into()));
     }
 
     let response = {
