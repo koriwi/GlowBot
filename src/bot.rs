@@ -403,11 +403,6 @@ impl GlowBot {
         Ok(())
     }
 
-    /// Log a tool call to the tool_calls.log file in the data directory.
-    async fn log_tool_call(&self, tool_name: &str, args: &str, result: &str) {
-        let state = self.state.lock().await;
-        log_tool_call_to(&state.data_dir, tool_name, args, result);
-    }
 }
 
 /// Run a heartbeat background task for a chat. Uses the state directly
@@ -1362,11 +1357,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_log_tool_call() {
-        let (bot, dir, _mock) = setup_test_bot().await;
-        bot.log_tool_call("bash", r#"{"command":"echo hi"}"#, "stdout: hi\n")
-            .await;
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
 
-        let log_path = dir.path().join("glowbot_data").join("tool_calls.log");
+        log_tool_call_to(&data_dir, "bash", r#"{"command":"echo hi"}"#, "stdout: hi\n");
+
+        let log_path = data_dir.join("tool_calls.log");
         assert!(log_path.exists());
         let content = std::fs::read_to_string(&log_path).unwrap();
         assert!(content.contains("bash"));
