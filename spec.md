@@ -231,7 +231,9 @@ chats:
 - A background loop runs every N minutes per chat.
 - For each chat with pending tasks, the oldest task is given to a silent background agent.
 - The agent uses bash, MCP tools, and task tools to complete the work.
-- Agents do NOT send Telegram messages.
+- The agent is **silent by default** — it only sends Telegram messages in two cases:
+  1. **On LLM error** (e.g. API failure, timeout), it notifies the chat that the task failed.
+  2. **When the task explicitly requires it** — the task description can instruct the agent to message the user when a milestone is reached or work is complete (e.g. *"Download this file, then tell me when it's done"*). The agent should NOT spam progress updates (e.g. "63% done") — only final or actionable results.
 - Task processing runs in its own task — does not block message handling.
 
 **Tools:** `add_task`, `list_tasks`, `remove_task`.
