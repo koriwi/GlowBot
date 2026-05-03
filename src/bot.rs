@@ -83,12 +83,6 @@ impl BotState {
         t
     }
 
-    /// Get the effective heartbeat interval for a chat (seconds).
-    /// Returns None if heartbeat is disabled (interval = 0).
-    pub fn heartbeat_interval_secs(&self, chat_id: &str) -> Option<u64> {
-        self.config.heartbeat_interval(chat_id).map(|m| m * 60)
-    }
-
     /// Check if a chat has pending tasks.
     pub fn has_pending_tasks(&self, chat_id: &str) -> bool {
         let list = crate::tasks::TaskList::load(&self.chats_dir(), chat_id).unwrap_or_default();
@@ -1459,29 +1453,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result, Some("Full access!".into()));
-    }
-
-    #[tokio::test]
-    async fn test_heartbeat_interval_secs() {
-        let dir = TempDir::new().unwrap();
-        let data_dir = dir.path().join("glowbot_data");
-        std::fs::create_dir_all(&data_dir).unwrap();
-        let mut config = crate::config::basic_config();
-        config.heartbeat_interval_minutes = 90;
-        config.chats.insert(
-            "-123".into(),
-            crate::config::ChatConfig {
-                heartbeat_interval_minutes: Some(30),
-                ..Default::default()
-            },
-        );
-        config.save(&data_dir.join("config.yaml")).unwrap();
-
-        let mock_llm = Arc::new(MockLlmBackend::new());
-        let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
-        let state = bot.state.lock().await;
-        assert_eq!(state.heartbeat_interval_secs("-123"), Some(30 * 60));
-        assert_eq!(state.heartbeat_interval_secs("-999"), Some(90 * 60));
     }
 
     #[tokio::test]

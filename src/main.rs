@@ -164,7 +164,8 @@ async fn run_heartbeat_loop(bot: Arc<Mutex<GlowBot>>, tg_bot: Bot) {
                     if entry.path().is_dir() {
                         if let Some(name) = entry.file_name().to_str() {
                             if name.parse::<i64>().is_ok() && state.has_pending_tasks(name) {
-                                if let Some(interval_secs) = state.heartbeat_interval_secs(name) {
+                                if let Some(interval_mins) = state.config.heartbeat_interval(name) {
+                                    let interval_secs = interval_mins * 60;
                                     result.push((name.to_string(), interval_secs));
                                 }
                             }

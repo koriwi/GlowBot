@@ -312,4 +312,19 @@ mod tests {
         assert!(config.dm_tools_enabled("123"));
         assert!(!config.dm_tools_enabled("456"));
     }
+
+    #[test]
+    fn test_heartbeat_per_chat_override_and_global_fallback() {
+        let mut config = basic_config();
+        config.heartbeat_interval_minutes = 90;
+        config.chats.insert(
+            "-123".into(),
+            ChatConfig {
+                heartbeat_interval_minutes: Some(30),
+                ..Default::default()
+            },
+        );
+        assert_eq!(config.heartbeat_interval("-123"), Some(30));
+        assert_eq!(config.heartbeat_interval("-999"), Some(90));
+    }
 }
