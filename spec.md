@@ -139,7 +139,7 @@ This prevents random strangers from running arbitrary bash commands while keepin
   - **`read_skill`** — read an existing skill's full content as JSON.
   - **`update_skill`** — update an existing skill (name, description?, body?). Triggers reload.
   - **`add_task`, `list_tasks`, `remove_task`** — manage the chat's task list.
-  - **`send_message`** — send a plain text message to the current chat. Available in all contexts; primarily intended for background tasks to report completion or deliver results (used sparingly, at most once per task). In normal conversation the assistant reply itself is the message.
+  - **`send_message`** — send a plain text message to the current chat. **Only exposed during heartbeat/background task processing**; normal conversation relies on the assistant reply being sent automatically. The agent uses this sparingly (at most once per task) to report completion or deliver results that the user explicitly requested.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
 
 **Important implementation detail:** Bash commands run with the data directory as working directory. All paths must be relative (e.g. `chats/123/456.md`, not `glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` so the LLM knows the exact memory file paths.

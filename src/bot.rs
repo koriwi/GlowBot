@@ -68,8 +68,14 @@ impl BotState {
     }
 
     /// Build the full list of tool definitions including MCP tools.
-    pub fn build_tools(&self) -> Vec<crate::openrouter::ToolDefinition> {
+    /// `include_send_message` controls whether the `send_message` tool is
+    /// included (used by heartbeat tasks); normal conversation filters it out
+    /// because the assistant reply itself is the message.
+    pub fn build_tools(&self, include_send_message: bool) -> Vec<crate::openrouter::ToolDefinition> {
         let mut t = crate::openrouter::all_tool_definitions();
+        if !include_send_message {
+            t.retain(|tool| tool.function.name != "send_message");
+        }
         for mt in &self.mcp_tools {
             t.push(crate::openrouter::ToolDefinition {
                 def_type: "function".into(),
@@ -312,7 +318,7 @@ impl GlowBot {
 
         let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
             let state = self.state.lock().await;
-            state.build_tools()
+            state.build_tools(false)
         } else {
             vec![]
         };
@@ -471,7 +477,7 @@ pub async fn run_heartbeat_task(
 
         let tools = {
             let s = state.lock().await;
-            s.build_tools()
+            s.build_tools(true)
         };
         let mut messages = vec![ChatMessage::system(&full_prompt)];
 
@@ -1533,9 +1539,9 @@ mod tests {
         let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
         let mut state = bot.state.lock().await;
 
-        // No MCP tools yet
-        let tools = state.build_tools();
-        assert_eq!(tools.len(), 12);
+        // No MCP tools yet — normal conversation set (send_message excluded)
+        let tools = state.build_tools(false);
+        assert_eq!(tools.len(), 11);
 
         // Add a fake MCP tool
         state.mcp_tools.push(crate::mcp::McpTool {
@@ -1549,8 +1555,13 @@ mod tests {
             transport: "streamable".into(),
         });
 
-        let tools = state.build_tools();
-        assert_eq!(tools.len(), 13);
+        let tools = state.build_tools(false);
+        assert_eq!(tools.len(), 12);
         assert!(tools.iter().any(|t| t.function.name == "mcp_test-srv_test_tool"));
+
+        // Heartbeat set includes send_message
+        let hb_tools = state.build_tools(true);
+        assert_eq!(hb_tools.len(), 13);
+        assert!(hb_tools.iter().any(|t| t.function.name == "send_message"));
     }
 }
