@@ -190,16 +190,7 @@ mod tests {
 
     #[test]
     fn test_handle_model_command() {
-        let mut config = Config {
-            telegram_token: "t".into(),
-            openrouter_api_key: "k".into(),
-            openrouter_default_model: "default".into(),
-            conversation_window: 20,
-            dm_whitelist: vec![],
-            mcp_servers: vec![],
-            heartbeat_interval_minutes: 90,
-            chats: std::collections::HashMap::new(),
-        };
+        let mut config = crate::config::basic_config();
         let resp = handle_command(&Command::Model("custom/model".into()), &mut config, "-123");
         assert!(resp.contains("custom/model"));
         assert_eq!(config.chat_config("-123").model.unwrap(), "custom/model");
@@ -207,16 +198,7 @@ mod tests {
 
     #[test]
     fn test_handle_mode_command() {
-        let mut config = Config {
-            telegram_token: "t".into(),
-            openrouter_api_key: "k".into(),
-            openrouter_default_model: "d".into(),
-            conversation_window: 20,
-            dm_whitelist: vec![],
-            mcp_servers: vec![],
-            heartbeat_interval_minutes: 90,
-            chats: std::collections::HashMap::new(),
-        };
+        let mut config = crate::config::basic_config();
         let resp = handle_command(&Command::Mode("every_message".into()), &mut config, "-123");
         assert!(resp.contains("EveryMessage"));
         assert_eq!(
@@ -233,33 +215,16 @@ mod tests {
 
     #[test]
     fn test_handle_reload_command() {
-        let mut config = Config {
-            telegram_token: "t".into(),
-            openrouter_api_key: "k".into(),
-            openrouter_default_model: "d".into(),
-            conversation_window: 20,
-            dm_whitelist: vec![],
-            mcp_servers: vec![],
-            heartbeat_interval_minutes: 90,
-            chats: std::collections::HashMap::new(),
-        };
+        let mut config = crate::config::basic_config();
         let resp = handle_command(&Command::Reload, &mut config, "-123");
         assert_eq!(resp, "Skills reloaded successfully.");
     }
 
     #[test]
     fn test_handle_status_command() {
-        let config = Config {
-            telegram_token: "t".into(),
-            openrouter_api_key: "k".into(),
-            openrouter_default_model: "default-model".into(),
-            conversation_window: 20,
-            dm_whitelist: vec![],
-            mcp_servers: vec![],
-            heartbeat_interval_minutes: 90,
-            chats: std::collections::HashMap::new(),
-        };
-        let resp = handle_command(&Command::Status, &mut config.clone(), "-123");
+        let mut config = crate::config::basic_config();
+        config.openrouter_default_model = "default-model".into();
+        let resp = handle_command(&Command::Status, &mut config, "-123");
         assert!(resp.contains("-123"));
         assert!(resp.contains("default-model"));
         assert!(resp.contains("MentionOnly"));
@@ -269,16 +234,7 @@ mod tests {
 
     #[test]
     fn test_handle_mode_shorthand() {
-        let mut config = Config {
-            telegram_token: "t".into(),
-            openrouter_api_key: "k".into(),
-            openrouter_default_model: "d".into(),
-            conversation_window: 20,
-            dm_whitelist: vec![],
-            mcp_servers: vec![],
-            heartbeat_interval_minutes: 90,
-            chats: std::collections::HashMap::new(),
-        };
+        let mut config = crate::config::basic_config();
         let resp = handle_command(&Command::Mode("every".into()), &mut config, "-123");
         assert!(resp.contains("EveryMessage"));
 

@@ -153,23 +153,25 @@ impl Config {
     }
 }
 
+/// Test helper: a basic Config with minimal defaults.
+#[cfg(test)]
+pub(crate) fn basic_config() -> Config {
+    Config {
+        telegram_token: "test-token".into(),
+        openrouter_api_key: "test-key".into(),
+        openrouter_default_model: "test/model".into(),
+        conversation_window: 20,
+        dm_whitelist: vec![],
+        mcp_servers: vec![],
+        heartbeat_interval_minutes: 90,
+        chats: HashMap::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
-
-    fn basic_config() -> Config {
-        Config {
-            telegram_token: "test-token".into(),
-            openrouter_api_key: "test-key".into(),
-            openrouter_default_model: "test/model".into(),
-            conversation_window: 20,
-            dm_whitelist: vec![],
-            mcp_servers: vec![],
-            heartbeat_interval_minutes: 90,
-            chats: HashMap::new(),
-        }
-    }
 
     #[test]
     fn test_config_load_save_roundtrip() {

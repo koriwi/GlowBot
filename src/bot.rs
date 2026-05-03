@@ -799,25 +799,12 @@ mod tests {
     };
     use tempfile::TempDir;
 
-    fn test_config() -> Config {
-        Config {
-            telegram_token: "test-token".into(),
-            openrouter_api_key: "test-key".into(),
-            openrouter_default_model: "test/model".into(),
-            conversation_window: 20,
-            dm_whitelist: vec![],
-            mcp_servers: vec![],
-            heartbeat_interval_minutes: 90,
-            chats: HashMap::new(),
-        }
-    }
-
     async fn setup_test_bot() -> (GlowBot, TempDir, Arc<MockLlmBackend>) {
         let dir = TempDir::new().unwrap();
         let data_dir = dir.path().join("glowbot_data");
         std::fs::create_dir_all(&data_dir).unwrap();
 
-        let config = test_config();
+        let config = crate::config::basic_config();
         let config_path = data_dir.join("config.yaml");
         config.save(&config_path).unwrap();
 
@@ -833,7 +820,7 @@ mod tests {
         let data_dir = dir.path().join("glowbot_data");
         std::fs::create_dir_all(&data_dir).unwrap();
 
-        let mut config = test_config();
+        let mut config = crate::config::basic_config();
         config.chats.insert(
             "-123".into(),
             crate::config::ChatConfig {
@@ -858,7 +845,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let data_dir = dir.path().join("glowbot_data");
         std::fs::create_dir_all(&data_dir).unwrap();
-        test_config().save(&data_dir.join("config.yaml")).unwrap();
+        crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
 
         let mock_llm = Arc::new(MockLlmBackend::new());
         let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
@@ -1201,7 +1188,7 @@ mod tests {
         let data_dir = dir.path().join("glowbot_data");
         std::fs::create_dir_all(&data_dir).unwrap();
 
-        let mut config = test_config();
+        let mut config = crate::config::basic_config();
         config.chats.insert(
             "-123".into(),
             crate::config::ChatConfig {
@@ -1239,7 +1226,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let data_dir = dir.path().join("glowbot_data");
         std::fs::create_dir_all(&data_dir).unwrap();
-        test_config().save(&data_dir.join("config.yaml")).unwrap();
+        crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
 
         // Create a skills dir with a subdirectory that has no skill.md
         let skills_dir = data_dir.join("skills");
@@ -1415,7 +1402,7 @@ mod tests {
         let data_dir = dir.path().join("glowbot_data");
         std::fs::create_dir_all(&data_dir).unwrap();
 
-        let mut config = test_config();
+        let mut config = crate::config::basic_config();
         config.dm_whitelist = vec!["999".into()]; // only user 999
         config.save(&data_dir.join("config.yaml")).unwrap();
 
@@ -1436,7 +1423,7 @@ mod tests {
         let data_dir = dir.path().join("glowbot_data");
         std::fs::create_dir_all(&data_dir).unwrap();
 
-        let mut config = test_config();
+        let mut config = crate::config::basic_config();
         config.dm_whitelist = vec!["456".into()];
         config.save(&data_dir.join("config.yaml")).unwrap();
 
