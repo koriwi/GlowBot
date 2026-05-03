@@ -1631,4 +1631,408 @@ mod tests {
             .unwrap();
         assert_eq!(result, Some("I recall our conversation!".into()));
     }
+
+    // ---------- dispatch_tool edge-case tests ----------
+
+    #[tokio::test]
+    async fn test_dispatch_send_message_empty_text() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "send_message", &serde_json::json!({"text":""}), None).await;
+        assert_eq!(out, "Error: text required");
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_send_message_no_tg_bot() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "send_message", &serde_json::json!({"text":"hi"}), None).await;
+        assert_eq!(out, "Error: send_message not available in this context.");
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_bash_empty_command() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "bash", &serde_json::json!({"command":""}), None).await;
+        assert!(out.contains("exit code"));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_read_memory_missing() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "read_memory", &serde_json::json!({"user_id":"999"}), None).await;
+        assert!(out.contains("No memory file found"));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_update_memory_no_fields() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "update_memory", &serde_json::json!({"user_id":"999"}), None).await;
+        assert_eq!(out, "No fields to update.");
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_add_task_empty() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "add_task", &serde_json::json!({"description":""}), None).await;
+        assert_eq!(out, "Error: description required");
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_list_tasks_non_empty() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir: data_dir.clone(),
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        // Add a task first
+        dispatch_tool(&state, "-123", "add_task", &serde_json::json!({"description":"do the thing"}), None).await;
+        let out = dispatch_tool(&state, "-123", "list_tasks", &serde_json::json!({}), None).await;
+        assert!(out.contains("do the thing"));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_remove_task_empty_and_not_found() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir: data_dir.clone(),
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "remove_task", &serde_json::json!({"id":""}), None).await;
+        assert_eq!(out, "Error: id required");
+        let out = dispatch_tool(&state, "-123", "remove_task", &serde_json::json!({"id":"nope"}), None).await;
+        assert!(out.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_create_skill_validation() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir: data_dir.clone(),
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "create_skill", &serde_json::json!({"name":"","description":"","body":""}), None).await;
+        assert!(out.contains("required"));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_read_skill_not_found() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "read_skill", &serde_json::json!({"name":"ghost"}), None).await;
+        assert!(out.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_update_skill_not_found() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "update_skill", &serde_json::json!({"name":"missing","description":"d","body":"b"}), None).await;
+        assert!(out.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_unknown_tool() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "narnia", &serde_json::json!({}), None).await;
+        assert!(out.contains("Unknown tool"));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_mcp_tool_not_found() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "mcp_no_no", &serde_json::json!({}), None).await;
+        assert!(out.contains("MCP tool not found"));
+    }
+
+    #[tokio::test]
+    async fn test_get_recent_messages_empty_history() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let cfg = crate::config::basic_config();
+        cfg.save(&data_dir.join("config.yaml")).unwrap();
+        let state = Arc::new(Mutex::new(BotState {
+            config: cfg,
+            skills: HashMap::new(),
+            llm: Arc::new(MockLlmBackend::new()),
+            data_dir,
+            conversation_history: HashMap::new(),
+            mcp_tools: vec![],
+        }));
+        let out = dispatch_tool(&state, "-123", "get_recent_messages", &serde_json::json!({"count":5}), None).await;
+        assert!(out.contains("messages"));
+    }
+
+    #[tokio::test]
+    async fn test_process_message_plain_command_ignored() {
+        let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+        // "/notabotcommand" -> starts with / but isn't a recognised command -> ignored
+        let result = bot
+            .process_message("-123", "456", "@testuser", "/notabotcommand", "mybot")
+            .await
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_conversation_history_window_trims() {
+        let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+        // Seed history with exactly 20 items (default conversation_window=20)
+        {
+            let mut state = bot.state.lock().await;
+            let h = state.conversation_history.entry("-123".into()).or_default();
+            for i in 0..20 {
+                h.push(ChatMessage::user(&format!("msg{i}")));
+                h.push(ChatMessage::assistant(&format!("reply{i}")));
+            }
+        }
+        // one more exchange will trigger trimming
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: Some("ok".into()),
+                    tool_calls: None,
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("stop".into()),
+            }],
+        });
+        let _ = bot.process_message("-123", "456", "user", "hello", "mybot").await.unwrap();
+        let h_len = {
+            let state = bot.state.lock().await;
+            state.conversation_history.get("-123").unwrap().len()
+        };
+        assert_eq!(h_len, 20);
+    }
+
+    // ---------- heartbeat tests ----------
+
+    #[tokio::test]
+    async fn test_heartbeat_no_tasks() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+        let mock_llm = Arc::new(MockLlmBackend::new());
+        let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+        let tg_bot = teloxide::Bot::new("ignored");
+        run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat_completes_task() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+        let mock_llm = Arc::new(MockLlmBackend::new());
+        let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone()).await.unwrap();
+
+        // add a pending task
+        let mut list = crate::tasks::TaskList::default();
+        let id = list.add("heartbeat task");
+        list.save(&data_dir.join("chats"), "-123").unwrap();
+
+        // LLM returns a remove_task call to complete it
+        mock_llm.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: None,
+                    tool_calls: Some(vec![ToolCall {
+                        id: "call_rm".into(),
+                        call_type: "function".into(),
+                        function: FunctionCall {
+                            name: "remove_task".into(),
+                            arguments: format!(r##"{{"id":"{}"}}"##, id),
+                        },
+                    }]),
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("tool_calls".into()),
+            }],
+        });
+
+        mock_llm.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: Some("Done!".into()),
+                    tool_calls: None,
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("stop".into()),
+            }],
+        });
+
+        let tg_bot = teloxide::Bot::new("ignored");
+        run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+
+        let list = crate::tasks::TaskList::load(&data_dir.join("chats"), "-123").unwrap_or_default();
+        assert!(list.tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat_llm_error() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+        let mock_llm = Arc::new(MockLlmBackend::new());
+        let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone()).await.unwrap();
+
+        let mut list = crate::tasks::TaskList::default();
+        list.add("error task");
+        list.save(&data_dir.join("chats"), "-123").unwrap();
+
+        // configure mock to error
+        mock_llm.set_error(true);
+
+        let tg_bot = teloxide::Bot::new("ignored");
+        run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+
+        // task should still be there after error
+        let list = crate::tasks::TaskList::load(&data_dir.join("chats"), "-123").unwrap_or_default();
+        assert_eq!(list.tasks.len(), 1);
+    }
+
 }

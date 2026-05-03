@@ -42,17 +42,23 @@ pub mod mock {
     /// A programmable mock LLM backend.
     pub struct MockLlmBackend {
         pub responses: Mutex<Vec<ChatCompletionResponse>>,
+        pub should_error: Mutex<bool>,
     }
 
     impl MockLlmBackend {
         pub fn new() -> Self {
             Self {
                 responses: Mutex::new(Vec::new()),
+                should_error: Mutex::new(false),
             }
         }
 
         pub fn add_response(&self, response: ChatCompletionResponse) {
             self.responses.lock().unwrap().push(response);
+        }
+
+        pub fn set_error(&self, error: bool) {
+            *self.should_error.lock().unwrap() = error;
         }
     }
 
@@ -68,6 +74,9 @@ pub mod mock {
             &self,
             _request: &ChatCompletionRequest,
         ) -> anyhow::Result<ChatCompletionResponse> {
+            if *self.should_error.lock().unwrap() {
+                return Err(anyhow::anyhow!("Mock LLM error"));
+            }
             let mut responses = self.responses.lock().unwrap();
             if responses.is_empty() {
                 // Return a simple text response
