@@ -128,9 +128,23 @@ async fn handle_message(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, msg: Message, bot
         .await;
 
     let bot_inner = bot.lock().await;
-    match bot_inner
-        .process_message(&chat_id, &user_id, username, text, bot_username)
-        .await
+    // Extract components and release the lock so /stop can interrupt ongoing processing
+    let state = bot_inner.state.clone();
+    let git_repo = bot_inner.git_repo.clone();
+    let stop_signals = bot_inner.stop_signals.clone();
+    drop(bot_inner);
+
+    match glowbot::bot::process_message_impl(
+        &state,
+        &git_repo,
+        &stop_signals,
+        &chat_id,
+        &user_id,
+        username,
+        text,
+        bot_username,
+    )
+    .await
     {
         Ok(Some(response)) => {
             // MarkdownV2: escape reserved chars that LLMs output in natural text,

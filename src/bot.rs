@@ -100,6 +100,8 @@ impl BotState {
 pub struct GlowBot {
     pub state: Arc<Mutex<BotState>>,
     pub git_repo: GitRepo,
+    /// Per-chat stop signals. When set, ongoing LLM processing for that chat should abort.
+    pub stop_signals: Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
 }
 
 impl GlowBot {
@@ -140,6 +142,7 @@ impl GlowBot {
         Ok(Self {
             state: Arc::new(Mutex::new(state)),
             git_repo,
+            stop_signals: Arc::new(std::sync::Mutex::new(HashMap::new())),
         })
     }
 
@@ -172,253 +175,270 @@ impl GlowBot {
         text: &str,
         bot_username: &str,
     ) -> anyhow::Result<Option<String>> {
-        let is_command = text.trim().starts_with('/');
-        let is_mention = text.contains(&format!("@{}", bot_username));
-
-        // Check if it's a bot command
-        if let Some(command) = parse_command(text) {
-            return self.handle_bot_command(&command, chat_id, user_id).await;
-        }
-
-        // Check interaction permissions
-        let chat_config = {
-            let state = self.state.lock().await;
-            state.config.chat_config(chat_id)
-        };
-
-        if !can_interact(&chat_config, user_id) {
-            return Ok(None); // User not allowed to interact
-        }
-
-        // In mention_only mode, only respond to mentions (groups only; DMs always respond)
-        let is_dm = !chat_id.starts_with('-');
-        if !is_dm
-            && matches!(
-                chat_config.interaction_mode,
-                crate::config::InteractionMode::MentionOnly
-            )
-            && !is_command
-            && !is_mention
-        {
-            return Ok(None);
-        }
-
-        // If it's a plain command (not a bot command), ignore
-        if is_command && !is_mention {
-            return Ok(None);
-        }
-
-        // DM whitelist check: if non-empty and user not listed, block entirely
-        let (tools_enabled, dm_blocked) = {
-            let state = self.state.lock().await;
-            let config = &state.config;
-            if is_dm {
-                if config.dm_whitelist.is_empty() {
-                    // Empty whitelist = respond but no tools
-                    (false, false)
-                } else if config.dm_whitelist.contains(&user_id.to_string()) {
-                    // User in whitelist = full access
-                    (true, false)
-                } else {
-                    // Non-empty whitelist, user not in it = blocked
-                    (false, true)
-                }
-            } else {
-                // Groups always have tools enabled
-                (true, false)
-            }
-        };
-
-        if dm_blocked {
-            return Ok(Some(
-                "Sorry, you're not authorized to interact with me in DMs.".into(),
-            ));
-        }
-
-        // Process with LLM
-        self.process_with_llm(chat_id, user_id, username, text, tools_enabled)
-            .await
+        process_message_impl(&self.state, &self.git_repo, &self.stop_signals, chat_id, user_id, username, text, bot_username).await
     }
 
-    /// Handle a bot command (/model, /mode, /reload, /status).
-    async fn handle_bot_command(
-        &self,
-        command: &crate::commands::Command,
-        chat_id: &str,
-        user_id: &str,
-    ) -> anyhow::Result<Option<String>> {
-        // Check command permissions.
-        // In DMs, also allow users in the global dm_whitelist to run commands.
-        let allowed = {
-            let state = self.state.lock().await;
-            let chat_config = state.config.chat_config(chat_id);
-            let is_dm = !chat_id.starts_with('-');
-            if is_dm && state.config.dm_whitelist.contains(&user_id.to_string()) {
-                true
-            } else {
-                can_run_command(&chat_config, user_id)
-            }
-        };
-
-        if !allowed {
-            return Ok(Some("You are not authorized to run bot commands.".into()));
-        }
-
-        // /tasks is handled here because it needs access to the chats directory
-        if matches!(command, crate::commands::Command::Tasks) {
-            let state = self.state.lock().await;
-            let list = crate::tasks::TaskList::load(&state.chats_dir(), chat_id)
-                .unwrap_or_default();
-            let response = if list.tasks.is_empty() {
-                "No pending tasks for this chat.".to_string()
-            } else {
-                let mut lines = vec![format!("*{} pending task(s):*", list.tasks.len())];
-                for (i, t) in list.tasks.iter().enumerate() {
-                    lines.push(format!("{}. `{}` — {}", i + 1, t.id, t.description));
-                }
-                lines.join("\n")
-            };
-            return Ok(Some(response));
-        }
-
-        let response = {
-            let mut state = self.state.lock().await;
-            handle_command(command, &mut state.config, chat_id)
-        };
-
-        Ok(Some(response))
-    }
-
-    /// Process a message through the LLM pipeline.
-    async fn process_with_llm(
-        &self,
-        chat_id: &str,
-        user_id: &str,
-        username: &str,
-        text: &str,
-        tools_enabled: bool,
-    ) -> anyhow::Result<Option<String>> {
-        let (system_prompt, model) = {
-            let state = self.state.lock().await;
-            let system_prompt =
-                state.assemble_system_prompt(chat_id, tools_enabled, user_id);
-            let model = state.effective_model(chat_id);
-            (system_prompt, model)
-        };
-
-        // Ensure user has a memory file
-        self.ensure_memory_exists(chat_id, user_id, username)
-            .await?;
-
-        // Build messages: system prompt + current message only (history on demand)
-        let current_msg = ChatMessage::user_with_name(text, username);
-        let mut messages = vec![
-            ChatMessage::system(&system_prompt),
-            current_msg.clone(),
-        ];
-
-        let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
-            let state = self.state.lock().await;
-            state.build_tools(false)
-        } else {
-            vec![]
-        };
-        let max_tool_rounds = 10;
-
-        // Run the LLM tool-use loop, capturing the final response.
-        let result = {
-            let mut result = None;
-            for _round in 0..max_tool_rounds {
-                let request = ChatCompletionRequest {
-                    model: model.clone(),
-                    messages: messages.clone(),
-                    tools: Some(tools.clone()),
-                    tool_choice: None,
-                };
-
-                let response = {
-                    let state = self.state.lock().await;
-                    state.llm.chat_completion(&request).await?
-                };
-
-                let choice = match response.choices.into_iter().next() {
-                    Some(c) => c,
-                    None => break,
-                };
-
-                // Check for tool calls
-                if let Some(tool_calls) = &choice.message.tool_calls {
-                    if tool_calls.is_empty() {
-                        result = Some(choice.message.content.clone().unwrap_or_default());
-                        break;
-                    }
-
-                    // Add the assistant message with tool calls
-                    messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
-
-                    // Dispatch all tool calls (with logging)
-                    let data_dir = { self.state.lock().await.data_dir.clone() };
-                    let results = dispatch_tool_calls(
-                        &self.state,
-                        chat_id,
-                        tool_calls,
-                        Some(&data_dir),
-                        None,
-                    )
-                    .await;
-                    messages.extend(results);
-
-                    // Auto-commit after tool execution (tools may have modified files)
-                    self.git_repo
-                        .auto_commit("Auto-commit after tool execution")?;
-                    continue;
-                }
-
-                // No tool calls — final response
-                result = Some(choice.message.content.clone().unwrap_or_default());
-                break;
-            }
-
-            // If we exhausted rounds, give a loop error
-            result.unwrap_or_else(|| {
-                "I ran into a loop processing your request. Please try again.".into()
-            })
-        };
-
-        // Store in conversation history
-        {
-            let mut state = self.state.lock().await;
-            let window = state.config.conversation_window;
-            let history = state
-                .conversation_history
-                .entry(chat_id.to_string())
-                .or_default();
-            history.push(current_msg);
-            history.push(ChatMessage::assistant(&result));
-            while history.len() > window {
-                history.remove(0);
-            }
-        }
-
-        Ok(Some(result))
-    }
-
-    /// Ensure a memory file exists for the given user in the given chat.
-    async fn ensure_memory_exists(
+    /// Ensure a memory file exists (delegates to free function, used by tests).
+    pub async fn ensure_memory_exists(
         &self,
         chat_id: &str,
         user_id: &str,
         username: &str,
     ) -> anyhow::Result<()> {
-        let state = self.state.lock().await;
-        let existing = crate::memory::load_memory(&state.chats_dir(), chat_id, user_id);
-        if existing.is_none() {
-            let mem = Memory::new(user_id, username);
-            save_memory(&state.chats_dir(), chat_id, user_id, &mem)?;
-        }
-        Ok(())
+        ensure_memory_exists_impl(&self.state, chat_id, user_id, username).await
+    }
+}
+
+/// Process an incoming message (free function, can be called without the GlowBot lock).
+pub async fn process_message_impl(
+    state: &Arc<Mutex<BotState>>,
+    git_repo: &GitRepo,
+    stop_signals: &Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
+    chat_id: &str,
+    user_id: &str,
+    username: &str,
+    text: &str,
+    bot_username: &str,
+) -> anyhow::Result<Option<String>> {
+    let is_command = text.trim().starts_with('/');
+    let is_mention = text.contains(&format!("@{}", bot_username));
+
+    // Check if it's a bot command
+    if let Some(command) = parse_command(text) {
+        return handle_bot_command_impl(state, stop_signals, chat_id, user_id, &command).await;
     }
 
+    // Check interaction permissions
+    let chat_config = {
+        let s = state.lock().await;
+        s.config.chat_config(chat_id)
+    };
+
+    if !can_interact(&chat_config, user_id) {
+        return Ok(None);
+    }
+
+    let is_dm = !chat_id.starts_with('-');
+    if !is_dm
+        && matches!(chat_config.interaction_mode, crate::config::InteractionMode::MentionOnly)
+        && !is_command
+        && !is_mention
+    {
+        return Ok(None);
+    }
+
+    if is_command && !is_mention {
+        return Ok(None);
+    }
+
+    let (tools_enabled, dm_blocked) = {
+        let s = state.lock().await;
+        let config = &s.config;
+        if is_dm {
+            if config.dm_whitelist.is_empty() {
+                (false, false)
+            } else if config.dm_whitelist.contains(&user_id.to_string()) {
+                (true, false)
+            } else {
+                (false, true)
+            }
+        } else {
+            (true, false)
+        }
+    };
+
+    if dm_blocked {
+        return Ok(Some("Sorry, you're not authorized to interact with me in DMs.".into()));
+    }
+
+    process_with_llm_impl(state, git_repo, stop_signals, chat_id, user_id, username, text, tools_enabled).await
+}
+
+/// Handle a bot command (free function).
+async fn handle_bot_command_impl(
+    state: &Arc<Mutex<BotState>>,
+    stop_signals: &Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
+    chat_id: &str,
+    user_id: &str,
+    command: &crate::commands::Command,
+) -> anyhow::Result<Option<String>> {
+    // /stop sets the stop signal and returns immediately
+    if matches!(command, crate::commands::Command::Stop) {
+        if let Ok(signals) = stop_signals.lock() {
+            if let Some(signal) = signals.get(chat_id) {
+                signal.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        return Ok(Some("Stop signal sent. Current operations will be cancelled.".into()));
+    }
+
+    let allowed = {
+        let s = state.lock().await;
+        let chat_config = s.config.chat_config(chat_id);
+        let is_dm = !chat_id.starts_with('-');
+        if is_dm && s.config.dm_whitelist.contains(&user_id.to_string()) {
+            true
+        } else {
+            can_run_command(&chat_config, user_id)
+        }
+    };
+
+    if !allowed {
+        return Ok(Some("You are not authorized to run bot commands.".into()));
+    }
+
+    if matches!(command, crate::commands::Command::Tasks) {
+        let s = state.lock().await;
+        let list = crate::tasks::TaskList::load(&s.chats_dir(), chat_id).unwrap_or_default();
+        let response = if list.tasks.is_empty() {
+            "No pending tasks for this chat.".to_string()
+        } else {
+            let mut lines = vec![format!("*{} pending task(s):*", list.tasks.len())];
+            for (i, t) in list.tasks.iter().enumerate() {
+                lines.push(format!("{}. `{}` — {}", i + 1, t.id, t.description));
+            }
+            lines.join("\n")
+        };
+        return Ok(Some(response));
+    }
+
+    let response = {
+        let mut s = state.lock().await;
+        handle_command(command, &mut s.config, chat_id)
+    };
+
+    Ok(Some(response))
+}
+
+/// Process a message through the LLM pipeline (free function).
+async fn process_with_llm_impl(
+    state: &Arc<Mutex<BotState>>,
+    git_repo: &GitRepo,
+    stop_signals: &Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
+    chat_id: &str,
+    user_id: &str,
+    username: &str,
+    text: &str,
+    tools_enabled: bool,
+) -> anyhow::Result<Option<String>> {
+    // Set up stop signal for this chat (clear any previous signal)
+    {
+        let mut signals = stop_signals.lock().unwrap();
+        signals.entry(chat_id.to_string())
+            .or_insert_with(|| Arc::new(std::sync::atomic::AtomicBool::new(false)))
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    let check_stopped = || -> bool {
+        if let Ok(signals) = stop_signals.lock() {
+            signals.get(chat_id).map(|s| s.load(std::sync::atomic::Ordering::SeqCst)).unwrap_or(false)
+        } else {
+            false
+        }
+    };
+
+    let (system_prompt, model) = {
+        let s = state.lock().await;
+        (s.assemble_system_prompt(chat_id, tools_enabled, user_id), s.effective_model(chat_id))
+    };
+
+    // Ensure user has a memory file
+    ensure_memory_exists_impl(state, chat_id, user_id, username).await?;
+
+    let current_msg = ChatMessage::user_with_name(text, username);
+    let mut messages = vec![ChatMessage::system(&system_prompt), current_msg.clone()];
+
+    let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
+        let s = state.lock().await;
+        s.build_tools(false)
+    } else {
+        vec![]
+    };
+    let max_tool_rounds = 10;
+
+    let result = {
+        let mut result = None;
+        for _round in 0..max_tool_rounds {
+            if check_stopped() {
+                return Ok(Some("⏹ Stopped.".into()));
+            }
+
+            let request = ChatCompletionRequest {
+                model: model.clone(),
+                messages: messages.clone(),
+                tools: Some(tools.clone()),
+                tool_choice: None,
+            };
+
+            let response = {
+                let s = state.lock().await;
+                s.llm.chat_completion(&request).await?
+            };
+
+            if check_stopped() {
+                return Ok(Some("⏹ Stopped.".into()));
+            }
+
+            let choice = match response.choices.into_iter().next() {
+                Some(c) => c,
+                None => break,
+            };
+
+            if let Some(tool_calls) = &choice.message.tool_calls {
+                if tool_calls.is_empty() {
+                    result = Some(choice.message.content.clone().unwrap_or_default());
+                    break;
+                }
+
+                messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
+
+                let data_dir = { state.lock().await.data_dir.clone() };
+                let results = dispatch_tool_calls(state, chat_id, tool_calls, Some(&data_dir), None).await;
+                messages.extend(results);
+
+                git_repo.auto_commit("Auto-commit after tool execution")?;
+
+                if check_stopped() {
+                    return Ok(Some("⏹ Stopped.".into()));
+                }
+                continue;
+            }
+
+            result = Some(choice.message.content.clone().unwrap_or_default());
+            break;
+        }
+
+        result.unwrap_or_else(|| "I ran into a loop processing your request. Please try again.".into())
+    };
+
+    // Store in conversation history
+    {
+        let mut s = state.lock().await;
+        let window = s.config.conversation_window;
+        let history = s.conversation_history.entry(chat_id.to_string()).or_default();
+        history.push(current_msg);
+        history.push(ChatMessage::assistant(&result));
+        while history.len() > window {
+            history.remove(0);
+        }
+    }
+
+    Ok(Some(result))
+}
+
+async fn ensure_memory_exists_impl(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: &str,
+    user_id: &str,
+    username: &str,
+) -> anyhow::Result<()> {
+    let s = state.lock().await;
+    let existing = crate::memory::load_memory(&s.chats_dir(), chat_id, user_id);
+    if existing.is_none() {
+        let mem = Memory::new(user_id, username);
+        save_memory(&s.chats_dir(), chat_id, user_id, &mem)?;
+    }
+    Ok(())
 }
 
 /// Run a heartbeat background task for a chat. Uses the state directly
@@ -1047,7 +1067,7 @@ mod tests {
             .process_message("-123", "456", "@testuser", "/stop", "mybot")
             .await
             .unwrap();
-        assert!(result.unwrap().contains("Stop command received"));
+        assert!(result.unwrap().contains("Stop signal sent"));
     }
 
     #[tokio::test]
