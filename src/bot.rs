@@ -100,12 +100,18 @@ impl BotState {
         list.has_tasks()
     }
 
-    /// Get the formatted context usage string for a chat, e.g. "37k/252k (15%)"
+    /// Get the formatted context usage string for a chat, e.g. "37k/189k (15%)"
+    /// Reports against the *effective* limit (with safety margin applied).
     pub fn context_usage(&self, chat_id: &str) -> String {
         let model = self.effective_model(chat_id);
-        let limit = self.model_context_lengths.get(&model).copied().unwrap_or(0);
+        let raw_limit = self.model_context_lengths.get(&model).copied().unwrap_or(0);
+        let effective_limit = if raw_limit == 0 {
+            0
+        } else {
+            (raw_limit as f64 * crate::openrouter::TOKEN_ESTIMATE_MARGIN) as u64
+        };
         let usage = self.last_usage.get(chat_id).cloned().unwrap_or_default();
-        crate::openrouter::format_context_usage(usage.prompt_tokens, limit)
+        crate::openrouter::format_context_usage(usage.prompt_tokens, effective_limit)
     }
 }
 
@@ -396,19 +402,18 @@ async fn process_with_llm_impl(
     let current_msg = ChatMessage::user_with_name(text, username);
     let mut turn_messages = vec![current_msg.clone()];
 
-    let build_request = |turn: &Vec<ChatMessage>| -> Vec<ChatMessage> {
-        let mut req = vec![ChatMessage::system(&system_prompt)];
-        req.extend(history.iter().cloned());
-        req.extend(turn.iter().cloned());
-        req
-    };
-
     let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
         let s = state.lock().await;
         s.build_tools(false)
     } else {
         vec![]
     };
+
+    let context_limit = {
+        let s = state.lock().await;
+        s.model_context_lengths.get(&model).copied().unwrap_or(0)
+    };
+
     let max_tool_rounds = 10;
 
     let result = {
@@ -418,9 +423,17 @@ async fn process_with_llm_impl(
                 return Ok(Some("⏹ Stopped.".into()));
             }
 
+            let (messages, _trimmed) = crate::openrouter::build_trimmed_request(
+                context_limit,
+                &[ChatMessage::system(&system_prompt)],
+                &history,
+                &turn_messages,
+                &tools,
+            );
+
             let request = ChatCompletionRequest {
                 model: model.clone(),
-                messages: build_request(&turn_messages),
+                messages,
                 tools: Some(tools.clone()),
                 tool_choice: None,
             };
@@ -559,15 +572,41 @@ pub async fn run_heartbeat_task(
             let s = state.lock().await;
             s.build_tools(true)
         };
+
+        let context_limit = {
+            let s = state.lock().await;
+            s.model_context_lengths.get(&model).copied().unwrap_or(0)
+        };
+
         let mut messages = vec![
             ChatMessage::system(&system_prompt),
             ChatMessage::user(&task_header),
         ];
 
         for _ in 0..10 {
+            // Trim heartbeat messages if accumulated tool rounds are getting too long
+            let request_messages = if context_limit > 0 {
+                let tools_tokens = crate::openrouter::estimate_tools_tokens(&tools);
+                let head_tokens = crate::openrouter::estimate_messages_tokens(&messages[..2]);
+                let tail_tokens = crate::openrouter::estimate_messages_tokens(&messages[2..]);
+                let fixed = head_tokens
+                    .saturating_add(tail_tokens)
+                    .saturating_add(tools_tokens)
+                    .saturating_add(crate::openrouter::RESPONSE_RESERVE_TOKENS);
+                let effective_limit = (context_limit as f64 * crate::openrouter::TOKEN_ESTIMATE_MARGIN) as u64;
+                if fixed > effective_limit && messages.len() > 4 {
+                    log::info!("Heartbeat chat {}: trimming {} old tool rounds to fit context", cid, messages.len() - 4);
+                    crate::openrouter::trim_message_list(&messages, 2, 2)
+                } else {
+                    messages.clone()
+                }
+            } else {
+                messages.clone()
+            };
+
             let request = ChatCompletionRequest {
                 model: model.clone(),
-                messages: messages.clone(),
+                messages: request_messages,
                 tools: Some(tools.clone()),
                 tool_choice: None,
             };
@@ -2177,14 +2216,15 @@ mod tests {
         assert_eq!(state.context_usage("-123"), "unknown");
         // Cache context length for the default model
         state.model_context_lengths.insert("test/model".into(), 200000);
-        assert_eq!(state.context_usage("-123"), "0k/200k (0%)");
+        // Effective limit = 200k * 0.75 = 150k
+        assert_eq!(state.context_usage("-123"), "0k/150k (0%)");
         // Set usage
         state.last_usage.insert("-123".into(), crate::openrouter::Usage {
             prompt_tokens: 37000,
             completion_tokens: 500,
             total_tokens: 37500,
         });
-        assert_eq!(state.context_usage("-123"), "37k/200k (19%)");
+        assert_eq!(state.context_usage("-123"), "37k/150k (25%)");
     }
 
 }
