@@ -323,7 +323,7 @@ Every tool invocation is logged for debugging and audit:
 
 ### 4.11 Commands & Permissions
 
-Commands are Telegram bot commands (`/command`) used for control and settings.
+Commands are Telegram bot commands (`/command`) used for control and settings. **On startup, the bot registers these with Telegram via `setMyCommands`** so they appear in the in-chat bot menu and autocomplete.
 
 | Command | Purpose | Requires |
 |---------|---------|----------|
@@ -436,3 +436,6 @@ Everything in §5.
 - **Do not hand-roll MarkdownV2 escaping.** Telegram's V2 has many reserved characters (`_ * [ ] ( ) ~ \` > # + - = | { } . !`) and context-dependent escaping rules (e.g. `-` at line start vs mid-word). LLMs will constantly hit edge cases.
 - **Use the `telegram-markdown-v2` crate** (`convert()`). It parses the LLM's Markdown output and produces properly escaped MarkdownV2, handling headings→bold, lists→Unicode bullets, code blocks, links, and inline formatting correctly.
 - Fall back to plain text if conversion fails (rare with a good crate).
+
+### Bot command menu registration
+- **Always call `setMyCommands`** after confirming the bot identity on startup. Without this, users won't see the command list when they type `/` or open the bot menu. The command descriptions are registered globally for all chats.

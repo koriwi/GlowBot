@@ -6,6 +6,7 @@ use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 use teloxide::prelude::*;
+use teloxide::types::BotCommand;
 use tokio::sync::Mutex;
 
 #[tokio::main]
@@ -34,6 +35,19 @@ async fn run_bot() -> anyhow::Result<()> {
     let tg_bot = Bot::new(telegram_token);
     let bot_username = tg_bot.get_me().await?.username.clone().unwrap_or_default();
     log::info!("Bot username: @{}", bot_username);
+
+    // Register slash commands with Telegram so they show in the menu and autocomplete
+    let commands = vec![
+      BotCommand::new("model", "Change the LLM model for this chat"),
+      BotCommand::new("mode", "Change interaction mode (every_message or mention_only)"),
+      BotCommand::new("reload", "Reload skills from disk"),
+      BotCommand::new("status", "Show current config for this chat"),
+    ];
+    if let Err(e) = tg_bot.set_my_commands(commands).await {
+      log::warn!("Failed to set bot commands: {}", e);
+    } else {
+      log::info!("Registered bot commands with Telegram");
+    }
 
     // Spawn heartbeat task runner in the background
     let heartbeat_bot = Arc::clone(&bot);
