@@ -47,6 +47,8 @@ pub async fn run_heartbeat_task(
             - If the task cannot be completed yet (e.g. download still in progress, waiting for external event),\n\
               just leave it — do NOT remove it, do NOT add a new identical one. It will automatically run again next cycle.\n\
             - You may send at most ONE message to the chat to report completion or deliver results, using the send_message tool. Do NOT spam progress updates.\n\
+            - If the task has already been completed (e.g. file already downloaded, action already performed, nothing left to do),\n\
+              quietly call remove_task(\"{task_id}\") and exit — do NOT send any message.\n\
             Current date: {date}",
             task_desc = task_desc,
             task_id = task_id,
