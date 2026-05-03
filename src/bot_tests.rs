@@ -1,0 +1,1253 @@
+use super::*;
+use super::bot_dispatch::{dispatch_tool, log_tool_call_to};
+use super::bot_heartbeat::run_heartbeat_task;
+use crate::llm::mock::MockLlmBackend;
+use crate::openrouter::{
+    AssistantMessage, ChatCompletionResponse, Choice, FunctionCall, ToolCall,
+};
+use tempfile::TempDir;
+
+async fn setup_test_bot() -> (GlowBot, TempDir, Arc<MockLlmBackend>) {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let config = crate::config::basic_config();
+    let config_path = data_dir.join("config.yaml");
+    config.save(&config_path).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone())
+        .await
+        .unwrap();
+    (bot, dir, mock_llm)
+}
+
+async fn setup_test_bot_with_whitelisted_chat() -> (GlowBot, TempDir, Arc<MockLlmBackend>) {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let mut config = crate::config::basic_config();
+    config.chats.insert(
+        "-123".into(),
+        crate::config::ChatConfig {
+            interaction_mode: crate::config::InteractionMode::EveryMessage,
+            command_whitelist: vec!["456".into()],
+            interaction_whitelist: vec!["456".into()],
+            ..Default::default()
+        },
+    );
+    let config_path = data_dir.join("config.yaml");
+    config.save(&config_path).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone())
+        .await
+        .unwrap();
+    (bot, dir, mock_llm)
+}
+
+#[tokio::test]
+async fn test_bot_creation() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+    let state = bot.state.lock().await;
+    assert_eq!(state.config.telegram_token, "test-token");
+}
+
+#[tokio::test]
+async fn test_bot_creation_nonexistent_config() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let result = GlowBot::new_with_llm(&data_dir, mock_llm).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_ensure_memory_exists() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    bot.ensure_memory_exists("-123", "456", "@testuser")
+        .await
+        .unwrap();
+
+    let state = bot.state.lock().await;
+    let mem = crate::memory::load_memory(&state.chats_dir(), "-123", "456");
+    assert!(mem.is_some());
+    assert_eq!(mem.unwrap().frontmatter.username, "@testuser");
+}
+
+#[tokio::test]
+async fn test_reload_skills() {
+    let (bot, dir, _mock) = setup_test_bot().await;
+
+    use crate::skills::{write_skill, SkillFrontmatter};
+    let skills_dir = dir.path().join("glowbot_data").join("skills");
+    let fm = SkillFrontmatter {
+        name: "test-skill".into(),
+        description: "A test".into(),
+    };
+    write_skill(&skills_dir, "test-skill", &fm, "body text").unwrap();
+
+    bot.reload_skills().await.unwrap();
+    let state = bot.state.lock().await;
+    assert!(state.skills.contains_key("test-skill"));
+}
+
+#[tokio::test]
+async fn test_process_message_mention_only_ignores() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // Default is MentionOnly, so non-mention messages should be ignored
+    let result = bot
+        .process_message("-123", "456", "@testuser", "Hello world", "mybot")
+        .await
+        .unwrap();
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn test_process_message_mention_responds() {
+    let (bot, _dir, mock) = setup_test_bot().await;
+
+    // Set up mock to return a simple response
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Hello, I'm GlowBot!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let result = bot
+        .process_message("-123", "456", "@testuser", "@mybot Hello!", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("Hello, I'm GlowBot!".into()));
+}
+
+#[tokio::test]
+async fn test_process_message_every_message_mode() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Got your message!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let result = bot
+        .process_message("-123", "456", "@testuser", "Hello", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("Got your message!".into()));
+}
+
+#[tokio::test]
+async fn test_process_message_interaction_whitelist_blocks() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // User "789" is not in interaction_whitelist
+    let result = bot
+        .process_message("-123", "789", "@other", "Hello", "mybot")
+        .await
+        .unwrap();
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn test_process_message_command_unauthorized() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // Default: command_whitelist is empty, so nobody can run commands
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/status", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(
+        result,
+        Some("You are not authorized to run bot commands.".into())
+    );
+}
+
+#[tokio::test]
+async fn test_process_message_command_authorized() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // User "456" is in the command whitelist
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/status", "mybot")
+        .await
+        .unwrap();
+    assert!(result.unwrap().contains("Chat ID:"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_stop() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/stop", "mybot")
+        .await
+        .unwrap();
+    assert!(result.unwrap().contains("Stop signal sent"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_tasks_empty() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/tasks", "mybot")
+        .await
+        .unwrap();
+    assert!(result.unwrap().contains("No pending tasks"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_tasks_with_tasks() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // Add a task first
+    {
+        let state = bot.state.lock().await;
+        let mut list = crate::tasks::TaskList::load(&state.chats_dir(), "-123").unwrap_or_default();
+        list.add("Test task one");
+        list.add("Test task two");
+        list.save(&state.chats_dir(), "-123").unwrap();
+    }
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/tasks", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("2 pending task"));
+    assert!(resp.contains("Test task one"));
+    assert!(resp.contains("Test task two"));
+}
+
+#[tokio::test]
+async fn test_process_message_with_tool_call() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+    // First response: tool call
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "call_1".into(),
+                    call_type: "function".into(),
+                    function: FunctionCall {
+                        name: "bash".into(),
+                        arguments: r#"{"command":"echo hello from bash"}"#.into(),
+                    },
+                }]),
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("tool_calls".into()),
+        }],
+    ..Default::default()});
+
+    // Second response: final text after tool result
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("The bash command succeeded!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let result = bot
+        .process_message("-123", "456", "@testuser", "Run echo", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("The bash command succeeded!".into()));
+}
+
+#[tokio::test]
+async fn test_process_message_empty_choices() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+    mock.add_response(ChatCompletionResponse { choices: vec![], ..Default::default() });
+
+    let result = bot
+        .process_message("-123", "456", "@testuser", "Hello", "mybot")
+        .await
+        .unwrap();
+    // Empty choices falls through to the loop error message
+    assert!(result.unwrap().contains("loop"));
+}
+
+#[tokio::test]
+async fn test_process_message_empty_tool_calls() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Final answer".into()),
+                tool_calls: Some(vec![]),
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let result = bot
+        .process_message("-123", "456", "@testuser", "Hello", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("Final answer".into()));
+}
+
+#[tokio::test]
+async fn test_process_message_loop_limit() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+    // Continuously return tool calls to trigger the loop limit
+    for _ in 0..64 {
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: None,
+                    tool_calls: Some(vec![ToolCall {
+                        id: "call_x".into(),
+                        call_type: "function".into(),
+                        function: FunctionCall {
+                            name: "bash".into(),
+                            arguments: r#"{"command":"echo loop"}"#.into(),
+                        },
+                    }]),
+                    role: Some("assistant".into()),
+                },
+                finish_reason: Some("tool_calls".into()),
+            }],
+        ..Default::default()});
+    }
+
+    let result = bot
+        .process_message("-123", "456", "@testuser", "Loop test", "mybot")
+        .await
+        .unwrap();
+    assert!(result.unwrap().contains("loop"));
+}
+
+#[tokio::test]
+async fn test_save_config() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // Saving should work without errors
+    bot.save_config().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_process_message_bash_tool_error() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "call_err".into(),
+                    call_type: "function".into(),
+                    function: FunctionCall {
+                        name: "bash".into(),
+                        arguments: r#"{"command":"nonexistent_command_xyz"}"#.into(),
+                    },
+                }]),
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("tool_calls".into()),
+        }],
+    ..Default::default()});
+
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Command failed, but I handled it.".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let result = bot
+        .process_message("-123", "456", "@testuser", "Run bad command", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("Command failed, but I handled it.".into()));
+}
+
+#[tokio::test]
+async fn test_process_message_with_chat_system_prompt() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let mut config = crate::config::basic_config();
+    config.chats.insert(
+        "-123".into(),
+        crate::config::ChatConfig {
+            interaction_mode: crate::config::InteractionMode::EveryMessage,
+            interaction_whitelist: vec![],
+            command_whitelist: vec![],
+            system_prompt: "Custom system prompt".into(),
+            ..Default::default()
+        },
+    );
+    config.save(&data_dir.join("config.yaml")).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    mock_llm.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Response with custom prompt".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+    let result = bot
+        .process_message("-123", "456", "@testuser", "Hello", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("Response with custom prompt".into()));
+}
+
+#[tokio::test]
+async fn test_new_with_llm_with_skills_dir_with_empty_subdirs() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+
+    // Create a skills dir with a subdirectory that has no skill.md
+    let skills_dir = data_dir.join("skills");
+    std::fs::create_dir_all(skills_dir.join("empty_skill")).unwrap();
+    // Also create a file directly (not a directory)
+    std::fs::write(skills_dir.join("some_file.txt"), "not a skill").unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+    let state = bot.state.lock().await;
+    assert!(state.skills.is_empty());
+}
+
+#[tokio::test]
+async fn test_dm_always_responds_even_in_mention_only_mode() {
+    // DMs have positive chat IDs (not starting with '-')
+    // They should always respond, even with mention_only default
+    let (bot, _dir, mock) = setup_test_bot().await;
+
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("DM response!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    // Positive chat ID = DM, default mention_only mode
+    let result = bot
+        .process_message("123456789", "456", "@testuser", "Hello in DM", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("DM response!".into()));
+}
+
+#[tokio::test]
+async fn test_process_message_with_read_memory_tool() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+    // First ensure memory exists
+    bot.ensure_memory_exists("-123", "456", "@testuser")
+        .await
+        .unwrap();
+
+    // LLM calls read_memory
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "call_read".into(),
+                    call_type: "function".into(),
+                    function: FunctionCall {
+                        name: "read_memory".into(),
+                        arguments: r#"{"user_id":"456"}"#.into(),
+                    },
+                }]),
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("tool_calls".into()),
+        }],
+    ..Default::default()});
+
+    // Then LLM responds after reading memory
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("I remember you, @testuser!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let result = bot
+        .process_message("-123", "456", "@testuser", "Who am I?", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("I remember you, @testuser!".into()));
+}
+
+#[tokio::test]
+async fn test_process_message_with_update_memory_tool() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+    // LLM calls update_memory
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "call_update".into(),
+                    call_type: "function".into(),
+                    function: FunctionCall {
+                        name: "update_memory".into(),
+                        arguments: r#"{"user_id":"456","call_name":"Learned","log_entry":"user said hello"}"#.into(),
+                    },
+                }]),
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("tool_calls".into()),
+        }],
+    ..Default::default()});
+
+    // LLM confirms
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("I've noted that!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let result = bot
+        .process_message("-123", "456", "@testuser", "My name is Learned", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("I've noted that!".into()));
+
+    // Verify memory was actually updated
+    let state = bot.state.lock().await;
+    let mem = crate::memory::load_memory(&state.chats_dir(), "-123", "456").unwrap();
+    assert_eq!(mem.frontmatter.call_name, "Learned");
+    assert!(mem.body.contains("user said hello"));
+}
+
+#[tokio::test]
+async fn test_log_tool_call() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    log_tool_call_to(&data_dir, "bash", r#"{"command":"echo hi"}"#, "stdout: hi\n");
+
+    let log_path = data_dir.join("tool_calls.log");
+    assert!(log_path.exists());
+    let content = std::fs::read_to_string(&log_path).unwrap();
+    assert!(content.contains("bash"));
+    assert!(content.contains("echo hi"));
+}
+
+#[tokio::test]
+async fn test_dm_tools_disabled_by_default() {
+    let (bot, _dir, mock) = setup_test_bot().await;
+
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Text-only response".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    // DM (positive chat ID), default empty whitelist = tools disabled
+    let result = bot
+        .process_message("123", "456", "@test", "Hello", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("Text-only response".into()));
+}
+
+#[tokio::test]
+async fn test_dm_blocked_when_whitelist_nonempty_and_user_not_in_it() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let mut config = crate::config::basic_config();
+    config.dm_whitelist = vec!["999".into()]; // only user 999
+    config.save(&data_dir.join("config.yaml")).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+
+    // User 456 is NOT in whitelist = blocked
+    let result = bot
+        .process_message("123", "456", "@test", "Hello", "mybot")
+        .await
+        .unwrap();
+    assert!(result.unwrap().contains("not authorized"));
+}
+
+#[tokio::test]
+async fn test_dm_allowed_when_whitelisted() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let mut config = crate::config::basic_config();
+    config.dm_whitelist = vec!["456".into()];
+    config.save(&data_dir.join("config.yaml")).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    mock_llm.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Full access!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+    let result = bot
+        .process_message("123", "456", "@test", "Hello", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("Full access!".into()));
+}
+
+#[tokio::test]
+async fn test_heartbeat_disabled_when_zero() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let mut config = crate::config::basic_config();
+    config.chats.insert(
+        "-123".into(),
+        crate::config::ChatConfig {
+            heartbeat_interval_minutes: Some(0),
+            ..Default::default()
+        },
+    );
+    config.save(&data_dir.join("config.yaml")).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+    let state = bot.state.lock().await;
+    assert_eq!(state.config.heartbeat_interval("-123"), None);
+}
+
+#[tokio::test]
+async fn test_heartbeat_has_pending_tasks() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+
+    let state = bot.state.lock().await;
+    assert!(!state.has_pending_tasks("-123"));
+
+    let mut list = crate::tasks::TaskList::default();
+    list.add("test task");
+    list.save(&state.chats_dir(), "-123").unwrap();
+
+    assert!(state.has_pending_tasks("-123"));
+}
+
+#[tokio::test]
+async fn test_build_tools_includes_mcp() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+    let mut state = bot.state.lock().await;
+
+    // No MCP tools yet — all tool definitions (always includes send_message)
+    let tools = state.build_tools(false);
+    assert_eq!(tools.len(), 13);
+    assert!(tools.iter().any(|t| t.function.name == "send_message"));
+
+    // Add a fake MCP tool
+    state.mcp_tools.push(crate::mcp::McpTool {
+        server_name: "test-srv".into(),
+        name: "test_tool".into(),
+        description: "A test".into(),
+        input_schema: serde_json::json!({"type": "object"}),
+        server_url: "https://example.com".into(),
+        api_key: None,
+        session_id: None,
+        transport: "streamable".into(),
+    });
+
+    let tools = state.build_tools(false);
+    assert_eq!(tools.len(), 14);
+    assert!(tools.iter().any(|t| t.function.name == "mcp_test-srv_test_tool"));
+}
+
+#[tokio::test]
+async fn test_get_recent_messages_tool() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+    // Pre-seed some conversation history
+    {
+        let state = bot.state.lock().await;
+        let msgs = vec![
+            ChatMessage::user_with_name("Hello bot", "Alice"),
+            ChatMessage::assistant("Hi Alice!"),
+            ChatMessage::user_with_name("What's my name?", "Alice"),
+            ChatMessage::assistant("Your name is Alice."),
+        ];
+        state.db.save_messages("-123", &msgs).unwrap();
+    }
+
+    // LLM calls get_recent_messages(count: 2)
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "call_recent".into(),
+                    call_type: "function".into(),
+                    function: FunctionCall {
+                        name: "get_recent_messages".into(),
+                        arguments: r#"{"count":2}"#.into(),
+                    },
+                }]),
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("tool_calls".into()),
+        }],
+    ..Default::default()});
+
+    // After reading context, LLM responds
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("I recall our conversation!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let result = bot
+        .process_message("-123", "456", "@alice", "Recall what I said", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("I recall our conversation!".into()));
+}
+
+// ---------- dispatch_tool edge-case tests ----------
+
+#[tokio::test]
+async fn test_dispatch_send_message_empty_text() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "send_message", &serde_json::json!({"text":""}), None).await;
+    assert_eq!(out, "Error: text required");
+}
+
+#[tokio::test]
+async fn test_dispatch_send_message_no_tg_bot() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "send_message", &serde_json::json!({"text":"hi"}), None).await;
+    assert_eq!(out, "Error: send_message not available in this context.");
+}
+
+#[tokio::test]
+async fn test_dispatch_bash_empty_command() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "bash", &serde_json::json!({"command":""}), None).await;
+    assert!(out.contains("exit code"));
+}
+
+#[tokio::test]
+async fn test_dispatch_read_memory_missing() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "read_memory", &serde_json::json!({"user_id":"999"}), None).await;
+    assert!(out.contains("No memory file found"));
+}
+
+#[tokio::test]
+async fn test_dispatch_update_memory_no_fields() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "update_memory", &serde_json::json!({"user_id":"999"}), None).await;
+    assert_eq!(out, "No fields to update.");
+}
+
+#[tokio::test]
+async fn test_dispatch_add_task_empty() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "add_task", &serde_json::json!({"description":""}), None).await;
+    assert_eq!(out, "Error: description required");
+}
+
+#[tokio::test]
+async fn test_dispatch_list_tasks_non_empty() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir: data_dir.clone(),
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    // Add a task first
+    dispatch_tool(&state, "-123", "add_task", &serde_json::json!({"description":"do the thing"}), None).await;
+    let out = dispatch_tool(&state, "-123", "list_tasks", &serde_json::json!({}), None).await;
+    assert!(out.contains("do the thing"));
+}
+
+#[tokio::test]
+async fn test_dispatch_remove_task_empty_and_not_found() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir: data_dir.clone(),
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "remove_task", &serde_json::json!({"id":""}), None).await;
+    assert_eq!(out, "Error: id required");
+    let out = dispatch_tool(&state, "-123", "remove_task", &serde_json::json!({"id":"nope"}), None).await;
+    assert!(out.contains("not found"));
+}
+
+#[tokio::test]
+async fn test_dispatch_create_skill_validation() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir: data_dir.clone(),
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "create_skill", &serde_json::json!({"name":"","description":"","body":""}), None).await;
+    assert!(out.contains("required"));
+}
+
+#[tokio::test]
+async fn test_dispatch_read_skill_not_found() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "read_skill", &serde_json::json!({"name":"ghost"}), None).await;
+    assert!(out.contains("not found"));
+}
+
+#[tokio::test]
+async fn test_dispatch_update_skill_not_found() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "update_skill", &serde_json::json!({"name":"missing","description":"d","body":"b"}), None).await;
+    assert!(out.contains("not found"));
+}
+
+#[tokio::test]
+async fn test_dispatch_unknown_tool() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "narnia", &serde_json::json!({}), None).await;
+    assert!(out.contains("Unknown tool"));
+}
+
+#[tokio::test]
+async fn test_dispatch_mcp_tool_not_found() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "mcp_no_no", &serde_json::json!({}), None).await;
+    assert!(out.contains("MCP tool not found"));
+}
+
+#[tokio::test]
+async fn test_get_recent_messages_empty_history() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+                model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(&state, "-123", "get_recent_messages", &serde_json::json!({"count":5}), None).await;
+    assert!(out.contains("messages"));
+}
+
+#[tokio::test]
+async fn test_process_message_plain_command_ignored() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // "/notabotcommand" -> starts with / but isn't a recognised command -> ignored
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/notabotcommand", "mybot")
+        .await
+        .unwrap();
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn test_conversation_history_window_trims() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+    // Seed history with exactly 20 items (default conversation_window=20)
+    let msgs: Vec<ChatMessage> = (0..10)
+        .flat_map(|i| {
+            vec![
+                ChatMessage::user(&format!("msg{i}")),
+                ChatMessage::assistant(&format!("reply{i}")),
+            ]
+        })
+        .collect();
+    {
+        let state = bot.state.lock().await;
+        state.db.save_messages("-123", &msgs).unwrap();
+    }
+    // one more exchange will trigger trimming via the query window
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("ok".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+    let _ = bot.process_message("-123", "456", "user", "hello", "mybot").await.unwrap();
+    let h_len = {
+        let state = bot.state.lock().await;
+        state.db.load_messages("-123", 20).unwrap().len()
+    };
+    assert_eq!(h_len, 20);
+}
+
+// ---------- heartbeat tests ----------
+
+#[tokio::test]
+async fn test_heartbeat_no_tasks() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+    let tg_bot = teloxide::Bot::new("ignored");
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+}
+
+#[tokio::test]
+async fn test_heartbeat_completes_task() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone()).await.unwrap();
+
+    // add a pending task
+    let mut list = crate::tasks::TaskList::default();
+    let id = list.add("heartbeat task");
+    list.save(&data_dir.join("chats"), "-123").unwrap();
+
+    // LLM returns a remove_task call to complete it
+    mock_llm.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "call_rm".into(),
+                    call_type: "function".into(),
+                    function: FunctionCall {
+                        name: "remove_task".into(),
+                        arguments: format!(r##"{{"id":"{}"}}"##, id),
+                    },
+                }]),
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("tool_calls".into()),
+        }],
+    ..Default::default()});
+
+    mock_llm.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Done!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let tg_bot = teloxide::Bot::new("ignored");
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+
+    let list = crate::tasks::TaskList::load(&data_dir.join("chats"), "-123").unwrap_or_default();
+    assert!(list.tasks.is_empty());
+}
+
+#[tokio::test]
+async fn test_heartbeat_llm_error() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone()).await.unwrap();
+
+    let mut list = crate::tasks::TaskList::default();
+    list.add("error task");
+    list.save(&data_dir.join("chats"), "-123").unwrap();
+
+    // configure mock to error
+    mock_llm.set_error(true);
+
+    let tg_bot = teloxide::Bot::new("ignored");
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+
+    // task should still be there after error
+    let list = crate::tasks::TaskList::load(&data_dir.join("chats"), "-123").unwrap_or_default();
+    assert_eq!(list.tasks.len(), 1);
+}
+
+#[test]
+fn test_context_usage_formatting() {
+    let mut state = BotState {
+        config: crate::config::basic_config(),
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir: std::path::PathBuf::from("/tmp"),
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    };
+    // No context cached -> unknown
+    assert_eq!(state.context_usage("-123"), "unknown");
+    // Cache context length for the default model
+    state.model_context_lengths.insert("test/model".into(), 200000);
+    // Effective limit = 200k * 0.75 = 150k
+    assert_eq!(state.context_usage("-123"), "0k/150k (0%)");
+    // Set usage
+    state.last_usage.insert("-123".into(), crate::openrouter::Usage {
+        prompt_tokens: 37000,
+        completion_tokens: 500,
+        total_tokens: 37500,
+    });
+    assert_eq!(state.context_usage("-123"), "37k/150k (25%)");
+}
