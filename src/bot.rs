@@ -1463,4 +1463,104 @@ mod tests {
             .unwrap();
         assert_eq!(result, Some("Full access!".into()));
     }
+
+    #[tokio::test]
+    async fn test_heartbeat_interval_secs() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let mut config = crate::config::basic_config();
+        config.heartbeat_interval_minutes = 90;
+        config.chats.insert(
+            "-123".into(),
+            crate::config::ChatConfig {
+                heartbeat_interval_minutes: Some(30),
+                ..Default::default()
+            },
+        );
+        config.save(&data_dir.join("config.yaml")).unwrap();
+
+        let mock_llm = Arc::new(MockLlmBackend::new());
+        let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+        let state = bot.state.lock().await;
+        assert_eq!(state.heartbeat_interval_secs("-123"), 30 * 60);
+        assert_eq!(state.heartbeat_interval_secs("-999"), 90 * 60);
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat_disabled_when_zero() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let mut config = crate::config::basic_config();
+        config.chats.insert(
+            "-123".into(),
+            crate::config::ChatConfig {
+                heartbeat_interval_minutes: Some(0),
+                ..Default::default()
+            },
+        );
+        config.save(&data_dir.join("config.yaml")).unwrap();
+
+        let mock_llm = Arc::new(MockLlmBackend::new());
+        let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+        let state = bot.state.lock().await;
+        assert_eq!(state.config.heartbeat_interval("-123"), None);
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat_has_pending_tasks() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        crate::config::basic_config()
+            .save(&data_dir.join("config.yaml"))
+            .unwrap();
+
+        let mock_llm = Arc::new(MockLlmBackend::new());
+        let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+
+        let state = bot.state.lock().await;
+        assert!(!state.has_pending_tasks("-123"));
+
+        let mut list = crate::tasks::TaskList::default();
+        list.add("test task");
+        list.save(&state.chats_dir(), "-123").unwrap();
+
+        assert!(state.has_pending_tasks("-123"));
+    }
+
+    #[tokio::test]
+    async fn test_build_tools_includes_mcp() {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        crate::config::basic_config()
+            .save(&data_dir.join("config.yaml"))
+            .unwrap();
+
+        let mock_llm = Arc::new(MockLlmBackend::new());
+        let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+        let mut state = bot.state.lock().await;
+
+        // No MCP tools yet
+        let tools = state.build_tools();
+        assert_eq!(tools.len(), 11);
+
+        // Add a fake MCP tool
+        state.mcp_tools.push(crate::mcp::McpTool {
+            server_name: "test-srv".into(),
+            name: "test_tool".into(),
+            description: "A test".into(),
+            input_schema: serde_json::json!({"type": "object"}),
+            server_url: "https://example.com".into(),
+            api_key: None,
+            session_id: None,
+            transport: "streamable".into(),
+        });
+
+        let tools = state.build_tools();
+        assert_eq!(tools.len(), 12);
+        assert!(tools.iter().any(|t| t.function.name == "mcp_test-srv_test_tool"));
+    }
 }
