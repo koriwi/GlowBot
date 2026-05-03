@@ -762,27 +762,47 @@ pub async fn run_heartbeat_task(
         processed += 1;
         log::info!("Heartbeat chat {}: working on task '{}'", cid, task_id);
 
+        // Build the full system prompt (same as normal chat: personality, skills, memory)
+        // plus the task-specific header
         let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        let system_prompt = format!(
-            "You are GlowBot's task agent for chat {chat_id}.\n\
+        let task_header = format!(
+            "## Background Task\n\
+            You are processing a scheduled task for this chat.\n\
             Task: {task_desc}\n\
-            - Use bash and other tools to complete it.\n\
-            - When done, call remove_task(\"{task_id}\").\n\
-            - For follow-ups, call add_task(\"...\").\n\
-            - Do NOT send Telegram messages. Background process.\n\
+            Instructions:\n\
+            - Use your available tools to complete the task.\n\
+            - When done, call remove_task(\"{task_id}\") to mark it complete.\n\
+            - If the task spawns follow-up work, call add_task(\"...\") for each.\n\
+            - If the task cannot be completed yet (e.g. download still in progress, waiting for external event),\n              just leave it — do NOT remove it. It will run again next cycle.\n\
+            - Do NOT send Telegram messages. This is a background process.\n\
             Current date: {date}",
-            chat_id = cid,
             task_desc = task_desc,
             task_id = task_id,
             date = date,
         );
 
-        let model = {
+        let (full_prompt, model) = {
             let s = state.lock().await;
-            s.config.model_for_chat(&cid).to_string()
+            let skills = &s.skills;
+            let memories =
+                crate::memory::load_chat_memories(&s.chats_dir(), &cid).unwrap_or_default();
+            let chat_memory = crate::memory::load_chat_memory(&s.chats_dir(), &cid);
+            let chat_config = s.config.chat_config(&cid);
+            let base = crate::system_prompt::assemble(
+                &cid,
+                &chat_config.system_prompt,
+                skills,
+                chat_memory.as_ref(),
+                &memories,
+                true, // tools enabled
+                "",   // no user_id in heartbeat context
+            );
+            let model = s.config.model_for_chat(&cid).to_string();
+            (format!("{}\n\n{}", task_header, base), model)
         };
+
         let tools = crate::openrouter::all_tool_definitions();
-        let mut messages = vec![ChatMessage::system(&system_prompt)];
+        let mut messages = vec![ChatMessage::system(&full_prompt)];
 
         for _ in 0..10 {
             let request = ChatCompletionRequest {
@@ -826,6 +846,58 @@ pub async fn run_heartbeat_task(
                             let dir = { state.lock().await.data_dir.clone() };
                             match crate::bash::execute_in_dir(cmd, &dir).await {
                                 Ok(r) => format!("stdout:\n{}\nstderr:\n{}", r.stdout, r.stderr),
+                                Err(e) => format!("Error: {}", e),
+                            }
+                        }
+                        "read_memory" => {
+                            let uid = args["user_id"].as_str().unwrap_or("");
+                            let s = state.lock().await;
+                            match crate::memory::load_memory(&s.chats_dir(), &cid, uid) {
+                                Some(m) => serde_json::json!({"user_id":m.frontmatter.user_id,"username":m.frontmatter.username,"call_name":m.frontmatter.call_name,"description":m.frontmatter.description,"body":m.body}).to_string(),
+                                None => format!("No memory for user {}", uid),
+                            }
+                        }
+                        "update_memory" => {
+                            let uid = args["user_id"].as_str().unwrap_or("");
+                            let s = state.lock().await;
+                            let mut m = crate::memory::load_memory(&s.chats_dir(), &cid, uid)
+                                .unwrap_or_else(|| crate::memory::Memory::new(uid, ""));
+                            if let Some(v) = args["call_name"].as_str() {
+                                m.frontmatter.call_name = v.into();
+                            }
+                            if let Some(v) = args["description"].as_str() {
+                                m.frontmatter.description = v.into();
+                            }
+                            if let Some(v) = args["log_entry"].as_str() {
+                                m.append_log(v);
+                            }
+                            match crate::memory::save_memory(&s.chats_dir(), &cid, uid, &m) {
+                                Ok(()) => "Memory updated".into(),
+                                Err(e) => format!("Error: {}", e),
+                            }
+                        }
+                        "read_chat_memory" => {
+                            let s = state.lock().await;
+                            match crate::memory::load_chat_memory(&s.chats_dir(), &cid) {
+                                Some(m) => serde_json::json!({"call_name":m.frontmatter.call_name,"description":m.frontmatter.description,"body":m.body}).to_string(),
+                                None => "No chat memory".into(),
+                            }
+                        }
+                        "update_chat_memory" => {
+                            let s = state.lock().await;
+                            let mut m = crate::memory::load_chat_memory(&s.chats_dir(), &cid)
+                                .unwrap_or_else(crate::memory::Memory::new_chat);
+                            if let Some(v) = args["call_name"].as_str() {
+                                m.frontmatter.call_name = v.into();
+                            }
+                            if let Some(v) = args["description"].as_str() {
+                                m.frontmatter.description = v.into();
+                            }
+                            if let Some(v) = args["log_entry"].as_str() {
+                                m.append_log(v);
+                            }
+                            match crate::memory::save_chat_memory(&s.chats_dir(), &cid, &m) {
+                                Ok(()) => "Chat memory updated".into(),
                                 Err(e) => format!("Error: {}", e),
                             }
                         }
