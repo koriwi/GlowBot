@@ -66,6 +66,37 @@ impl BotState {
     pub fn effective_model(&self, chat_id: &str) -> String {
         self.config.model_for_chat(chat_id).to_string()
     }
+
+    /// Build the full list of tool definitions including MCP tools.
+    pub fn build_tools(&self) -> Vec<crate::openrouter::ToolDefinition> {
+        let mut t = crate::openrouter::all_tool_definitions();
+        for mt in &self.mcp_tools {
+            t.push(crate::openrouter::ToolDefinition {
+                def_type: "function".into(),
+                function: crate::openrouter::FunctionDef {
+                    name: format!("mcp_{}_{}", mt.server_name, mt.name),
+                    description: format!("[MCP: {}] {}", mt.server_name, mt.description),
+                    parameters: mt.input_schema.clone(),
+                },
+            });
+        }
+        t
+    }
+
+    /// Get the effective heartbeat interval for a chat (seconds).
+    pub fn heartbeat_interval_secs(&self, chat_id: &str) -> u64 {
+        let interval_min = self
+            .config
+            .heartbeat_interval(chat_id)
+            .unwrap_or(self.config.heartbeat_interval_minutes);
+        interval_min * 60
+    }
+
+    /// Check if a chat has pending tasks.
+    pub fn has_pending_tasks(&self, chat_id: &str) -> bool {
+        let list = crate::tasks::TaskList::load(&self.chats_dir(), chat_id).unwrap_or_default();
+        list.has_tasks()
+    }
 }
 
 /// Main GlowBot orchestrator.
@@ -289,22 +320,8 @@ impl GlowBot {
         messages.push(current_msg.clone());
 
         let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
-            let mut t = crate::openrouter::all_tool_definitions();
-            // Add MCP tools
-            {
-                let state = self.state.lock().await;
-                for mt in &state.mcp_tools {
-                    t.push(crate::openrouter::ToolDefinition {
-                        def_type: "function".into(),
-                        function: crate::openrouter::FunctionDef {
-                            name: format!("mcp_{}_{}", mt.server_name, mt.name),
-                            description: format!("[MCP: {}] {}", mt.server_name, mt.description),
-                            parameters: mt.input_schema.clone(),
-                        },
-                    });
-                }
-            }
-            t
+            let state = self.state.lock().await;
+            state.build_tools()
         } else {
             vec![]
         };
@@ -456,7 +473,10 @@ pub async fn run_heartbeat_task(
             (format!("{}\n\n{}", task_header, base), model)
         };
 
-        let tools = crate::openrouter::all_tool_definitions();
+        let tools = {
+            let s = state.lock().await;
+            s.build_tools()
+        };
         let mut messages = vec![ChatMessage::system(&full_prompt)];
 
         for _ in 0..10 {
