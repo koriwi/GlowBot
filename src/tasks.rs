@@ -40,7 +40,7 @@ impl TaskList {
 
     /// Add a task and return its ID.
     pub fn add(&mut self, description: &str) -> String {
-        let id = format!("{}", self.tasks.len() + 1);
+        let id = uuid::Uuid::new_v4().to_string();
         self.tasks.push(Task {
             id: id.clone(),
             description: description.to_string(),
