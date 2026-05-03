@@ -468,18 +468,21 @@ pub async fn run_heartbeat_task(
             date = date,
         );
 
-        let (full_prompt, model) = {
+        let (system_prompt, model) = {
             let s = state.lock().await;
             let base = s.assemble_system_prompt(&cid, true, "");
             let model = s.effective_model(&cid);
-            (format!("{}\n\n{}", task_header, base), model)
+            (base, model)
         };
 
         let tools = {
             let s = state.lock().await;
             s.build_tools(true)
         };
-        let mut messages = vec![ChatMessage::system(&full_prompt)];
+        let mut messages = vec![
+            ChatMessage::system(&system_prompt),
+            ChatMessage::user(&task_header),
+        ];
 
         for _ in 0..10 {
             let request = ChatCompletionRequest {
