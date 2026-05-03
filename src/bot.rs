@@ -49,6 +49,8 @@ pub struct GlowBot {
 }
 
 impl GlowBot {
+    // Methods below are tested directly; dispatch_tool is the canonical path.
+    #[allow(dead_code)]
     /// Create a new GlowBot instance with the given LLM backend.
     pub async fn new_with_llm(data_dir: &Path, llm: Arc<dyn LlmBackend>) -> anyhow::Result<Self> {
         let config_path = data_dir.join("config.yaml");
@@ -329,25 +331,13 @@ impl GlowBot {
                         let args: serde_json::Value =
                             serde_json::from_str(&tool_call.function.arguments).unwrap_or_default();
 
-                        let result_text = match tool_call.function.name.as_str() {
-                            "bash" => self.execute_bash_tool(&args).await,
-                            "read_memory" => self.execute_read_memory(chat_id, &args).await,
-                            "update_memory" => self.execute_update_memory(chat_id, &args).await,
-                            "read_chat_memory" => self.execute_read_chat_memory(chat_id).await,
-                            "update_chat_memory" => {
-                                self.execute_update_chat_memory(chat_id, &args).await
-                            }
-                            "create_skill" => self.execute_create_skill(&args).await,
-                            "read_skill" => self.execute_read_skill(&args).await,
-                            "update_skill" => self.execute_update_skill(&args).await,
-                            name if name.starts_with("mcp_") => {
-                                self.execute_mcp_tool(name, &args).await
-                            }
-                            "add_task" => self.execute_add_task(chat_id, &args).await,
-                            "list_tasks" => self.execute_list_tasks(chat_id).await,
-                            "remove_task" => self.execute_remove_task(chat_id, &args).await,
-                            _ => format!("Unknown tool: {}", tool_call.function.name),
-                        };
+                        let result_text = dispatch_tool(
+                            &self.state,
+                            chat_id,
+                            tool_call.function.name.as_str(),
+                            &args,
+                        )
+                        .await;
 
                         // Log the tool call
                         self.log_tool_call(
@@ -840,115 +830,8 @@ pub async fn run_heartbeat_task(
                 for tc in tcs {
                     let args: serde_json::Value =
                         serde_json::from_str(&tc.function.arguments).unwrap_or_default();
-                    let result = match tc.function.name.as_str() {
-                        "bash" => {
-                            let cmd = args["command"].as_str().unwrap_or("");
-                            let dir = { state.lock().await.data_dir.clone() };
-                            match crate::bash::execute_in_dir(cmd, &dir).await {
-                                Ok(r) => format!("stdout:\n{}\nstderr:\n{}", r.stdout, r.stderr),
-                                Err(e) => format!("Error: {}", e),
-                            }
-                        }
-                        "read_memory" => {
-                            let uid = args["user_id"].as_str().unwrap_or("");
-                            let s = state.lock().await;
-                            match crate::memory::load_memory(&s.chats_dir(), &cid, uid) {
-                                Some(m) => serde_json::json!({"user_id":m.frontmatter.user_id,"username":m.frontmatter.username,"call_name":m.frontmatter.call_name,"description":m.frontmatter.description,"body":m.body}).to_string(),
-                                None => format!("No memory for user {}", uid),
-                            }
-                        }
-                        "update_memory" => {
-                            let uid = args["user_id"].as_str().unwrap_or("");
-                            let s = state.lock().await;
-                            let mut m = crate::memory::load_memory(&s.chats_dir(), &cid, uid)
-                                .unwrap_or_else(|| crate::memory::Memory::new(uid, ""));
-                            if let Some(v) = args["call_name"].as_str() {
-                                m.frontmatter.call_name = v.into();
-                            }
-                            if let Some(v) = args["description"].as_str() {
-                                m.frontmatter.description = v.into();
-                            }
-                            if let Some(v) = args["log_entry"].as_str() {
-                                m.append_log(v);
-                            }
-                            match crate::memory::save_memory(&s.chats_dir(), &cid, uid, &m) {
-                                Ok(()) => "Memory updated".into(),
-                                Err(e) => format!("Error: {}", e),
-                            }
-                        }
-                        "read_chat_memory" => {
-                            let s = state.lock().await;
-                            match crate::memory::load_chat_memory(&s.chats_dir(), &cid) {
-                                Some(m) => serde_json::json!({"call_name":m.frontmatter.call_name,"description":m.frontmatter.description,"body":m.body}).to_string(),
-                                None => "No chat memory".into(),
-                            }
-                        }
-                        "update_chat_memory" => {
-                            let s = state.lock().await;
-                            let mut m = crate::memory::load_chat_memory(&s.chats_dir(), &cid)
-                                .unwrap_or_else(crate::memory::Memory::new_chat);
-                            if let Some(v) = args["call_name"].as_str() {
-                                m.frontmatter.call_name = v.into();
-                            }
-                            if let Some(v) = args["description"].as_str() {
-                                m.frontmatter.description = v.into();
-                            }
-                            if let Some(v) = args["log_entry"].as_str() {
-                                m.append_log(v);
-                            }
-                            match crate::memory::save_chat_memory(&s.chats_dir(), &cid, &m) {
-                                Ok(()) => "Chat memory updated".into(),
-                                Err(e) => format!("Error: {}", e),
-                            }
-                        }
-                        "add_task" => {
-                            let d = args["description"].as_str().unwrap_or("");
-                            if d.is_empty() {
-                                "Error".into()
-                            } else {
-                                let s = state.lock().await;
-                                let mut l = crate::tasks::TaskList::load(&s.chats_dir(), &cid)
-                                    .unwrap_or_default();
-                                let id = l.add(d);
-                                let _ = l.save(&s.chats_dir(), &cid);
-                                format!("Task '{}' added", id)
-                            }
-                        }
-                        "list_tasks" => {
-                            let s = state.lock().await;
-                            let l = crate::tasks::TaskList::load(&s.chats_dir(), &cid)
-                                .unwrap_or_default();
-                            serde_json::to_string_pretty(&l.tasks).unwrap_or_default()
-                        }
-                        "remove_task" => {
-                            let id = args["id"].as_str().unwrap_or("");
-                            let s = state.lock().await;
-                            let mut l = crate::tasks::TaskList::load(&s.chats_dir(), &cid)
-                                .unwrap_or_default();
-                            if l.remove(id) {
-                                let _ = l.save(&s.chats_dir(), &cid);
-                                format!("Removed {}", id)
-                            } else {
-                                format!("Not found: {}", id)
-                            }
-                        }
-                        name if name.starts_with("mcp_") => {
-                            let s = state.lock().await;
-                            match s
-                                .mcp_tools
-                                .iter()
-                                .find(|t| format!("mcp_{}_{}", t.server_name, t.name) == name)
-                            {
-                                Some(t) => {
-                                    let tc = t.clone();
-                                    drop(s);
-                                    crate::mcp::invoke_tool(&tc, &args).await
-                                }
-                                None => format!("MCP tool not found: {}", name),
-                            }
-                        }
-                        _ => format!("N/A: {}", tc.function.name),
-                    };
+                    let result =
+                        dispatch_tool(&state, &cid, tc.function.name.as_str(), &args).await;
                     messages.push(ChatMessage::tool_result(&tc.id, &result));
                 }
                 let _ = git_repo.auto_commit("Heartbeat");
@@ -961,6 +844,241 @@ pub async fn run_heartbeat_task(
 
     if processed > 0 {
         log::info!("Heartbeat chat {}: processed {} task(s)", cid, processed);
+    }
+}
+
+/// Shared tool dispatch — used by both normal messages and heartbeat tasks.
+async fn dispatch_tool(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: &str,
+    tool_name: &str,
+    args: &serde_json::Value,
+) -> String {
+    let cid = chat_id.to_string();
+    match tool_name {
+        "bash" => {
+            let cmd = args["command"].as_str().unwrap_or("");
+            let dir = { state.lock().await.data_dir.clone() };
+            match crate::bash::execute_in_dir(cmd, &dir).await {
+                Ok(r) => {
+                    let mut out = String::new();
+                    if !r.stdout.is_empty() {
+                        out.push_str(&format!("stdout:\n{}", r.stdout));
+                    }
+                    if !r.stderr.is_empty() {
+                        out.push_str(&format!("stderr:\n{}", r.stderr));
+                    }
+                    if r.stdout.is_empty() && r.stderr.is_empty() {
+                        out.push_str(&format!("exit code: {}", r.exit_code));
+                    }
+                    out
+                }
+                Err(e) => format!("Error: {}", e),
+            }
+        }
+        "read_memory" => {
+            let uid = args["user_id"].as_str().unwrap_or("");
+            let s = state.lock().await;
+            match crate::memory::load_memory(&s.chats_dir(), &cid, uid) {
+                Some(m) => serde_json::json!({
+                    "user_id": m.frontmatter.user_id,
+                    "username": m.frontmatter.username,
+                    "call_name": m.frontmatter.call_name,
+                    "description": m.frontmatter.description,
+                    "body": m.body,
+                })
+                .to_string(),
+                None => format!("No memory file found for user_id={} in chat {}", uid, cid),
+            }
+        }
+        "update_memory" => {
+            let uid = args["user_id"].as_str().unwrap_or("");
+            if uid.is_empty() {
+                return "Error: user_id is required".into();
+            }
+            let s = state.lock().await;
+            let chats_dir = s.chats_dir();
+            let mut mem = crate::memory::load_memory(&chats_dir, &cid, uid)
+                .unwrap_or_else(|| crate::memory::Memory::new(uid, ""));
+            let mut changed = false;
+            if let Some(v) = args["username"].as_str() {
+                mem.frontmatter.username = v.into();
+                changed = true;
+            }
+            if let Some(v) = args["call_name"].as_str() {
+                mem.frontmatter.call_name = v.into();
+                changed = true;
+            }
+            if let Some(v) = args["description"].as_str() {
+                mem.frontmatter.description = v.into();
+                changed = true;
+            }
+            if let Some(v) = args["log_entry"].as_str() {
+                mem.append_log(v);
+                changed = true;
+            }
+            if changed {
+                match crate::memory::save_memory(&chats_dir, &cid, uid, &mem) {
+                    Ok(()) => format!("Memory updated for {}", uid),
+                    Err(e) => format!("Error: {}", e),
+                }
+            } else {
+                "No fields to update.".into()
+            }
+        }
+        "read_chat_memory" => {
+            let s = state.lock().await;
+            match crate::memory::load_chat_memory(&s.chats_dir(), &cid) {
+                Some(m) => serde_json::json!({
+                    "call_name": m.frontmatter.call_name,
+                    "description": m.frontmatter.description,
+                    "body": m.body,
+                })
+                .to_string(),
+                None => format!("No chat memory for {}", cid),
+            }
+        }
+        "update_chat_memory" => {
+            let s = state.lock().await;
+            let chats_dir = s.chats_dir();
+            let mut mem = crate::memory::load_chat_memory(&chats_dir, &cid)
+                .unwrap_or_else(crate::memory::Memory::new_chat);
+            let mut changed = false;
+            if let Some(v) = args["call_name"].as_str() {
+                mem.frontmatter.call_name = v.into();
+                changed = true;
+            }
+            if let Some(v) = args["description"].as_str() {
+                mem.frontmatter.description = v.into();
+                changed = true;
+            }
+            if let Some(v) = args["log_entry"].as_str() {
+                mem.append_log(v);
+                changed = true;
+            }
+            if changed {
+                match crate::memory::save_chat_memory(&chats_dir, &cid, &mem) {
+                    Ok(()) => "Chat memory updated".into(),
+                    Err(e) => format!("Error: {}", e),
+                }
+            } else {
+                "No fields to update.".into()
+            }
+        }
+        "add_task" => {
+            let d = args["description"].as_str().unwrap_or("");
+            if d.is_empty() {
+                return "Error: description required".into();
+            }
+            let s = state.lock().await;
+            let mut list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            let id = list.add(d);
+            let _ = list.save(&s.chats_dir(), &cid);
+            format!("Task '{}' added: {}", id, d)
+        }
+        "list_tasks" => {
+            let s = state.lock().await;
+            let list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            if list.tasks.is_empty() {
+                "No pending tasks.".into()
+            } else {
+                serde_json::to_string_pretty(&list.tasks).unwrap_or_default()
+            }
+        }
+        "remove_task" => {
+            let id = args["id"].as_str().unwrap_or("");
+            if id.is_empty() {
+                return "Error: id required".into();
+            }
+            let s = state.lock().await;
+            let mut list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            if list.remove(id) {
+                let _ = list.save(&s.chats_dir(), &cid);
+                format!("Task '{}' removed. {} remaining.", id, list.tasks.len())
+            } else {
+                format!("Task '{}' not found.", id)
+            }
+        }
+        "create_skill" => {
+            let name = args["name"].as_str().unwrap_or("");
+            let desc = args["description"].as_str().unwrap_or("");
+            let body = args["body"].as_str().unwrap_or("");
+            if name.is_empty() || desc.is_empty() || body.is_empty() {
+                return "Error: name, description, body required".into();
+            }
+            let s = state.lock().await;
+            let fm = crate::skills::SkillFrontmatter {
+                name: name.into(),
+                description: desc.into(),
+            };
+            match crate::skills::write_skill(&s.skills_dir(), name, &fm, body) {
+                Ok(_) => format!("Skill '{}' created", name),
+                Err(e) => format!("Error: {}", e),
+            }
+        }
+        "read_skill" => {
+            let name = args["name"].as_str().unwrap_or("");
+            if name.is_empty() {
+                return "Error: name required".into();
+            }
+            let s = state.lock().await;
+            let path = s.skills_dir().join(name).join("skill.md");
+            match crate::skills::load_skill(&path) {
+                Ok(skill) => serde_json::json!({
+                    "name": skill.frontmatter.name,
+                    "description": skill.frontmatter.description,
+                    "body": skill.body,
+                })
+                .to_string(),
+                Err(_) => format!("Skill '{}' not found", name),
+            }
+        }
+        "update_skill" => {
+            let name = args["name"].as_str().unwrap_or("");
+            if name.is_empty() {
+                return "Error: name required".into();
+            }
+            let s = state.lock().await;
+            let path = s.skills_dir().join(name).join("skill.md");
+            let mut skill = match crate::skills::load_skill(&path) {
+                Ok(s) => s,
+                Err(_) => return format!("Skill '{}' not found", name),
+            };
+            let mut changed = false;
+            if let Some(v) = args["description"].as_str() {
+                skill.frontmatter.description = v.into();
+                changed = true;
+            }
+            if let Some(v) = args["body"].as_str() {
+                skill.body = v.into();
+                changed = true;
+            }
+            if !changed {
+                return "No fields to update.".into();
+            }
+            let yaml = serde_yaml::to_string(&skill.frontmatter).unwrap_or_default();
+            let content = format!("---\n{}---\n{}", yaml, skill.body);
+            match std::fs::write(&path, &content) {
+                Ok(()) => format!("Skill '{}' updated", name),
+                Err(e) => format!("Error: {}", e),
+            }
+        }
+        name if name.starts_with("mcp_") => {
+            let s = state.lock().await;
+            match s
+                .mcp_tools
+                .iter()
+                .find(|t| format!("mcp_{}_{}", t.server_name, t.name) == name)
+            {
+                Some(t) => {
+                    let tc = t.clone();
+                    drop(s);
+                    crate::mcp::invoke_tool(&tc, args).await
+                }
+                None => format!("MCP tool not found: {}", name),
+            }
+        }
+        _ => format!("Unknown tool: {}", tool_name),
     }
 }
 
