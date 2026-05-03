@@ -1,16 +1,12 @@
-use crate::config::{ChatConfig, Config, InteractionMode};
+use crate::config::{ChatConfig, Config};
 
 /// Result of parsing a command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// /model <model_name>
-    Model(String),
-    /// /mode every_message|mention_only
-    Mode(String),
-    /// /reload
-    Reload,
     /// /status
     Status,
+    /// /stop
+    Stop,
 }
 
 /// Parse a Telegram message to see if it's a bot command.
@@ -20,28 +16,14 @@ pub fn parse_command(text: &str) -> Option<Command> {
         return None;
     }
 
-    let (cmd, args) = match text.split_once(' ') {
+    let (cmd, _args) = match text.split_once(' ') {
         Some((c, a)) => (c.trim(), a.trim()),
         None => (text, ""),
     };
 
     match cmd {
-        "/model" => {
-            if args.is_empty() {
-                None
-            } else {
-                Some(Command::Model(args.to_string()))
-            }
-        }
-        "/mode" => {
-            if args.is_empty() {
-                None
-            } else {
-                Some(Command::Mode(args.to_string()))
-            }
-        }
-        "/reload" => Some(Command::Reload),
         "/status" => Some(Command::Status),
+        "/stop" => Some(Command::Stop),
         _ => None,
     }
 }
@@ -67,27 +49,6 @@ pub fn can_interact(chat_config: &ChatConfig, user_id: &str) -> bool {
 /// Handle a command and return the response text, optionally mutating config.
 pub fn handle_command(command: &Command, config: &mut Config, chat_id: &str) -> String {
     match command {
-        Command::Model(model_name) => {
-            let chat = config.chats.entry(chat_id.to_string()).or_default();
-            chat.model = Some(model_name.clone());
-            format!("Model for this chat set to: {}", model_name)
-        }
-        Command::Mode(mode_str) => {
-            let mode = match mode_str.as_str() {
-                "every_message" | "every" => InteractionMode::EveryMessage,
-                "mention_only" | "mention" => InteractionMode::MentionOnly,
-                other => {
-                    return format!(
-                        "Unknown mode: {}. Use 'every_message' or 'mention_only'.",
-                        other
-                    );
-                }
-            };
-            let chat = config.chats.entry(chat_id.to_string()).or_default();
-            chat.interaction_mode = mode.clone();
-            format!("Interaction mode for this chat set to: {:?}", mode)
-        }
-        Command::Reload => "Skills reloaded successfully.".to_string(),
         Command::Status => {
             let chat = config.chat_config(chat_id);
             let model = chat
@@ -111,6 +72,7 @@ pub fn handle_command(command: &Command, config: &mut Config, chat_id: &str) -> 
                 },
             )
         }
+        Command::Stop => "Stop command received.".to_string()
     }
 }
 
@@ -119,39 +81,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_command_model() {
-        assert_eq!(
-            parse_command("/model gpt-4"),
-            Some(Command::Model("gpt-4".into()))
-        );
-        assert_eq!(
-            parse_command("/model anthropic/claude-sonnet-4"),
-            Some(Command::Model("anthropic/claude-sonnet-4".into()))
-        );
-        assert!(parse_command("/model").is_none()); // needs arg
-    }
-
-    #[test]
-    fn test_parse_command_mode() {
-        assert_eq!(
-            parse_command("/mode every_message"),
-            Some(Command::Mode("every_message".into()))
-        );
-        assert_eq!(
-            parse_command("/mode mention_only"),
-            Some(Command::Mode("mention_only".into()))
-        );
-        assert!(parse_command("/mode").is_none()); // needs arg
-    }
-
-    #[test]
-    fn test_parse_command_reload() {
-        assert_eq!(parse_command("/reload"), Some(Command::Reload));
-    }
-
-    #[test]
     fn test_parse_command_status() {
         assert_eq!(parse_command("/status"), Some(Command::Status));
+    }
+
+    #[test]
+    fn test_parse_command_stop() {
+        assert_eq!(parse_command("/stop"), Some(Command::Stop));
     }
 
     #[test]
@@ -159,6 +95,10 @@ mod tests {
         assert!(parse_command("Hello!").is_none());
         assert!(parse_command("").is_none());
         assert!(parse_command("   hi   ").is_none());
+        // /model, /mode, /reload are no longer commands
+        assert!(parse_command("/model gpt-4").is_none());
+        assert!(parse_command("/mode every_message").is_none());
+        assert!(parse_command("/reload").is_none());
     }
 
     #[test]
@@ -189,38 +129,6 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_model_command() {
-        let mut config = crate::config::basic_config();
-        let resp = handle_command(&Command::Model("custom/model".into()), &mut config, "-123");
-        assert!(resp.contains("custom/model"));
-        assert_eq!(config.chat_config("-123").model.unwrap(), "custom/model");
-    }
-
-    #[test]
-    fn test_handle_mode_command() {
-        let mut config = crate::config::basic_config();
-        let resp = handle_command(&Command::Mode("every_message".into()), &mut config, "-123");
-        assert!(resp.contains("EveryMessage"));
-        assert_eq!(
-            config.chat_config("-123").interaction_mode,
-            InteractionMode::EveryMessage
-        );
-
-        let resp = handle_command(&Command::Mode("mention_only".into()), &mut config, "-123");
-        assert!(resp.contains("MentionOnly"));
-
-        let resp = handle_command(&Command::Mode("invalid".into()), &mut config, "-123");
-        assert!(resp.contains("Unknown mode"));
-    }
-
-    #[test]
-    fn test_handle_reload_command() {
-        let mut config = crate::config::basic_config();
-        let resp = handle_command(&Command::Reload, &mut config, "-123");
-        assert_eq!(resp, "Skills reloaded successfully.");
-    }
-
-    #[test]
     fn test_handle_status_command() {
         let mut config = crate::config::basic_config();
         config.openrouter_default_model = "default-model".into();
@@ -233,12 +141,9 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_mode_shorthand() {
+    fn test_handle_stop_command() {
         let mut config = crate::config::basic_config();
-        let resp = handle_command(&Command::Mode("every".into()), &mut config, "-123");
-        assert!(resp.contains("EveryMessage"));
-
-        let resp = handle_command(&Command::Mode("mention".into()), &mut config, "-123");
-        assert!(resp.contains("MentionOnly"));
+        let resp = handle_command(&Command::Stop, &mut config, "-123");
+        assert!(resp.contains("Stop command received"));
     }
 }

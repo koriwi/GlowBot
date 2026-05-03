@@ -264,24 +264,10 @@ impl GlowBot {
             return Ok(Some("You are not authorized to run bot commands.".into()));
         }
 
-        let needs_save = matches!(
-            command,
-            crate::commands::Command::Model(_) | crate::commands::Command::Mode(_)
-        );
-        let reload_needed = matches!(command, crate::commands::Command::Reload);
-
         let response = {
             let mut state = self.state.lock().await;
             handle_command(command, &mut state.config, chat_id)
         };
-
-        if needs_save {
-            self.save_config().await?;
-        }
-
-        if reload_needed {
-            self.reload_skills().await?;
-        }
 
         Ok(Some(response))
     }
@@ -1038,6 +1024,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_process_message_command_stop() {
+        let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+        let result = bot
+            .process_message("-123", "456", "@testuser", "/stop", "mybot")
+            .await
+            .unwrap();
+        assert!(result.unwrap().contains("Stop command received"));
+    }
+
+    #[tokio::test]
     async fn test_process_message_with_tool_call() {
         let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 
@@ -1145,46 +1141,6 @@ mod tests {
             .await
             .unwrap();
         assert!(result.unwrap().contains("loop"));
-    }
-
-    #[tokio::test]
-    async fn test_process_message_command_model() {
-        let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
-        let result = bot
-            .process_message("-123", "456", "@testuser", "/model custom/model", "mybot")
-            .await
-            .unwrap();
-        assert!(result.unwrap().contains("custom/model"));
-    }
-
-    #[tokio::test]
-    async fn test_process_message_command_mode() {
-        let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
-        let result = bot
-            .process_message("-123", "456", "@testuser", "/mode every_message", "mybot")
-            .await
-            .unwrap();
-        assert!(result.unwrap().contains("EveryMessage"));
-    }
-
-    #[tokio::test]
-    async fn test_process_message_command_reload() {
-        let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
-        let result = bot
-            .process_message("-123", "456", "@testuser", "/reload", "mybot")
-            .await
-            .unwrap();
-        assert_eq!(result, Some("Skills reloaded successfully.".into()));
-    }
-
-    #[tokio::test]
-    async fn test_process_message_command_invalid_mode() {
-        let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
-        let result = bot
-            .process_message("-123", "456", "@testuser", "/mode invalid", "mybot")
-            .await
-            .unwrap();
-        assert!(result.unwrap().contains("Unknown mode"));
     }
 
     #[tokio::test]

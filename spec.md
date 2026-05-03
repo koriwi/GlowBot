@@ -70,11 +70,11 @@ chats:
     system_prompt: ""                    # optional per-chat system prompt
 ```
 
-`/commands` at runtime can modify `model` and `interaction_mode` for the active chat (if the sender is on the `command_whitelist`).
+`/commands` at runtime can modify settings for the active chat (if the sender is on the `command_whitelist`).
 
 ### 3.2 Git Versioning
 
-Every write to the data directory — config changes via `/commands`, skill creation/edits, and memory updates — triggers an automatic:
+Every write to the data directory — config changes via commands, skill creation/edits, and memory updates — triggers an automatic:
 
 1. `git add <changed file(s)>`
 2. `git commit -m "<generated message describing the change>"`
@@ -125,7 +125,7 @@ This prevents random strangers from running arbitrary bash commands while keepin
 ### 4.2 LLM Integration (OpenRouter)
 
 - Sends chat context + tools + skills + memory to the configured model.
-- Model is set per chat in config (overridable via `/model`).
+- Model is set per chat in config.
 - Handles tool-use responses with a multi-turn loop (up to 10 rounds).
 - Maintains a **conversation history** per chat, stored in-memory. Past messages are **not** automatically sent to the LLM. Instead, the bot sends only the current user message along with the system prompt. The LLM can call `get_recent_messages(count)` to retrieve prior messages on demand when it needs context.
 - Previous messages are still kept for tracking purposes but do not consume context tokens unless explicitly requested.
@@ -174,7 +174,7 @@ Parse the results and summarize.
 ```
 
 - The **name and description** of each skill are injected into the system prompt as a compact list. The full body is **not** included — the LLM can call `read_skill(name)` to load the complete content on demand.
-- Skills are loaded at startup from `skills/*/skill.md` and can be reloaded at runtime via `/reload`.
+- Skills are loaded at startup from `skills/*/skill.md`.
 
 #### Compiled skills (Phase 2)
 
@@ -327,10 +327,8 @@ Commands are Telegram bot commands (`/command`) used for control and settings. *
 
 | Command | Purpose | Requires |
 |---------|---------|----------|
-| `/model <name>` | Change the LLM model for this chat | command whitelist |
-| `/mode <every_message\|mention_only>` | Change interaction mode | command whitelist |
-| `/reload` | Reload skills from disk | command whitelist |
-| `/status` | Show current config for this chat | interaction whitelist |
+| `/status` | Show current config for this chat | command whitelist |
+| `/stop` | Stop the bot | command whitelist |
 
 #### Whitelist rules
 
@@ -359,7 +357,7 @@ Whitelists contain Telegram user IDs.
 - [x] Heartbeat task system with autonomous background agents
 - [x] Per-user `.md` memory with YAML frontmatter, freeform body
 - [x] Memory frontmatter injected into system prompt; full file readable via tools
-- [x] `/model`, `/mode`, `/reload`, `/status` commands
+- [x] `/status`, `/stop` commands
 - [x] Interaction & command whitelists per chat
 - [x] Git auto-commit + push on every data write (with safe.directory and identity setup)
 - [x] Docker deployment with `glowbot_data/` as a volume
