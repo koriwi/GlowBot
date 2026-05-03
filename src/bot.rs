@@ -381,8 +381,21 @@ async fn process_with_llm_impl(
     // Ensure user has a memory file
     ensure_memory_exists_impl(state, chat_id, user_id, username).await?;
 
+    // Read existing conversation history upfront
+    let history = {
+        let s = state.lock().await;
+        s.conversation_history.get(chat_id).cloned().unwrap_or_default()
+    };
+
     let current_msg = ChatMessage::user_with_name(text, username);
-    let mut messages = vec![ChatMessage::system(&system_prompt), current_msg.clone()];
+    let mut turn_messages = vec![current_msg.clone()];
+
+    let build_request = |turn: &Vec<ChatMessage>| -> Vec<ChatMessage> {
+        let mut req = vec![ChatMessage::system(&system_prompt)];
+        req.extend(history.iter().cloned());
+        req.extend(turn.iter().cloned());
+        req
+    };
 
     let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
         let s = state.lock().await;
@@ -401,7 +414,7 @@ async fn process_with_llm_impl(
 
             let request = ChatCompletionRequest {
                 model: model.clone(),
-                messages: messages.clone(),
+                messages: build_request(&turn_messages),
                 tools: Some(tools.clone()),
                 tool_choice: None,
             };
@@ -432,11 +445,12 @@ async fn process_with_llm_impl(
                     break;
                 }
 
-                messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
+                // Record assistant's tool call message in the turn
+                turn_messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
 
                 let data_dir = { state.lock().await.data_dir.clone() };
                 let results = dispatch_tool_calls(state, chat_id, tool_calls, Some(&data_dir), None).await;
-                messages.extend(results);
+                turn_messages.extend(results);
 
                 git_repo.auto_commit("Auto-commit after tool execution")?;
 
@@ -453,13 +467,15 @@ async fn process_with_llm_impl(
         result.unwrap_or_else(|| "I ran into a loop processing your request. Please try again.".into())
     };
 
-    // Store in conversation history
+    // Record final assistant message in the turn
+    turn_messages.push(ChatMessage::assistant(&result));
+
+    // Store the completed turn in conversation history
     {
         let mut s = state.lock().await;
         let window = s.config.conversation_window;
         let history = s.conversation_history.entry(chat_id.to_string()).or_default();
-        history.push(current_msg);
-        history.push(ChatMessage::assistant(&result));
+        history.extend(turn_messages);
         while history.len() > window {
             history.remove(0);
         }
