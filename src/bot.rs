@@ -885,24 +885,6 @@ pub async fn run_heartbeat_task(
             break;
         }
         log::info!("Heartbeat chat {}: task '{}' done", cid, task_id);
-
-        // Check if the task was actually removed; if not, notify the chat
-        {
-            let s = state.lock().await;
-            let list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
-            if list.tasks.iter().any(|t| t.id == task_id) {
-                let msg = format!(
-                    "⚠️ Task '{}' could not be completed: {}",
-                    task_id, task_desc
-                );
-                let _ = tg_bot
-                    .send_message(
-                        teloxide::types::ChatId(cid.parse().unwrap_or_default()),
-                        &msg,
-                    )
-                    .await;
-            }
-        }
     }
 
     if processed > 0 {
