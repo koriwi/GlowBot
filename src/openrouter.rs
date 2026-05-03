@@ -230,6 +230,7 @@ pub fn all_tool_definitions() -> Vec<ToolDefinition> {
         add_task_tool_definition(),
         list_tasks_tool_definition(),
         remove_task_tool_definition(),
+        send_message_tool_definition(),
     ]
 }
 
@@ -415,6 +416,27 @@ pub fn remove_task_tool_definition() -> ToolDefinition {
     }
 }
 
+/// The send_message tool definition.
+pub fn send_message_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "send_message".into(),
+            description: "Send a plain text message to the current chat. Use sparingly — in normal conversation the assistant reply is the message, but in background tasks you may use this once to report completion or deliver results.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "The plain text message to send."
+                    }
+                },
+                "required": ["text"]
+            }),
+        },
+    }
+}
+
 /// A request to OpenRouter's chat completions API.
 #[derive(Debug, Serialize)]
 pub struct ChatCompletionRequest {
@@ -582,7 +604,7 @@ mod tests {
     #[test]
     fn test_all_tool_definitions() {
         let tools = all_tool_definitions();
-        assert_eq!(tools.len(), 11);
+        assert_eq!(tools.len(), 12);
         assert_eq!(tools[0].function.name, "bash");
         assert_eq!(tools[1].function.name, "read_memory");
         assert_eq!(tools[2].function.name, "update_memory");

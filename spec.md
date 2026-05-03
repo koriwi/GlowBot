@@ -139,6 +139,7 @@ This prevents random strangers from running arbitrary bash commands while keepin
   - **`read_skill`** — read an existing skill's full content as JSON.
   - **`update_skill`** — update an existing skill (name, description?, body?). Triggers reload.
   - **`add_task`, `list_tasks`, `remove_task`** — manage the chat's task list.
+  - **`send_message`** — send a plain text message to the current chat. Available in all contexts; primarily intended for background tasks to report completion or deliver results (used sparingly, at most once per task). In normal conversation the assistant reply itself is the message.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
 
 **Important implementation detail:** Bash commands run with the data directory as working directory. All paths must be relative (e.g. `chats/123/456.md`, not `glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` so the LLM knows the exact memory file paths.
@@ -232,12 +233,10 @@ chats:
 - For each chat with pending tasks, a **dedicated timer loop** is spawned with that chat's configured interval (in seconds). If the chat has no custom interval, the global default is used. DMs always use the global default since they can't be preconfigured.
 - Each per-chat loop independently: picks the oldest task → runs the LLM agent → sleeps for its interval → repeats. If heartbeat is disabled (interval = 0) the loop exits and will be respawned on the next scheduler scan if it becomes enabled again. If the agent completes all tasks, the loop exits immediately so the chat becomes eligible for re-discovery when new tasks are added.
 - The agent uses bash, MCP tools, and task tools to complete the work. Each task is processed **at most once per cycle**, preventing re-grinding if a task cannot be completed yet (e.g. waiting for a download). If the agent loops back to a task already handled this interval, the cycle exits early.
-- The agent is **silent by default** — it only sends Telegram messages in two cases:
-  1. **On LLM error** (e.g. API failure, timeout), it notifies the chat that the task failed.
-  2. **When the task explicitly requires it** — the task description can instruct the agent to message the user when a milestone is reached or work is complete (e.g. *"Download this file, then tell me when it's done"*). The agent should NOT spam progress updates (e.g. "63% done") — only final or actionable results.
+- The agent may send Telegram messages via the **`send_message` tool** when a task requires it — for example, to report completion or deliver results (e.g. *"Download this file, then tell me when it's done"*). It should NOT spam progress updates (e.g. "63% done") — only final or actionable results, at most once per task. If a task does not require messaging, it completes silently.
 - Task processing runs in its own task — does not block message handling.
 
-**Tools:** `add_task`, `list_tasks`, `remove_task`.
+**Tools:** `add_task`, `list_tasks`, `remove_task`, `send_message`.
 
 ---
 

@@ -356,6 +356,7 @@ impl GlowBot {
                         chat_id,
                         tool_calls,
                         Some(&data_dir),
+                        None,
                     )
                     .await;
                     messages.extend(results);
@@ -454,7 +455,7 @@ pub async fn run_heartbeat_task(
             - If the task spawns follow-up work, call add_task(\"...\") for each.\n\
             - If the task cannot be completed yet (e.g. download still in progress, waiting for external event),\n\
               just leave it — do NOT remove it. It will run again next cycle.\n\
-            - Do NOT send Telegram messages. This is a background process.\n\
+            - You may send at most ONE message to the chat to report completion or deliver results, using the send_message tool. Do NOT spam progress updates.\n\
             Current date: {date}",
             task_desc = task_desc,
             task_id = task_id,
@@ -507,7 +508,7 @@ pub async fn run_heartbeat_task(
                     break;
                 }
                 messages.push(ChatMessage::assistant_tool_calls(tcs.clone()));
-                messages.extend(dispatch_tool_calls(&state, &cid, tcs, None).await);
+                messages.extend(dispatch_tool_calls(&state, &cid, tcs, None, Some(&tg_bot)).await);
                 let _ = git_repo.auto_commit("Heartbeat");
                 continue;
             }
@@ -550,13 +551,14 @@ async fn dispatch_tool_calls(
     chat_id: &str,
     tool_calls: &[ToolCall],
     data_dir: Option<&std::path::Path>,
+    tg_bot: Option<&teloxide::Bot>,
 ) -> Vec<ChatMessage> {
     let mut results = Vec::new();
     for tc in tool_calls {
         let args: serde_json::Value =
             serde_json::from_str(&tc.function.arguments).unwrap_or_default();
         let result_text =
-            dispatch_tool(state, chat_id, tc.function.name.as_str(), &args).await;
+            dispatch_tool(state, chat_id, tc.function.name.as_str(), &args, tg_bot).await;
         if let Some(dir) = data_dir {
             log_tool_call_to(dir, &tc.function.name, &tc.function.arguments, &result_text);
         }
@@ -571,9 +573,25 @@ async fn dispatch_tool(
     chat_id: &str,
     tool_name: &str,
     args: &serde_json::Value,
+    tg_bot: Option<&teloxide::Bot>,
 ) -> String {
     let cid = chat_id.to_string();
     match tool_name {
+        "send_message" => {
+            let text = args["text"].as_str().unwrap_or("");
+            if text.is_empty() {
+                return "Error: text required".into();
+            }
+            if let Some(bot) = tg_bot {
+                let chat = ChatId(cid.parse().unwrap_or_default());
+                match bot.send_message(chat, text).await {
+                    Ok(_) => "Message sent.".into(),
+                    Err(e) => format!("Failed to send message: {}", e),
+                }
+            } else {
+                "Error: send_message not available in this context.".into()
+            }
+        }
         "bash" => {
             let cmd = args["command"].as_str().unwrap_or("");
             let dir = { state.lock().await.data_dir.clone() };
@@ -1517,7 +1535,7 @@ mod tests {
 
         // No MCP tools yet
         let tools = state.build_tools();
-        assert_eq!(tools.len(), 11);
+        assert_eq!(tools.len(), 12);
 
         // Add a fake MCP tool
         state.mcp_tools.push(crate::mcp::McpTool {
@@ -1532,7 +1550,7 @@ mod tests {
         });
 
         let tools = state.build_tools();
-        assert_eq!(tools.len(), 12);
+        assert_eq!(tools.len(), 13);
         assert!(tools.iter().any(|t| t.function.name == "mcp_test-srv_test_tool"));
     }
 }
