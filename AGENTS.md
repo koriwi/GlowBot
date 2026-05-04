@@ -42,7 +42,8 @@ See existing `Wiremock` tests in `bot.rs`, `mcp.rs`, etc. for patterns.
 | `bot_dispatch.rs` | Tool dispatch functions (`dispatch_tool`, `dispatch_tool_calls`, `log_tool_call_to`). Submodule of `bot`. |
 | `bot_heartbeat.rs` | Background heartbeat task runner. Submodule of `bot`. |
 | `bot_tests.rs` | All integration tests for bot module. Included via `#[cfg(test)] #[path = "bot_tests.rs"] mod tests;`. |
-| `config.rs` | YAML config loading/saving — `Config`, `ChatConfig`, `McpServer`, allowlists. |
+| `config.rs` | YAML config loading/saving — `Config`, `ChatConfig`, `DmConfig`, `McpServer`, allowlists. |
+| `config.example.yaml` | Example config file — **must stay in sync with `config.rs`** fields, defaults, and structure. Update whenever `config.rs` changes. |
 | `commands.rs` | Telegram command parsing: `/model`, `/mode`, `/reload`, `/status`. |
 | `memory.rs` | User and chat memory files in Markdown with YAML frontmatter. |
 | `skills.rs` | Skill directories with `skill.md` files (frontmatter + body). |
@@ -80,7 +81,8 @@ See existing `Wiremock` tests in `bot.rs`, `mcp.rs`, etc. for patterns.
 2. Add tests → run `cargo test`
 3. Check coverage → `cargo llvm-cov --summary-only`
 4. If coverage dropped or new features added: update `spec.md`
-5. `git add`, `git commit`, `git push`
+5. **If `config.rs` struct/field changes:** update `config.example.yaml` to match — keep defaults, comments, and structure in sync
+6. `git add`, `git commit`, `git push`
 
 ## Refactoring Rules
 
