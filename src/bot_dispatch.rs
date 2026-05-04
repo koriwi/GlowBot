@@ -324,11 +324,11 @@ pub(crate) async fn dispatch_tool(
                 let s = state.lock().await;
                 let cfg = &s.config;
                 (
-                    match &cfg.embedding_model {
+                    match &cfg.embedding.model {
                         Some(m) => m.clone(),
                         None => return "Error: embedding model not configured".into(),
                     },
-                    cfg.embedding_search_limit,
+                    cfg.embedding.search_limit,
                 )
             };
 

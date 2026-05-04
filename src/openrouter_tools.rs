@@ -80,7 +80,7 @@ pub(crate) fn update_memory_tool_definition() -> ToolDefinition {
 }
 
 /// All tool definitions. When `include_bash` is false, the bash tool is excluded.
-/// When `embedding_model` is Some, adds the search_conversations RAG tool.
+/// When `model` is Some, adds the search_conversations RAG tool.
 pub fn all_tool_definitions(include_bash: bool, embedding_model: Option<&str>) -> Vec<ToolDefinition> {
     let mut tools = vec![
         read_memory_tool_definition(),

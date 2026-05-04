@@ -91,7 +91,7 @@ impl BotState {
     pub fn build_tools(&self, include_bash: bool) -> Vec<crate::openrouter::ToolDefinition> {
         let mut t = crate::openrouter::all_tool_definitions(
             include_bash,
-            self.config.embedding_model.as_deref(),
+            self.config.embedding.model.as_deref(),
         );
         for mt in &self.mcp_tools {
             t.push(crate::openrouter::ToolDefinition {
@@ -235,10 +235,15 @@ impl GlowBot {
     /// Clean up mismatched embeddings and start async backfill.
     /// If no embedding model is configured, does nothing.
     pub async fn start_embedding_backfill(&self) {
-        let (model, api_key) = {
+        let (model, api_key, max_chars, allow_split) = {
             let s = self.state.lock().await;
-            match &s.config.embedding_model {
-                Some(m) => (m.clone(), s.config.openrouter_api_key.clone()),
+            match &s.config.embedding.model {
+                Some(m) => (
+                    m.clone(),
+                    s.config.openrouter_api_key.clone(),
+                    s.config.embedding.max_chars,
+                    s.config.embedding.allow_split,
+                ),
                 None => return,
             }
         };
@@ -277,16 +282,19 @@ impl GlowBot {
 
             let client = crate::openrouter::OpenRouterClient::new(api_key);
 
+            let chunker = |t: &str| chunk_for_embedding(t, max_chars, allow_split);
             for (idx, (msg_id, text)) in unembedded.iter().enumerate() {
-                let text_preview: String = text.chars().take(80).collect();
-                match client.embeddings(&model, text).await {
-                    Ok(vec) => {
-                        if let Err(e) = db.save_embedding(*msg_id, &vec, &model) {
-                            log::warn!("Failed to save embedding for message {} (model={}, text=\"{}\"): {}", msg_id, model, text_preview, e);
+                for chunk in &chunker(text) {
+                    let text_preview: String = chunk.chars().take(80).collect();
+                    match client.embeddings(&model, chunk).await {
+                        Ok(vec) => {
+                            if let Err(e) = db.save_embedding(*msg_id, &vec, &model) {
+                                log::warn!("Failed to save embedding for message {} (model={}, text=\"{}\"): {}", msg_id, model, text_preview, e);
+                            }
                         }
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to embed message {} (model={}, text=\"{}\"): {}", msg_id, model, text_preview, e);
+                        Err(e) => {
+                            log::warn!("Failed to embed message {} (model={}, text=\"{}\"): {}", msg_id, model, text_preview, e);
+                        }
                     }
                 }
 
@@ -621,16 +629,18 @@ async fn process_with_llm_impl(
     // Embed messages in the background if embedding model is configured
     {
         let s = state.lock().await;
-        if let Some(ref embed_model) = s.config.embedding_model {
+        if let Some(ref embed_model) = s.config.embedding.model {
             if !message_ids.is_empty() {
                 let api_key = s.config.openrouter_api_key.clone();
                 let db = s.db.clone();
                 let embed_model = embed_model.clone();
+                let max_chars = s.config.embedding.max_chars;
+                let allow_split = s.config.embedding.allow_split;
                 let turn_messages = turn_messages.clone();
                 drop(s);
 
                 tokio::spawn(async move {
-                    embed_turn(&db, &api_key, &embed_model, &message_ids, &turn_messages).await;
+                    embed_turn(&db, &api_key, &embed_model, max_chars, allow_split, &message_ids, &turn_messages).await;
                 });
             }
         }
@@ -645,6 +655,8 @@ async fn embed_turn(
     db: &crate::db::Database,
     api_key: &str,
     embed_model: &str,
+    max_chars: usize,
+    allow_split: bool,
     message_ids: &[i64],
     turn_messages: &[ChatMessage],
 ) {
@@ -657,17 +669,40 @@ async fn embed_turn(
         if text.is_empty() {
             continue;
         }
-        let text_preview: String = text.chars().take(80).collect();
-        match client.embeddings(embed_model, &text).await {
-            Ok(vec) => {
-                if let Err(e) = db.save_embedding(message_ids[i], &vec, embed_model) {
-                    log::warn!("Failed to save embedding for message {} (model={}, text=\"{}\"): {}", message_ids[i], embed_model, text_preview, e);
+        let chunks = chunk_for_embedding(&text, max_chars, allow_split);
+        for chunk in &chunks {
+            let text_preview: String = chunk.chars().take(80).collect();
+            match client.embeddings(embed_model, chunk).await {
+                Ok(vec) => {
+                    if let Err(e) = db.save_embedding(message_ids[i], &vec, embed_model) {
+                        log::warn!("Failed to save embedding for message {} (model={}, text=\"{}\"): {}", message_ids[i], embed_model, text_preview, e);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to embed message {} (model={}, text=\"{}\"): {}", message_ids[i], embed_model, text_preview, e);
                 }
             }
-            Err(e) => {
-                log::warn!("Failed to embed message {} (model={}, text=\"{}\"): {}", message_ids[i], embed_model, text_preview, e);
-            }
         }
+    }
+}
+
+/// Split text into chunks for embedding based on max_chars and allow_split.
+/// Returns a Vec of strings — always at least one element.
+fn chunk_for_embedding(text: &str, max_chars: usize, allow_split: bool) -> Vec<String> {
+    if max_chars == 0 {
+        return vec![text.to_string()];
+    }
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= max_chars {
+        return vec![text.to_string()];
+    }
+    if allow_split {
+        chars
+            .chunks(max_chars)
+            .map(|c| c.iter().collect())
+            .collect()
+    } else {
+        vec![chars[..max_chars].iter().collect()]
     }
 }
 

@@ -112,6 +112,38 @@ impl Default for ConversationConfig {
     }
 }
 
+/// Embedding configuration for conversation vector search (RAG).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingConfig {
+    /// Embedding model name. When set, every message is embedded and stored.
+    /// Example: "openai/text-embedding-3-small"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Maximum characters per embedding. 0 means no limit (full text).
+    /// When text exceeds this, it is either truncated (allow_split=false)
+    /// or split into multiple chunks (allow_split=true).
+    #[serde(default)]
+    pub max_chars: usize,
+    /// When true, split long text into chunks of max_chars, creating separate
+    /// embedding entries per chunk. When false, truncate to max_chars.
+    #[serde(default)]
+    pub allow_split: bool,
+    /// Maximum number of embeddings loaded for similarity search.
+    #[serde(default = "default_embedding_search_limit")]
+    pub search_limit: usize,
+}
+
+impl Default for EmbeddingConfig {
+    fn default() -> Self {
+        Self {
+            model: None,
+            max_chars: 0,
+            allow_split: false,
+            search_limit: default_embedding_search_limit(),
+        }
+    }
+}
+
 /// Global application configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -153,14 +185,9 @@ pub struct Config {
     /// Used as fallback when no per-chat override is set.
     #[serde(default = "default_bash_enabled")]
     pub bash_enabled: bool,
-    /// Embedding model for conversation vector search.
-    /// When set, every message is embedded and stored for RAG retrieval.
-    /// Example: "openai/text-embedding-3-small"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub embedding_model: Option<String>,
-    /// Maximum number of recent embeddings loaded for similarity search.
-    #[serde(default = "default_embedding_search_limit")]
-    pub embedding_search_limit: usize,
+    /// Embedding configuration for RAG vector search.
+    #[serde(default)]
+    pub embedding: EmbeddingConfig,
     /// Database-related configuration.
     #[serde(default)]
     pub db: DatabaseConfig,
@@ -300,8 +327,7 @@ pub(crate) fn basic_config() -> Config {
         heartbeat_interval_minutes: 90,
         heartbeat_scan_interval_seconds: 60,
         bash_enabled: true,
-        embedding_model: None,
-        embedding_search_limit: 1000,
+        embedding: EmbeddingConfig::default(),
         chats: HashMap::new(),
         dms: HashMap::new(),
         dm_enabled: None,
@@ -615,14 +641,14 @@ mod tests {
     #[test]
     fn test_embedding_model_serialization() {
         let mut config = basic_config();
-        assert!(config.embedding_model.is_none());
-        config.embedding_model = Some("openai/text-embedding-3-small".into());
+        assert!(config.embedding.model.is_none());
+        config.embedding.model = Some("openai/text-embedding-3-small".into());
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
         config.save(&path).unwrap();
         let loaded = Config::load(&path).unwrap();
         assert_eq!(
-            loaded.embedding_model.as_deref(),
+            loaded.embedding.model.as_deref(),
             Some("openai/text-embedding-3-small")
         );
     }
@@ -630,7 +656,45 @@ mod tests {
     #[test]
     fn test_embedding_search_limit_default() {
         let config = basic_config();
-        assert_eq!(config.embedding_search_limit, 1000);
+        assert_eq!(config.embedding.search_limit, 1000);
+    }
+
+    #[test]
+    fn test_embedding_config_defaults() {
+        let ec = EmbeddingConfig::default();
+        assert!(ec.model.is_none());
+        assert_eq!(ec.max_chars, 0);
+        assert!(!ec.allow_split);
+        assert_eq!(ec.search_limit, 1000);
+    }
+
+    #[test]
+    fn test_embedding_config_serialization() {
+        let ec = EmbeddingConfig {
+            model: Some("test-model".into()),
+            max_chars: 500,
+            allow_split: true,
+            search_limit: 200,
+        };
+        let yaml = serde_yaml::to_string(&ec).unwrap();
+        assert!(yaml.contains("test-model"));
+        assert!(yaml.contains("max_chars"));
+        let loaded: EmbeddingConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(loaded.model.as_deref(), Some("test-model"));
+        assert_eq!(loaded.max_chars, 500);
+        assert!(loaded.allow_split);
+        assert_eq!(loaded.search_limit, 200);
+    }
+
+    #[test]
+    fn test_embedding_search_limit_serialization() {
+        let mut config = basic_config();
+        config.embedding.search_limit = 500;
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+        assert_eq!(loaded.embedding.search_limit, 500);
     }
 
     // --- ConversationConfig tests ---
@@ -689,14 +753,4 @@ mod tests {
         assert!(!config.db.store_reasoning);
     }
 
-    #[test]
-    fn test_embedding_search_limit_serialization() {
-        let mut config = basic_config();
-        config.embedding_search_limit = 500;
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("config.yaml");
-        config.save(&path).unwrap();
-        let loaded = Config::load(&path).unwrap();
-        assert_eq!(loaded.embedding_search_limit, 500);
-    }
 }
