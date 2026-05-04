@@ -5,16 +5,33 @@ telegram_token: "your-telegram-bot-token-here"
 openrouter_api_key: "your-openrouter-api-key-here"
 openrouter_default_model: "anthropic/claude-sonnet-4"
 
-# Maximum number of past messages kept in memory for get_recent_messages (default: 20)
-conversation_window: 20
+# Conversation context settings
+conversation:
+  recent_messages_window_size: 20    # number of recent messages loaded from DB as context (default: 20)
+  include_reasoning: false           # include model's reasoning/thinking in subsequent requests (default: false)
 
-# Heartbeat interval for autonomous task processing (default: 90 minutes, 0 = disabled)
-heartbeat_interval_minutes: 90
+# Database settings
+db:
+  store_reasoning: false             # persist LLM reasoning/thinking content in DB (default: false)
+
+# Embedding / vector search (RAG) — disabled by default, requires an embedding model
+embedding:
+  # model: "openai/text-embedding-3-small"
+  max_chars: 0                       # 0 = no limit (full text); otherwise truncate / split at this size
+  allow_split: false                 # when true, split long text into chunks instead of truncating
+  search_limit: 1000                 # max number of embeddings loaded for similarity search (default: 1000)
+
+# Heartbeat for autonomous task processing
+heartbeat_interval_minutes: 90       # per-chat interval in minutes (default: 90, 0 = disabled)
+heartbeat_scan_interval_seconds: 60  # how often the scheduler scans for pending tasks (default: 60)
+
+# Global bash tool toggle — used as fallback when no per-chat override is set
+bash_enabled: true                   # (default: true)
 
 # MCP servers for additional tools (Model Context Protocol)
 # mcp_servers:
 #   - name: "my-server"
-#     transport: "streamable"     # "streamable" (default) or "http"
+#     transport: "streamable"       # "streamable" (default, session-based) or "http" (stateless)
 #     url: "https://mcp.example.com/mcp"
 #     api_key: "optional-bearer-token"
 
@@ -29,8 +46,8 @@ dms:
   #   model: "anthropic/claude-haiku-4"
   #   commands_enabled: true
   #   system_prompt: "You are talking to the bot owner."
-  #   heartbeat_interval_minutes: 30
-  #   bash_enabled: true
+  #   heartbeat_interval_minutes: 30   # optional, override global default; 0 = disabled
+  #   bash_enabled: true               # optional, override global bash_enabled
 
 # Group-specific overrides (keyed by Telegram chat ID, negative)
 chats:
@@ -41,3 +58,4 @@ chats:
   #   commands_enabled: true               # whether bot commands are enabled
   #   system_prompt: ""                    # optional per-chat system prompt
   #   heartbeat_interval_minutes: 30       # optional, override global default; 0 = disabled
+  #   bash_enabled: true                   # optional, override global bash_enabled
