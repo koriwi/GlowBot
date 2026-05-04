@@ -496,14 +496,15 @@ async fn process_with_llm_impl(
     ensure_memory_exists_impl(state, chat_id, user_id, username).await?;
 
     // Read existing conversation history upfront
-    let (history, _window) = {
+    let (history, include_thoughts) = {
         let s = state.lock().await;
-        let win = s.config.conversation_window;
+        let win = s.config.conversation.recent_messages_window_size;
+        let include = s.config.conversation.include_thoughts;
         let hist = s
             .db
             .load_messages(chat_id, win)
             .unwrap_or_default();
-        (hist, win)
+        (hist, include)
     };
 
     let current_msg = ChatMessage::user_with_name(text, username);
@@ -524,8 +525,9 @@ async fn process_with_llm_impl(
 
     let max_tool_rounds = 64;
 
-    let result = {
-        let mut result = None;
+    let (result, final_reasoning) = {
+        let mut final_text = None;
+        let mut final_reasoning = None;
         for _round in 0..max_tool_rounds {
             if check_stopped() {
                 return Ok(Some("⏹ Stopped.".into()));
@@ -568,12 +570,19 @@ async fn process_with_llm_impl(
 
             if let Some(tool_calls) = &choice.message.tool_calls {
                 if tool_calls.is_empty() {
-                    result = Some(choice.message.content.clone().unwrap_or_default());
+                    final_text = Some(choice.message.content.clone().unwrap_or_default());
                     break;
                 }
 
                 // Record assistant's tool call message in the turn
-                turn_messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
+                if let (Some(reasoning), true) = (&choice.message.reasoning, include_thoughts) {
+                    turn_messages.push(ChatMessage::assistant_tool_calls_with_reasoning(
+                        tool_calls.clone(),
+                        reasoning.clone(),
+                    ));
+                } else {
+                    turn_messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
+                }
 
                 let data_dir = { state.lock().await.data_dir.clone() };
                 let results = dispatch_tool_calls(state, chat_id, tool_calls, Some(&data_dir), tg_bot).await;
@@ -587,15 +596,20 @@ async fn process_with_llm_impl(
                 continue;
             }
 
-            result = Some(choice.message.content.clone().unwrap_or_default());
+            final_text = Some(choice.message.content.clone().unwrap_or_default());
+            final_reasoning = choice.message.reasoning;
             break;
         }
 
-        result.unwrap_or_else(|| "I ran into a loop processing your request. Please try again.".into())
+        (final_text.unwrap_or_else(|| "I ran into a loop processing your request. Please try again.".into()), final_reasoning)
     };
 
     // Record final assistant message in the turn
-    turn_messages.push(ChatMessage::assistant(&result));
+    if let (Some(reasoning), true) = (&final_reasoning, include_thoughts) {
+        turn_messages.push(ChatMessage::assistant_with_reasoning(&result, reasoning.clone()));
+    } else {
+        turn_messages.push(ChatMessage::assistant(&result));
+    }
 
     // Store the completed turn in conversation history
     let message_ids = {

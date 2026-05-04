@@ -139,6 +139,7 @@ fn test_chat_message_text_content_with_parts() {
         name: None,
         tool_calls: None,
         tool_call_id: None,
+        reasoning: None,
     };
     assert_eq!(msg.text_content(), "Part1 Part2");
 }
@@ -399,6 +400,106 @@ fn test_embedding_response_deserialization() {
     let resp: EmbeddingResponse = serde_json::from_value(json).unwrap();
     assert_eq!(resp.data.len(), 1);
     assert_eq!(resp.data[0].embedding, vec![0.1, 0.2, 0.3]);
+}
+
+// ─── reasoning / thinking tests ───────────────────────────────────
+
+#[test]
+fn test_assistant_message_with_reasoning() {
+    let json = serde_json::json!({
+        "content": "The answer is 42.",
+        "role": "assistant",
+        "reasoning": "Let me think step by step..."
+    });
+    let msg: AssistantMessage = serde_json::from_value(json).unwrap();
+    assert_eq!(msg.content.as_deref(), Some("The answer is 42."));
+    assert_eq!(msg.reasoning.as_deref(), Some("Let me think step by step..."));
+    assert!(msg.tool_calls.is_none());
+}
+
+#[test]
+fn test_assistant_message_without_reasoning() {
+    let json = serde_json::json!({
+        "content": "Hello",
+        "role": "assistant"
+    });
+    let msg: AssistantMessage = serde_json::from_value(json).unwrap();
+    assert!(msg.reasoning.is_none());
+}
+
+#[test]
+fn test_assistant_message_with_tool_calls_and_reasoning() {
+    let json = serde_json::json!({
+        "content": null,
+        "role": "assistant",
+        "reasoning": "I need to use a tool...",
+        "tool_calls": [{
+            "id": "call_x",
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "arguments": "{\"command\":\"ls\"}"
+            }
+        }]
+    });
+    let msg: AssistantMessage = serde_json::from_value(json).unwrap();
+    assert_eq!(msg.reasoning.as_deref(), Some("I need to use a tool..."));
+    assert!(msg.tool_calls.is_some());
+}
+
+#[test]
+fn test_chat_message_assistant_with_reasoning() {
+    let msg = ChatMessage::assistant_with_reasoning("Hello", "thinking...".into());
+    assert_eq!(msg.role, "assistant");
+    assert_eq!(msg.text_content(), "Hello");
+    assert_eq!(msg.reasoning.as_deref(), Some("thinking..."));
+}
+
+#[test]
+fn test_chat_message_assistant_tool_calls_with_reasoning() {
+    let tc = ToolCall {
+        id: "t1".into(),
+        call_type: "function".into(),
+        function: FunctionCall {
+            name: "bash".into(),
+            arguments: "{}".into(),
+        },
+    };
+    let msg = ChatMessage::assistant_tool_calls_with_reasoning(vec![tc], "considering...".into());
+    assert_eq!(msg.tool_calls.as_ref().unwrap().len(), 1);
+    assert_eq!(msg.reasoning.as_deref(), Some("considering..."));
+    assert!(msg.text_content().is_empty());
+}
+
+#[test]
+fn test_estimate_tokens_with_reasoning() {
+    let msg = ChatMessage::assistant_with_reasoning("ok", "a".repeat(400));
+    let tokens = estimate_message_tokens(&msg);
+    // 4 (role) + 1 ("ok" ≈ 1 token) + 100 (400 chars / 4) = ~105
+    assert!(tokens >= 100 && tokens <= 110, "unexpected tokens: {}", tokens);
+}
+
+#[test]
+fn test_estimate_tokens_without_reasoning() {
+    let msg = ChatMessage::assistant("ok");
+    let tokens = estimate_message_tokens(&msg);
+    assert_eq!(tokens, 5); // 4 (role) + 1 ("ok" ≈ 1 token)
+}
+
+#[test]
+fn test_chat_message_reasoning_serialization() {
+    let msg = ChatMessage::assistant_with_reasoning("result", "step by step...".into());
+    let json = serde_json::to_string(&msg).unwrap();
+    assert!(json.contains("step by step..."));
+    assert!(json.contains("reasoning"));
+    assert!(json.contains("result"));
+}
+
+#[test]
+fn test_chat_message_no_reasoning_serialization() {
+    let msg = ChatMessage::assistant("hello");
+    let json = serde_json::to_string(&msg).unwrap();
+    assert!(!json.contains("reasoning"));
 }
 
 #[test]

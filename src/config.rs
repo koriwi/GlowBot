@@ -81,6 +81,28 @@ pub struct DmConfig {
     pub bash_enabled: Option<bool>,
 }
 
+/// Conversation context configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationConfig {
+    /// Number of recent messages to load from the database as context.
+    #[serde(default = "default_recent_messages_window_size")]
+    pub recent_messages_window_size: usize,
+    /// Whether to include the model's reasoning/thinking content in subsequent requests.
+    /// When enabled, reasoning text from assistant messages is captured and sent back
+    /// in the next turn so the model can see its previous thinking.
+    #[serde(default)]
+    pub include_thoughts: bool,
+}
+
+impl Default for ConversationConfig {
+    fn default() -> Self {
+        Self {
+            recent_messages_window_size: default_recent_messages_window_size(),
+            include_thoughts: false,
+        }
+    }
+}
+
 /// Global application configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -91,9 +113,9 @@ pub struct Config {
     /// Default OpenRouter model.
     #[serde(default = "default_model")]
     pub openrouter_default_model: String,
-    /// Number of recent messages to include as conversation context.
-    #[serde(default = "default_conversation_window")]
-    pub conversation_window: usize,
+    /// Conversation context settings (window size, thought inclusion).
+    #[serde(default)]
+    pub conversation: ConversationConfig,
 
     /// Per-chat configuration overrides for groups, keyed by chat ID string (negative).
     #[serde(default)]
@@ -130,13 +152,17 @@ pub struct Config {
     /// Maximum number of recent embeddings loaded for similarity search.
     #[serde(default = "default_embedding_search_limit")]
     pub embedding_search_limit: usize,
+    /// Whether to persist LLM reasoning/thinking content in the database.
+    /// Reasoning is only captured when `conversation.include_thoughts` is also enabled.
+    #[serde(default)]
+    pub db_store_reasoning: bool,
 }
 
 fn default_model() -> String {
     "anthropic/claude-sonnet-4".to_string()
 }
 
-fn default_conversation_window() -> usize {
+fn default_recent_messages_window_size() -> usize {
     20
 }
 
@@ -188,7 +214,7 @@ impl Config {
     /// `None` + `dms` is empty → true (backward-compatible).
     /// `None` + `dms` is non-empty → false (presence of entries implies control).
     pub fn dm_enabled_effective(&self) -> bool {
-        self.dm_enabled.unwrap_or_else(|| self.dms.is_empty())
+        self.dm_enabled.unwrap_or(self.dms.is_empty())
     }
 
     /// Get the effective model for a given chat ID.
@@ -259,7 +285,8 @@ pub(crate) fn basic_config() -> Config {
         telegram_token: "test-token".into(),
         openrouter_api_key: "test-key".into(),
         openrouter_default_model: "test/model".into(),
-        conversation_window: 20,
+        conversation: ConversationConfig::default(),
+        db_store_reasoning: false,
 
         mcp_servers: vec![],
         heartbeat_interval_minutes: 90,
@@ -596,6 +623,47 @@ mod tests {
     fn test_embedding_search_limit_default() {
         let config = basic_config();
         assert_eq!(config.embedding_search_limit, 1000);
+    }
+
+    // --- ConversationConfig tests ---
+
+    #[test]
+    fn test_conversation_config_default() {
+        let conv = ConversationConfig::default();
+        assert_eq!(conv.recent_messages_window_size, 20);
+        assert!(!conv.include_thoughts);
+    }
+
+    #[test]
+    fn test_conversation_config_serialization() {
+        let conv = ConversationConfig {
+            recent_messages_window_size: 50,
+            include_thoughts: true,
+        };
+        let yaml = serde_yaml::to_string(&conv).unwrap();
+        assert!(yaml.contains("50"));
+        assert!(yaml.contains("include_thoughts"));
+    }
+
+    #[test]
+    fn test_config_load_save_with_conversation_config() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+        let mut config = basic_config();
+        config.conversation.recent_messages_window_size = 30;
+        config.conversation.include_thoughts = true;
+        config.db_store_reasoning = true;
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+        assert_eq!(loaded.conversation.recent_messages_window_size, 30);
+        assert!(loaded.conversation.include_thoughts);
+        assert!(loaded.db_store_reasoning);
+    }
+
+    #[test]
+    fn test_config_defaults_db_store_reasoning_false() {
+        let config = basic_config();
+        assert!(!config.db_store_reasoning);
     }
 
     #[test]

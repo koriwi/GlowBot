@@ -5,7 +5,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 /// Persistent SQLite-backed conversation history.
-/// One row per message; read with a sliding window via `conversation_window`.
+/// One row per message; read with a sliding window configurable via
+/// `conversation.recent_messages_window_size`.
 #[derive(Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
@@ -38,6 +39,7 @@ impl Database {
                 chat_id     TEXT    NOT NULL,
                 role        TEXT    NOT NULL,
                 content     TEXT    NOT NULL,
+                reasoning   TEXT,
                 name        TEXT,
                 tool_calls  TEXT,
                 tool_call_id TEXT,
@@ -87,7 +89,7 @@ impl Database {
     pub fn load_messages(&self, chat_id: &str, limit: usize) -> anyhow::Result<Vec<ChatMessage>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT role, content, name, tool_calls, tool_call_id
+            "SELECT role, content, reasoning, name, tool_calls, tool_call_id
              FROM messages
              WHERE chat_id = ?1
              ORDER BY id DESC
@@ -97,6 +99,7 @@ impl Database {
         struct Raw {
             role: String,
             content_json: String,
+            reasoning: Option<String>,
             name: Option<String>,
             tool_calls_json: Option<String>,
             tool_call_id: Option<String>,
@@ -106,9 +109,10 @@ impl Database {
             Ok(Raw {
                 role: row.get(0)?,
                 content_json: row.get(1)?,
-                name: row.get(2)?,
-                tool_calls_json: row.get(3)?,
-                tool_call_id: row.get(4)?,
+                reasoning: row.get(2)?,
+                name: row.get(3)?,
+                tool_calls_json: row.get(4)?,
+                tool_call_id: row.get(5)?,
             })
         })?;
 
@@ -129,6 +133,7 @@ impl Database {
             msgs.push(ChatMessage {
                 role: raw.role,
                 content,
+                reasoning: raw.reasoning,
                 name: raw.name,
                 tool_calls,
                 tool_call_id: raw.tool_call_id,
@@ -157,18 +162,19 @@ impl Database {
             let tool_calls_json = msg
                 .tool_calls
                 .as_ref()
-                .map(|tc| serde_json::to_string(tc))
+                .map(serde_json::to_string)
                 .transpose()
                 .context("Failed to serialize tool_calls")?;
 
             tx.execute(
                 "INSERT INTO messages
-                 (chat_id, role, content, name, tool_calls, tool_call_id, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (chat_id, role, content, reasoning, name, tool_calls, tool_call_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     chat_id,
                     &msg.role,
                     content_json,
+                    msg.reasoning.as_deref(),
                     msg.name.as_deref(),
                     tool_calls_json.as_deref(),
                     msg.tool_call_id.as_deref(),
@@ -660,6 +666,62 @@ mod tests {
             .unwrap();
         // Mismatched dimension should be skipped
         assert!(results.is_empty());
+    }
+
+    // ─── reasoning roundtrip test ─────────────────────────────────
+
+    #[test]
+    fn test_reasoning_roundtrip() {
+        let db = make_db();
+        let chat_id = "-reason";
+
+        let msg = ChatMessage::assistant_with_reasoning("The answer is 42.", "Let me think...".into());
+        db.save_messages(chat_id, &[msg]).unwrap();
+
+        let loaded = db.load_messages(chat_id, 10).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].text_content(), "The answer is 42.");
+        assert_eq!(loaded[0].reasoning.as_deref(), Some("Let me think..."));
+    }
+
+    #[test]
+    fn test_reasoning_null_roundtrip() {
+        let db = make_db();
+        let chat_id = "-noreason";
+
+        let msg = ChatMessage::assistant("simple reply");
+        db.save_messages(chat_id, &[msg]).unwrap();
+
+        let loaded = db.load_messages(chat_id, 10).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded[0].reasoning.is_none());
+    }
+
+    #[test]
+    fn test_tool_calls_with_reasoning_roundtrip() {
+        use crate::openrouter::{FunctionCall, ToolCall};
+
+        let db = make_db();
+        let chat_id = "-tool-reason";
+
+        let msg = ChatMessage::assistant_tool_calls_with_reasoning(
+            vec![ToolCall {
+                id: "call_99".into(),
+                call_type: "function".into(),
+                function: FunctionCall {
+                    name: "bash".into(),
+                    arguments: r#"{"command":"echo hi"}"#.into(),
+                },
+            }],
+            "Considering using bash...".into(),
+        );
+
+        db.save_messages(chat_id, &[msg]).unwrap();
+        let loaded = db.load_messages(chat_id, 10).unwrap();
+        assert_eq!(loaded.len(), 1);
+        let tc = loaded[0].tool_calls.as_ref().unwrap();
+        assert_eq!(tc[0].id, "call_99");
+        assert_eq!(loaded[0].reasoning.as_deref(), Some("Considering using bash..."));
     }
 
     #[test]

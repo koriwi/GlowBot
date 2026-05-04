@@ -48,8 +48,13 @@ telegram_token: "..."
 openrouter_api_key: "..."
 openrouter_default_model: "anthropic/claude-sonnet-4"
 
-# Conversation context window (number of recent messages, default: 20)
-conversation_window: 20
+# Conversation context settings
+conversation:
+  recent_messages_window_size: 20   # number of recent messages (default: 20)
+  include_thoughts: false           # include LLM reasoning/thinking in next requests (default: false)
+
+# Store LLM reasoning/thinking in the database (only applicable when include_thoughts is true)
+db_store_reasoning: false
 
 # DM access control
 # dm_enabled: true   # unset (None): defaults to true if dms is empty, false if dms has entries
@@ -212,6 +217,25 @@ Parse the results and summarize.
 - `create_skill(name, description, body)` — creates `skills/<name>/skill.md` and reloads.
 - `update_skill(name, description?, body?)` — updates an existing skill, only overwrites provided fields, then reloads.
 - (Phase 2) It can generate and compile Rust skills.
+
+### 4.4 Reasoning / Thinking Capture
+
+Some LLM models (DeepSeek-R1, Claude with extended thinking, OpenAI o-series) return **reasoning/thinking content** — the model's internal chain of thought — alongside the final response. GlowBot can optionally capture this and include it in subsequent requests.
+
+**Configuration:**
+```yaml
+conversation:
+  include_thoughts: false          # default: false
+db_store_reasoning: false          # default: false
+```
+
+**How it works:**
+- When `conversation.include_thoughts` is `true`, the bot extracts `reasoning` from assistant messages in the API response.
+- Reasoning is attached to `ChatMessage` objects and sent back in the next request, so the model sees its previous thinking.
+- When `false` (default), reasoning content is silently discarded — it never enters the turn history.
+- If `db_store_reasoning` is also `true`, reasoning text is persisted in the `reasoning` column of the `messages` table in SQLite.
+- Reasoning is included in token estimation for context trimming.
+- Reasoning is **not** part of `text_content()` — it's a separate field, so embeddings and tool input don't include it.
 
 ### 4.6 MCP Integration
 
@@ -407,7 +431,8 @@ Whitelists contain Telegram user IDs.
 - [x] Git auto-commit + push on every data write (with safe.directory and identity setup)
 - [x] Docker deployment with `glowbot_data/` as a volume
 - [x] GitHub CI/CD with ≥95% test coverage enforced
-- [x] Conversation history (stored in-memory, retrievable via `get_recent_messages` tool, configurable size)
+- [x] Conversation history (stored in SQLite, retrievable via `get_recent_messages` tool, configurable window size)
+- [x] LLM reasoning/thinking capture and storage (configurable via `conversation.include_thoughts` and `db_store_reasoning`)
 - [x] Typing indicator while LLM is processing
 - [x] MarkdownV2 rendering via `telegram-markdown-v2` crate with plain text fallback
 

@@ -17,6 +17,10 @@ pub struct ChatMessage {
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// Reasoning / thinking content from models that support it (e.g. DeepSeek-R1, Claude thinking).
+    /// Only populated when `conversation.include_thoughts` is enabled.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reasoning: Option<String>,
 }
 
 /// Content can be a simple string or an array of content parts.
@@ -43,6 +47,7 @@ impl ChatMessage {
             name: None,
             tool_calls: None,
             tool_call_id: None,
+            reasoning: None,
         }
     }
 
@@ -53,6 +58,7 @@ impl ChatMessage {
             name: None,
             tool_calls: None,
             tool_call_id: None,
+            reasoning: None,
         }
     }
 
@@ -63,6 +69,7 @@ impl ChatMessage {
             name: Some(name.to_string()),
             tool_calls: None,
             tool_call_id: None,
+            reasoning: None,
         }
     }
 
@@ -73,6 +80,19 @@ impl ChatMessage {
             name: None,
             tool_calls: None,
             tool_call_id: None,
+            reasoning: None,
+        }
+    }
+
+    /// Create an assistant message with reasoning/thinking content.
+    pub fn assistant_with_reasoning(content: &str, reasoning: String) -> Self {
+        Self {
+            role: "assistant".into(),
+            content: ChatContent::Text(content.to_string()),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+            reasoning: Some(reasoning),
         }
     }
 
@@ -83,6 +103,7 @@ impl ChatMessage {
             name: None,
             tool_calls: None,
             tool_call_id: Some(tool_call_id.to_string()),
+            reasoning: None,
         }
     }
 
@@ -94,6 +115,22 @@ impl ChatMessage {
             name: None,
             tool_calls: Some(tool_calls),
             tool_call_id: None,
+            reasoning: None,
+        }
+    }
+
+    /// Create an assistant message with tool calls and reasoning.
+    pub fn assistant_tool_calls_with_reasoning(
+        tool_calls: Vec<ToolCall>,
+        reasoning: String,
+    ) -> Self {
+        Self {
+            role: "assistant".into(),
+            content: ChatContent::Text(String::new()),
+            name: None,
+            tool_calls: Some(tool_calls),
+            tool_call_id: None,
+            reasoning: Some(reasoning),
         }
     }
 
@@ -176,7 +213,7 @@ pub fn estimate_tokens(text: &str) -> u64 {
 }
 
 /// Estimate tokens for a `ChatMessage`.
-/// Counts role overhead (~4 tokens) plus content text tokens.
+/// Counts role overhead (~4 tokens) plus content text tokens and reasoning if present.
 pub fn estimate_message_tokens(msg: &ChatMessage) -> u64 {
     let text = msg.text_content();
     // Role overhead + content; tool_calls JSON adds overhead too
@@ -188,12 +225,15 @@ pub fn estimate_message_tokens(msg: &ChatMessage) -> u64 {
     if msg.tool_call_id.is_some() {
         total += 4; // small overhead for tool result messages
     }
+    if let Some(ref reasoning) = msg.reasoning {
+        total += estimate_tokens(reasoning);
+    }
     total
 }
 
 /// Estimate tokens for a slice of messages.
 pub fn estimate_messages_tokens(messages: &[ChatMessage]) -> u64 {
-    messages.iter().map(|m| estimate_message_tokens(m)).sum()
+    messages.iter().map(estimate_message_tokens).sum()
 }
 
 /// Estimate tokens for tool definitions by serializing them.
@@ -334,6 +374,10 @@ pub struct AssistantMessage {
     pub content: Option<String>,
     #[serde(default)]
     pub tool_calls: Option<Vec<ToolCall>>,
+    /// Reasoning / thinking content (e.g. DeepSeek-R1 `reasoning_content`, Claude thinking).
+    /// OpenRouter exposes this as `reasoning` on the message object.
+    #[serde(default)]
+    pub reasoning: Option<String>,
     pub role: Option<String>,
 }
 
