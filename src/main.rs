@@ -25,7 +25,7 @@ async fn run_bot() -> anyhow::Result<()> {
     // Load config first to get the API key
     let config = Config::load(&data_dir.join("config.yaml"))?;
     let telegram_token = config.telegram_token.clone();
-    let openrouter_key = config.openrouter_api_key.clone();
+    let openrouter_key = config.openrouter.api_key.clone();
 
     let llm = Arc::new(OpenRouterBackend::new(openrouter_key));
     let bot = GlowBot::new_with_llm(&data_dir, llm).await?;

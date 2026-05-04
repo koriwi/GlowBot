@@ -183,7 +183,7 @@ impl GlowBot {
     pub async fn fetch_model_contexts(&self) -> anyhow::Result<()> {
         let api_key = {
             let s = self.state.lock().await;
-            s.config.openrouter_api_key.clone()
+            s.config.openrouter.api_key.clone()
         };
 
         let client = crate::openrouter::OpenRouterClient::new(api_key);
@@ -240,7 +240,7 @@ impl GlowBot {
             match &s.config.embedding.model {
                 Some(m) => (
                     m.clone(),
-                    s.config.openrouter_api_key.clone(),
+                    s.config.openrouter.api_key.clone(),
                     s.config.embedding.max_chars,
                     s.config.embedding.allow_split,
                 ),
@@ -631,7 +631,7 @@ async fn process_with_llm_impl(
         let s = state.lock().await;
         if let Some(ref embed_model) = s.config.embedding.model {
             if !message_ids.is_empty() {
-                let api_key = s.config.openrouter_api_key.clone();
+                let api_key = s.config.openrouter.api_key.clone();
                 let db = s.db.clone();
                 let embed_model = embed_model.clone();
                 let max_chars = s.config.embedding.max_chars;

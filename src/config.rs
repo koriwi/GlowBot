@@ -144,16 +144,23 @@ impl Default for EmbeddingConfig {
     }
 }
 
+/// OpenRouter API configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenRouterConfig {
+    /// OpenRouter API key.
+    pub api_key: String,
+    /// Default model to use.
+    #[serde(default = "default_model")]
+    pub model: String,
+}
+
 /// Global application configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Telegram bot token.
     pub telegram_token: String,
-    /// OpenRouter API key.
-    pub openrouter_api_key: String,
-    /// Default OpenRouter model.
-    #[serde(default = "default_model")]
-    pub openrouter_default_model: String,
+    /// OpenRouter configuration.
+    pub openrouter: OpenRouterConfig,
     /// Conversation context settings (window size, thought inclusion).
     #[serde(default)]
     pub conversation: ConversationConfig,
@@ -177,10 +184,6 @@ pub struct Config {
     /// Default heartbeat interval in minutes (default: 90).
     #[serde(default = "default_heartbeat")]
     pub heartbeat_interval_minutes: u64,
-    /// How often (in seconds) the scheduler scans for chats with pending tasks.
-    /// Default: 60s. Increase this if you have many chats and want less filesystem churn.
-    #[serde(default = "default_heartbeat_scan_interval")]
-    pub heartbeat_scan_interval_seconds: u64,
     /// Whether the bash tool is enabled globally (default: true).
     /// Used as fallback when no per-chat override is set.
     #[serde(default = "default_bash_enabled")]
@@ -203,10 +206,6 @@ fn default_recent_messages_window_size() -> usize {
 
 fn default_heartbeat() -> u64 {
     90
-}
-
-fn default_heartbeat_scan_interval() -> u64 {
-    60
 }
 
 fn default_bash_enabled() -> bool {
@@ -265,7 +264,7 @@ impl Config {
         self.chats
             .get(chat_id)
             .and_then(|c| c.model.as_deref())
-            .unwrap_or(&self.openrouter_default_model)
+            .unwrap_or(&self.openrouter.model)
     }
 
     /// Check whether the bash tool is enabled for a given chat.
@@ -318,14 +317,15 @@ impl Config {
 pub(crate) fn basic_config() -> Config {
     Config {
         telegram_token: "test-token".into(),
-        openrouter_api_key: "test-key".into(),
-        openrouter_default_model: "test/model".into(),
+        openrouter: OpenRouterConfig {
+            api_key: "test-key".into(),
+            model: "test/model".into(),
+        },
         conversation: ConversationConfig::default(),
         db: DatabaseConfig::default(),
 
         mcp_servers: vec![],
         heartbeat_interval_minutes: 90,
-        heartbeat_scan_interval_seconds: 60,
         bash_enabled: true,
         embedding: EmbeddingConfig::default(),
         chats: HashMap::new(),
@@ -347,11 +347,8 @@ mod tests {
         config.save(&path).unwrap();
         let loaded = Config::load(&path).unwrap();
         assert_eq!(loaded.telegram_token, config.telegram_token);
-        assert_eq!(loaded.openrouter_api_key, config.openrouter_api_key);
-        assert_eq!(
-            loaded.openrouter_default_model,
-            config.openrouter_default_model
-        );
+        assert_eq!(loaded.openrouter.api_key, config.openrouter.api_key);
+        assert_eq!(loaded.openrouter.model, config.openrouter.model);
     }
 
     #[test]

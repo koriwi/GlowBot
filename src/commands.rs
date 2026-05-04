@@ -66,7 +66,7 @@ pub fn handle_command(
             let model = chat
                 .model
                 .as_deref()
-                .unwrap_or(&config.openrouter_default_model);
+                .unwrap_or(&config.openrouter.model);
             format!(
                 "Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
                 chat_id,
@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn test_handle_status_command() {
         let mut config = crate::config::basic_config();
-        config.openrouter_default_model = "default-model".into();
+        config.openrouter.model = "default-model".into();
         let resp = handle_command(&Command::Status, &mut config, "-123", "1k/10k (10%)");
         assert!(resp.contains("-123"));
         assert!(resp.contains("default-model"));
