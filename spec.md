@@ -315,11 +315,15 @@ description: |
 - The `call_name` is what the bot uses when addressing the user in conversation. It is inferred autonomously on first encounter, but the bot may ask the user directly if it is unsure what to call them.
 - A separate file per chat means the same user can have different context in different chats.
 
-#### Vector memory (Phase 2)
+#### Vector memory (RAG) — initial implementation
 
-- All messages are embedded and stored in SQLite with a vector extension.
-- The bot queries relevant past messages on demand for RAG.
-- Per-user `.md` files remain as canonical long-term memory but are also embedded.
+- Configure `embedding_model` (e.g. `"openai/text-embedding-3-small"`) to enable conversation embedding.
+- Every message is automatically embedded via OpenRouter's embeddings API and stored in the `message_embeddings` table (BLOB of f32 little-endian bytes, model name tagged per row).
+- On startup: embeddings from a different model are cleaned up; then an async background task backfills any unembedded messages (500ms delay between calls, console/log progress).
+- `embedding_search_limit` config (default 1000) caps how many recent embeddings are loaded for similarity search.
+- LLM tool `search_conversations(query, count?)` — embeds the query, runs cosine similarity against stored embeddings for the chat, returns top-K results with content and similarity scores.
+- Dimension-agnostic: BLOB storage handles any model's vector size. Model filtering ensures only same-model vectors are compared.
+- Vectors are loaded into RAM for similarity computation — ~59 MB per 10k embeddings with `text-embedding-3-small` (1536 dims).
 
 ---
 
@@ -425,7 +429,6 @@ Everything in §5.
 ### v2
 - Compiled skills (Rust subprocess, oneshot stdin/stdout)
 - Bot-generated & compiled skills
-- Message embedding + SQLite vector RAG
 - Embed per-user `.md` memory files into vector DB
 
 ### v3 (candidates)

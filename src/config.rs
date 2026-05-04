@@ -122,6 +122,14 @@ pub struct Config {
     /// Used as fallback when no per-chat override is set.
     #[serde(default = "default_bash_enabled")]
     pub bash_enabled: bool,
+    /// Embedding model for conversation vector search.
+    /// When set, every message is embedded and stored for RAG retrieval.
+    /// Example: "openai/text-embedding-3-small"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_model: Option<String>,
+    /// Maximum number of recent embeddings loaded for similarity search.
+    #[serde(default = "default_embedding_search_limit")]
+    pub embedding_search_limit: usize,
 }
 
 fn default_model() -> String {
@@ -142,6 +150,10 @@ fn default_heartbeat_scan_interval() -> u64 {
 
 fn default_bash_enabled() -> bool {
     true
+}
+
+fn default_embedding_search_limit() -> usize {
+    1000
 }
 
 impl Config {
@@ -253,6 +265,8 @@ pub(crate) fn basic_config() -> Config {
         heartbeat_interval_minutes: 90,
         heartbeat_scan_interval_seconds: 60,
         bash_enabled: true,
+        embedding_model: None,
+        embedding_search_limit: 1000,
         chats: HashMap::new(),
         dms: HashMap::new(),
         dm_enabled: None,
@@ -561,5 +575,37 @@ mod tests {
         assert_eq!(loaded.dm_enabled, Some(false));
         assert!(loaded.dms.contains_key("42"));
         assert!(loaded.dms.get("42").unwrap().commands_enabled);
+    }
+
+    #[test]
+    fn test_embedding_model_serialization() {
+        let mut config = basic_config();
+        assert!(config.embedding_model.is_none());
+        config.embedding_model = Some("openai/text-embedding-3-small".into());
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+        assert_eq!(
+            loaded.embedding_model.as_deref(),
+            Some("openai/text-embedding-3-small")
+        );
+    }
+
+    #[test]
+    fn test_embedding_search_limit_default() {
+        let config = basic_config();
+        assert_eq!(config.embedding_search_limit, 1000);
+    }
+
+    #[test]
+    fn test_embedding_search_limit_serialization() {
+        let mut config = basic_config();
+        config.embedding_search_limit = 500;
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+        assert_eq!(loaded.embedding_search_limit, 500);
     }
 }

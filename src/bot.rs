@@ -89,7 +89,10 @@ impl BotState {
     /// `send_message` is always included — in normal conversations it's for
     /// headsup/intermediate messages; in heartbeat tasks it's for completion reports.
     pub fn build_tools(&self, include_bash: bool) -> Vec<crate::openrouter::ToolDefinition> {
-        let mut t = crate::openrouter::all_tool_definitions(include_bash);
+        let mut t = crate::openrouter::all_tool_definitions(
+            include_bash,
+            self.config.embedding_model.as_deref(),
+        );
         for mt in &self.mcp_tools {
             t.push(crate::openrouter::ToolDefinition {
                 def_type: "function".into(),
@@ -229,6 +232,76 @@ impl GlowBot {
         process_message_impl(&self.state, &self.git_repo, &self.stop_signals, chat_id, user_id, username, text, bot_username, None).await
     }
 
+    /// Clean up mismatched embeddings and start async backfill.
+    /// If no embedding model is configured, does nothing.
+    pub async fn start_embedding_backfill(&self) {
+        let (model, api_key) = {
+            let s = self.state.lock().await;
+            match &s.config.embedding_model {
+                Some(m) => (m.clone(), s.config.openrouter_api_key.clone()),
+                None => return,
+            }
+        };
+
+        // Phase 1: synchronous cleanup of mismatched embeddings
+        let cleaned = {
+            let s = self.state.lock().await;
+            s.db.cleanup_mismatched_embeddings(&model).unwrap_or(0)
+        };
+        if cleaned > 0 {
+            log::info!("Cleaned {} embeddings with old model", cleaned);
+        }
+
+        // Phase 2: async backfill in background
+        let db = {
+            let s = self.state.lock().await;
+            s.db.clone()
+        };
+
+        tokio::spawn(async move {
+            let unembedded = match db.find_unembedded_messages() {
+                Ok(u) => u,
+                Err(e) => {
+                    log::warn!("Failed to find unembedded messages: {}", e);
+                    return;
+                }
+            };
+
+            if unembedded.is_empty() {
+                log::info!("All messages are embedded, nothing to backfill.");
+                return;
+            }
+
+            let total = unembedded.len();
+            log::info!("Starting embedding backfill for {} messages...", total);
+
+            let client = crate::openrouter::OpenRouterClient::new(api_key);
+
+            for (idx, (msg_id, text)) in unembedded.iter().enumerate() {
+                match client.embeddings(&model, text).await {
+                    Ok(vec) => {
+                        if let Err(e) = db.save_embedding(*msg_id, &vec, &model) {
+                            log::warn!("Failed to save embedding for message {}: {}", msg_id, e);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to embed message {}: {}", msg_id, e);
+                    }
+                }
+
+                let done = idx + 1;
+                let pct = (done as f64 / total as f64 * 100.0).round() as u32;
+                println!("Embedding backfill: {}/{} ({}%) done", done, total, pct);
+                log::info!("Embedding backfill: {}/{} ({}%) done", done, total, pct);
+
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+
+            log::info!("Embedding backfill complete: {} messages processed.", total);
+            println!("Embedding backfill complete: {} messages processed.", total);
+        });
+    }
+
     /// Ensure a memory file exists (delegates to free function, used by tests).
     pub async fn ensure_memory_exists(
         &self,
@@ -243,7 +316,7 @@ impl GlowBot {
 /// Process an incoming message (free function, can be called without the GlowBot lock).
 pub async fn process_message_impl(
     state: &Arc<Mutex<BotState>>,
-    git_repo: &GitRepo,
+    _git_repo: &GitRepo,
     stop_signals: &Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
     chat_id: &str,
     user_id: &str,
@@ -257,7 +330,7 @@ pub async fn process_message_impl(
 
     // Check if it's a bot command
     if let Some(command) = parse_command(text) {
-        return handle_bot_command_impl(state, stop_signals, chat_id, user_id, &command, tg_bot, git_repo).await;
+        return handle_bot_command_impl(state, stop_signals, chat_id, user_id, &command, tg_bot, _git_repo).await;
     }
 
     let is_dm = !chat_id.starts_with('-');
@@ -309,7 +382,7 @@ pub async fn process_message_impl(
         )));
     }
 
-    process_with_llm_impl(state, git_repo, stop_signals, chat_id, user_id, username, text, tools_enabled, tg_bot).await
+    process_with_llm_impl(state, _git_repo, stop_signals, chat_id, user_id, username, text, tools_enabled, tg_bot).await
 }
 
 /// Handle a bot command (free function).
@@ -389,7 +462,7 @@ async fn handle_bot_command_impl(
 /// Process a message through the LLM pipeline (free function).
 async fn process_with_llm_impl(
     state: &Arc<Mutex<BotState>>,
-    git_repo: &GitRepo,
+    _git_repo: &GitRepo,
     stop_signals: &Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
     chat_id: &str,
     user_id: &str,
@@ -525,12 +598,61 @@ async fn process_with_llm_impl(
     turn_messages.push(ChatMessage::assistant(&result));
 
     // Store the completed turn in conversation history
+    let message_ids = {
+        let s = state.lock().await;
+        s.db.save_messages(chat_id, &turn_messages).unwrap_or_default()
+    };
+
+    // Embed messages in the background if embedding model is configured
     {
         let s = state.lock().await;
-        let _ = s.db.save_messages(chat_id, &turn_messages);
+        if let Some(ref embed_model) = s.config.embedding_model {
+            if !message_ids.is_empty() {
+                let api_key = s.config.openrouter_api_key.clone();
+                let db = s.db.clone();
+                let embed_model = embed_model.clone();
+                let turn_messages = turn_messages.clone();
+                drop(s);
+
+                tokio::spawn(async move {
+                    embed_turn(&db, &api_key, &embed_model, &message_ids, &turn_messages).await;
+                });
+            }
+        }
     }
 
     Ok(Some(result))
+}
+
+/// Embed each message in a turn and store the vectors.
+/// Runs as a background task — failures are logged but don't affect the user.
+async fn embed_turn(
+    db: &crate::db::Database,
+    api_key: &str,
+    embed_model: &str,
+    message_ids: &[i64],
+    turn_messages: &[ChatMessage],
+) {
+    let client = crate::openrouter::OpenRouterClient::new(api_key.to_string());
+    for (i, msg) in turn_messages.iter().enumerate() {
+        if i >= message_ids.len() {
+            break;
+        }
+        let text = msg.text_content();
+        if text.is_empty() {
+            continue;
+        }
+        match client.embeddings(embed_model, &text).await {
+            Ok(vec) => {
+                if let Err(e) = db.save_embedding(message_ids[i], &vec, embed_model) {
+                    log::warn!("Failed to save embedding for message {}: {}", message_ids[i], e);
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to embed message {}: {}", message_ids[i], e);
+            }
+        }
+    }
 }
 
 async fn ensure_memory_exists_impl(

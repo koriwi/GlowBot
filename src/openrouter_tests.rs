@@ -75,7 +75,7 @@ fn test_chat_completion_request_seialization() {
     let req = ChatCompletionRequest {
         model: "test/model".into(),
         messages: vec![ChatMessage::system("sys"), ChatMessage::user("hi")],
-        tools: Some(all_tool_definitions(true)),
+        tools: Some(all_tool_definitions(true, None)),
         tool_choice: None,
     };
     let json = serde_json::to_string(&req).unwrap();
@@ -88,7 +88,7 @@ fn test_chat_completion_request_seialization() {
 
 #[test]
 fn test_all_tool_definitions_with_bash() {
-    let tools = all_tool_definitions(true);
+    let tools = all_tool_definitions(true, None);
     assert_eq!(tools.len(), 13);
     assert_eq!(tools[0].function.name, "bash");
     assert_eq!(tools[1].function.name, "read_memory");
@@ -97,7 +97,7 @@ fn test_all_tool_definitions_with_bash() {
 
 #[test]
 fn test_all_tool_definitions_without_bash() {
-    let tools = all_tool_definitions(false);
+    let tools = all_tool_definitions(false, None);
     assert_eq!(tools.len(), 12);
     assert_eq!(tools[0].function.name, "read_memory");
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
@@ -351,4 +351,61 @@ fn test_deserialize_tool_call_invalid_args() {
     });
     let tc: ToolCall = serde_json::from_value(json).unwrap();
     assert_eq!(tc.function.arguments, "not-json");
+}
+
+// ─── embedding tool tests ──────────────────────────────────────────
+
+#[test]
+fn test_all_tool_definitions_with_embedding_model() {
+    // With bash + embedding: 12 base + bash + search_conversations = 14
+    let tools = all_tool_definitions(true, Some("openai/text-embedding-3-small"));
+    assert_eq!(tools.len(), 14);
+    assert_eq!(tools[0].function.name, "bash");
+    assert!(tools.iter().any(|t| t.function.name == "search_conversations"));
+
+    // Without bash, with embedding: 12 base + search_conversations = 13
+    let tools = all_tool_definitions(false, Some("openai/text-embedding-3-small"));
+    assert_eq!(tools.len(), 13);
+    assert!(tools.iter().any(|t| t.function.name == "search_conversations"));
+    assert!(!tools.iter().any(|t| t.function.name == "bash"));
+
+    // Without embedding model, without bash: 12 base = 12 (no search_conversations)
+    let tools = all_tool_definitions(false, None);
+    assert_eq!(tools.len(), 12);
+    assert!(!tools.iter().any(|t| t.function.name == "search_conversations"));
+}
+
+#[test]
+fn test_search_conversations_tool_definition() {
+    let def = search_conversations_tool_definition();
+    assert_eq!(def.def_type, "function");
+    assert_eq!(def.function.name, "search_conversations");
+    assert!(!def.function.description.is_empty());
+
+    let params = &def.function.parameters;
+    assert_eq!(params["type"], "object");
+    assert!(params["required"].as_array().unwrap().contains(&serde_json::json!("query")));
+    assert!(params["properties"]["query"]["type"] == "string");
+    assert!(params["properties"]["count"]["type"] == "integer");
+}
+
+#[test]
+fn test_embedding_response_deserialization() {
+    let json = serde_json::json!({
+        "data": [{
+            "embedding": [0.1, 0.2, 0.3]
+        }]
+    });
+    let resp: EmbeddingResponse = serde_json::from_value(json).unwrap();
+    assert_eq!(resp.data.len(), 1);
+    assert_eq!(resp.data[0].embedding, vec![0.1, 0.2, 0.3]);
+}
+
+#[test]
+fn test_embedding_response_empty_errors() {
+    let json = serde_json::json!({
+        "data": []
+    });
+    let resp: EmbeddingResponse = serde_json::from_value(json).unwrap();
+    assert!(resp.data.is_empty());
 }

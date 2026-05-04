@@ -80,7 +80,8 @@ pub(crate) fn update_memory_tool_definition() -> ToolDefinition {
 }
 
 /// All tool definitions. When `include_bash` is false, the bash tool is excluded.
-pub fn all_tool_definitions(include_bash: bool) -> Vec<ToolDefinition> {
+/// When `embedding_model` is Some, adds the search_conversations RAG tool.
+pub fn all_tool_definitions(include_bash: bool, embedding_model: Option<&str>) -> Vec<ToolDefinition> {
     let mut tools = vec![
         read_memory_tool_definition(),
         update_memory_tool_definition(),
@@ -95,6 +96,9 @@ pub fn all_tool_definitions(include_bash: bool) -> Vec<ToolDefinition> {
         get_recent_messages_tool_definition(),
         send_message_tool_definition(),
     ];
+    if embedding_model.is_some() {
+        tools.push(search_conversations_tool_definition());
+    }
     if include_bash {
         tools.insert(0, bash_tool_definition());
     }
@@ -320,6 +324,32 @@ pub(crate) fn send_message_tool_definition() -> ToolDefinition {
                     }
                 },
                 "required": ["text"]
+            }),
+        },
+    }
+}
+
+/// The search_conversations tool definition (RAG).
+/// Only exposed when an embedding model is configured.
+pub(crate) fn search_conversations_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "search_conversations".into(),
+            description: "Search past conversation messages by semantic similarity. Use this to find relevant messages from earlier in the chat — e.g. 'that discussion about docker volumes' or 'what did Alice say about the deadline?'. Returns ranked results with similarity scores and content.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "What to search for — describe the topic, question, or phrase you're looking for."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of results to return (default: 5, max: 10)"
+                    }
+                },
+                "required": ["query"]
             }),
         },
     }

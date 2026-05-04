@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[path = "openrouter_tools.rs"]
 mod openrouter_tools;
 pub use openrouter_tools::all_tool_definitions;
+#[allow(unused_imports)]
 pub(crate) use openrouter_tools::*;
 
 /// An OpenRouter chat message.
@@ -346,6 +347,25 @@ pub fn format_context_usage(used: u64, limit: u64) -> String {
     let limit_k = limit / 1000;
     format!("{}k/{}k ({}%)", used_k, limit_k, pct)
 }
+/// An embedding request to OpenRouter's embeddings API.
+#[derive(Debug, Serialize)]
+struct EmbeddingRequest {
+    model: String,
+    input: String,
+}
+
+/// A single embedding result.
+#[derive(Debug, Deserialize)]
+struct EmbeddingData {
+    embedding: Vec<f32>,
+}
+
+/// Response from OpenRouter's embeddings API.
+#[derive(Debug, Deserialize)]
+struct EmbeddingResponse {
+    data: Vec<EmbeddingData>,
+}
+
 pub struct OpenRouterClient {
     api_key: String,
     http_client: reqwest::Client,
@@ -381,6 +401,34 @@ impl OpenRouterClient {
 
         let resp: ModelsApiResponse = response.json().await?;
         Ok(resp.data)
+    }
+
+    /// Generate embeddings for a text string using the given model.
+    pub async fn embeddings(&self, model: &str, input: &str) -> anyhow::Result<Vec<f32>> {
+        let response = self
+            .http_client
+            .post("https://openrouter.ai/api/v1/embeddings")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&EmbeddingRequest {
+                model: model.to_string(),
+                input: input.to_string(),
+            })
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("OpenRouter embeddings API error ({}): {}", status, body);
+        }
+
+        let resp: EmbeddingResponse = response.json().await?;
+        resp.data
+            .into_iter()
+            .next()
+            .map(|d| d.embedding)
+            .ok_or_else(|| anyhow::anyhow!("No embedding data in response"))
     }
 
     /// Send a chat completion request to OpenRouter.

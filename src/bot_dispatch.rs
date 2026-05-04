@@ -312,6 +312,56 @@ pub(crate) async fn dispatch_tool(
                 .collect();
             serde_json::json!({"messages": items}).to_string()
         }
+        "search_conversations" => {
+            let query = args["query"].as_str().unwrap_or("");
+            if query.is_empty() {
+                return "Error: query required".into();
+            }
+            let count = args["count"].as_i64().unwrap_or(5) as usize;
+            let count = count.clamp(1, 10);
+
+            let (embedding_model, search_limit) = {
+                let s = state.lock().await;
+                let cfg = &s.config;
+                (
+                    match &cfg.embedding_model {
+                        Some(m) => m.clone(),
+                        None => return "Error: embedding model not configured".into(),
+                    },
+                    cfg.embedding_search_limit,
+                )
+            };
+
+            let llm = { state.lock().await.llm.clone() };
+            let query_embedding = match llm.embeddings(&embedding_model, query).await {
+                Ok(e) => e,
+                Err(e) => return format!("Error embedding query: {}", e),
+            };
+
+            let results = {
+                let s = state.lock().await;
+                s.db
+                    .search_embeddings(&cid, &query_embedding, &embedding_model, search_limit)
+                    .unwrap_or_default()
+            };
+
+            let top_results: Vec<_> = results
+                .into_iter()
+                .take(count)
+                .map(|(_id, score, text)| {
+                    serde_json::json!({
+                        "similarity": format!("{:.4}", score),
+                        "content": text
+                    })
+                })
+                .collect();
+
+            if top_results.is_empty() {
+                "No similar messages found.".into()
+            } else {
+                serde_json::json!({"results": top_results}).to_string()
+            }
+        }
         _ => format!("Unknown tool: {}", tool_name),
     }
 }

@@ -41,6 +41,12 @@ async fn run_bot() -> anyhow::Result<()> {
         });
     }
 
+    // Start embedding backfill (cleanup + async background job)
+    {
+        let bot_clone = Arc::clone(&bot);
+        bot_clone.lock().await.start_embedding_backfill().await;
+    }
+
     log::info!("Initializing Telegram bot...");
     let tg_bot = Bot::new(telegram_token);
     let bot_username = tg_bot.get_me().await?.username.clone().unwrap_or_default();

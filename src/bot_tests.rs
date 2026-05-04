@@ -1451,3 +1451,152 @@ fn test_context_usage_formatting() {
     });
     assert_eq!(state.context_usage("-123"), "37k/150k (25%)");
 }
+
+// ─── embedding dispatch tests ───────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_search_conversations_no_model() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config(); // no embedding_model
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir: data_dir.clone(),
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "search_conversations",
+        &serde_json::json!({"query": "hello"}),
+        None,
+    )
+    .await;
+    assert!(out.contains("not configured"));
+}
+
+#[tokio::test]
+async fn test_dispatch_search_conversations_empty_query() {
+    let mut cfg = crate::config::basic_config();
+    cfg.embedding_model = Some("test-embed-model".into());
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir: std::path::PathBuf::from("/tmp"),
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "search_conversations",
+        &serde_json::json!({"query": ""}),
+        None,
+    )
+    .await;
+    assert_eq!(out, "Error: query required");
+}
+
+#[tokio::test]
+async fn test_dispatch_search_conversations_no_results() {
+    let mut cfg = crate::config::basic_config();
+    cfg.embedding_model = Some("test-embed-model".into());
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir: std::path::PathBuf::from("/tmp"),
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "search_conversations",
+        &serde_json::json!({"query": "nothing here"}),
+        None,
+    )
+    .await;
+    assert_eq!(out, "No similar messages found.");
+}
+
+#[tokio::test]
+async fn test_dispatch_search_conversations_with_results() {
+    let mut cfg = crate::config::basic_config();
+    cfg.embedding_model = Some("test-embed-model".into());
+    cfg.embedding_search_limit = 5;
+
+    let db = crate::db::Database::open_in_memory().unwrap();
+    // Store a message and its embedding
+    let ids = db
+        .save_messages("-123", &[ChatMessage::user("Alice talked about Rust programming")])
+        .unwrap();
+    db.save_embedding(ids[0], &[1.0f32, 0.0, 0.0, 0.0], "test-embed-model")
+        .unwrap();
+
+    // Mock LLM returns a matching embedding query
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    mock_llm.add_embedding(vec![1.0f32, 0.0, 0.0, 0.0]);
+
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: mock_llm,
+        data_dir: std::path::PathBuf::from("/tmp"),
+        db,
+        mcp_tools: vec![],
+        model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "search_conversations",
+        &serde_json::json!({"query": "rust"}),
+        None,
+    )
+    .await;
+    assert!(out.contains("similarity"));
+    assert!(out.contains("Rust"));
+}
+
+#[tokio::test]
+async fn test_dispatch_search_conversations_embedding_error() {
+    let mut cfg = crate::config::basic_config();
+    cfg.embedding_model = Some("test-embed-model".into());
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    mock_llm.set_error(true);
+
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: mock_llm,
+        data_dir: std::path::PathBuf::from("/tmp"),
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "search_conversations",
+        &serde_json::json!({"query": "test"}),
+        None,
+    )
+    .await;
+    assert!(out.contains("Error embedding"));
+}
