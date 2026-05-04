@@ -61,9 +61,17 @@ impl BotState {
             crate::memory::load_chat_memories(&self.chats_dir(), chat_id).unwrap_or_default();
         let chat_memory = crate::memory::load_chat_memory(&self.chats_dir(), chat_id);
         let chat_config = self.config.chat_config(chat_id);
+        let system_prompt = if !chat_id.starts_with('-') {
+            self.config
+                .dm_config(chat_id)
+                .map(|d| d.system_prompt.as_str())
+                .unwrap_or(&chat_config.system_prompt)
+        } else {
+            &chat_config.system_prompt
+        };
         crate::system_prompt::assemble(
             chat_id,
-            &chat_config.system_prompt,
+            system_prompt,
             skills,
             chat_memory.as_ref(),
             &memories,
@@ -254,21 +262,23 @@ pub async fn process_message_impl(
 
     let is_dm = !chat_id.starts_with('-');
 
-    // Check interaction permissions
-    let chat_config = {
-        let s = state.lock().await;
-        s.config.chat_config(chat_id)
-    };
-
-    if !can_interact(&chat_config, user_id) {
-        if is_dm {
-            return Ok(Some("Sorry, you're not authorized to interact with me in DMs.".into()));
+    // Check interaction permissions (groups only — DMs don't have interaction_whitelist)
+    if !is_dm {
+        let chat_config = {
+            let s = state.lock().await;
+            s.config.chat_config(chat_id)
+        };
+        if !can_interact(&chat_config, user_id) {
+            return Ok(None);
         }
-        return Ok(None);
     }
 
     if !is_dm
-        && matches!(chat_config.interaction_mode, crate::config::InteractionMode::MentionOnly)
+        && {
+            let s = state.lock().await;
+            let chat_config = s.config.chat_config(chat_id);
+            matches!(chat_config.interaction_mode, crate::config::InteractionMode::MentionOnly)
+        }
         && !is_command
         && !is_mention
     {
@@ -279,13 +289,25 @@ pub async fn process_message_impl(
         return Ok(None);
     }
 
-    let tools_enabled = if is_dm {
-        // DMs: tools enabled if chat has a config entry, disabled otherwise.
+    let (tools_enabled, dm_blocked) = if is_dm {
         let s = state.lock().await;
-        s.config.chats.contains_key(chat_id)
+        if s.config.dm_config(chat_id).is_some() {
+            (true, false)
+        } else if s.config.dm_enabled_effective() {
+            (false, false) // unknown DM, text-only respond
+        } else {
+            (false, true) // blocked
+        }
     } else {
-        true
+        (true, false)
     };
+
+    if dm_blocked {
+        return Ok(Some(format!(
+            "I don't know you yet. Please ask the bot owner to add your user ID (`{}`) to the `dms` section in the config.",
+            user_id
+        )));
+    }
 
     process_with_llm_impl(state, git_repo, stop_signals, chat_id, user_id, username, text, tools_enabled, tg_bot).await
 }
@@ -312,8 +334,13 @@ async fn handle_bot_command_impl(
 
     let allowed = {
         let s = state.lock().await;
-        let chat_config = s.config.chat_config(chat_id);
-        can_run_command(&chat_config)
+        let is_dm = !chat_id.starts_with('-');
+        if is_dm {
+            s.config.dm_config(chat_id).map(|d| d.commands_enabled).unwrap_or(false)
+        } else {
+            let chat_config = s.config.chat_config(chat_id);
+            can_run_command(&chat_config)
+        }
     };
 
     if !allowed {

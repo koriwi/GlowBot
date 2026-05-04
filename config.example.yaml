@@ -18,13 +18,21 @@ heartbeat_interval_minutes: 90
 #     url: "https://mcp.example.com/mcp"
 #     api_key: "optional-bearer-token"
 
-# DM access control (default: anyone can chat, tools disabled)
-# Add a chat config entry for the DM chat ID to enable tools.
-# chats:
-#   "54284684":
-#     commands_enabled: true
+# DM access control
+# dm_enabled: true   # unset (None): defaults to true if dms is empty, false if dms has entries
+#                    # Some(true): respond to unknown DMs text-only
+#                    # Some(false): block unknown DMs with "I don't know you" message
 
-# Chat-specific overrides (keyed by Telegram chat ID)
+# Per-DM configuration overrides (keyed by user/chat ID, positive)
+dms:
+  # "123456789":
+  #   model: "anthropic/claude-haiku-4"
+  #   commands_enabled: true
+  #   system_prompt: "You are talking to the bot owner."
+  #   heartbeat_interval_minutes: 30
+  #   bash_enabled: true
+
+# Group-specific overrides (keyed by Telegram chat ID, negative)
 chats:
   # "-1234567890":
   #   model: "openai/gpt-4o"
@@ -32,5 +40,4 @@ chats:
   #   interaction_whitelist: []            # user IDs; empty = everyone allowed
   #   commands_enabled: true               # whether bot commands are enabled
   #   system_prompt: ""                    # optional per-chat system prompt
-  #   heartbeat_interval_minutes: 30       # optional, override global default; 0 = disabled
   #   heartbeat_interval_minutes: 30       # optional, override global default; 0 = disabled

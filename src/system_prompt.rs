@@ -58,11 +58,11 @@ pub fn assemble(
     if !tools_enabled {
         parts.push(format!(
             "\n## Important: Tool Access Restricted\n\
-You are in a DM without a chat config entry. Your tools (bash, memory, skills) are \
+You are in a DM without a `dms` config entry. Your tools (bash, memory, skills) are \
 currently DISABLED. You can only respond with text.\n\
 If the user asks you to do something that requires tools, tell them:\n\
-> To enable tools, add a chat config entry for this DM (ID `{chat_id}`) \
-in `config.yaml` under `chats` with `commands_enabled: true` and restart me.\n\
+> To enable tools, add a `dms` entry for this chat ID (`{chat_id}`) \
+in `config.yaml` with `commands_enabled: true` and restart me.\n\
 Always include the chat ID (`{chat_id}`) in that message.",
             chat_id = chat_id
         ));

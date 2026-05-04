@@ -599,7 +599,7 @@ async fn test_dm_tools_disabled_by_default() {
         }],
     ..Default::default()});
 
-    // DM (positive chat ID), default empty whitelist = tools disabled
+    // DM (positive chat ID), default no dms config, dm_enabled_effective=true = text-only respond
     let result = bot
         .process_message("123", "456", "@test", "Hello", "mybot")
         .await
@@ -608,16 +608,17 @@ async fn test_dm_tools_disabled_by_default() {
 }
 
 #[tokio::test]
-async fn test_dm_blocked_when_interaction_whitelist_restricts() {
+async fn test_dm_blocked_when_dms_nonempty_and_no_entry() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
 
     let mut config = crate::config::basic_config();
-    config.chats.insert(
-        "123".into(),
-        crate::config::ChatConfig {
-            interaction_whitelist: vec!["999".into()],
+    // Having ANY dms entries implies control → unknown DMs blocked
+    config.dms.insert(
+        "999".into(),
+        crate::config::DmConfig {
+            commands_enabled: true,
             ..Default::default()
         },
     );
@@ -626,24 +627,24 @@ async fn test_dm_blocked_when_interaction_whitelist_restricts() {
     let mock_llm = Arc::new(MockLlmBackend::new());
     let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
 
-    // User 456 is NOT in interaction_whitelist -> blocked
+    // User 456 is NOT in dms -> blocked
     let result = bot
         .process_message("123", "456", "@test", "Hello", "mybot")
         .await
         .unwrap();
-    assert!(result.unwrap().contains("not authorized"));
+    assert!(result.unwrap().contains("I don't know you"));
 }
 
 #[tokio::test]
-async fn test_dm_allowed_when_chat_config_exists() {
+async fn test_dm_allowed_when_in_dms() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
 
     let mut config = crate::config::basic_config();
-    config.chats.insert(
+    config.dms.insert(
         "123".into(),
-        crate::config::ChatConfig {
+        crate::config::DmConfig {
             commands_enabled: true,
             ..Default::default()
         },
@@ -668,6 +669,78 @@ async fn test_dm_allowed_when_chat_config_exists() {
         .await
         .unwrap();
     assert_eq!(result, Some("Full access!".into()));
+}
+
+#[tokio::test]
+async fn test_dm_blocked_by_explicit_dm_enabled_false() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let mut config = crate::config::basic_config();
+    config.dm_enabled = Some(false);
+    config.save(&data_dir.join("config.yaml")).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+
+    let result = bot
+        .process_message("123", "456", "@test", "Hello", "mybot")
+        .await
+        .unwrap();
+    assert!(result.unwrap().contains("I don't know you"));
+}
+
+#[tokio::test]
+async fn test_dm_blocked_message_contains_user_id() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let mut config = crate::config::basic_config();
+    config.dm_enabled = Some(false);
+    config.save(&data_dir.join("config.yaml")).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+
+    let result = bot
+        .process_message("123", "789012", "@stranger", "Hello", "mybot")
+        .await
+        .unwrap();
+    let msg = result.unwrap();
+    assert!(msg.contains("I don't know you"));
+    assert!(msg.contains("789012"), "message should include user_id: {}", msg);
+}
+
+#[tokio::test]
+async fn test_dm_text_only_when_dm_enabled_true_no_entry() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let mut config = crate::config::basic_config();
+    config.dm_enabled = Some(true);
+    config.save(&data_dir.join("config.yaml")).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    mock_llm.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Text-only reply".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+    ..Default::default()});
+
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+    let result = bot
+        .process_message("123", "456", "@test", "Hello", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(result, Some("Text-only reply".into()));
 }
 
 #[tokio::test]

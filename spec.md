@@ -51,8 +51,10 @@ openrouter_default_model: "anthropic/claude-sonnet-4"
 # Conversation context window (number of recent messages, default: 20)
 conversation_window: 20
 
-# DM access control (empty = anyone can chat, tools disabled)
-# Add a chat config entry for the DM chat ID to enable tools.
+# DM access control
+# dm_enabled: true   # unset (None): defaults to true if dms is empty, false if dms has entries
+                     # Some(true): respond to unknown DMs text-only
+                     # Some(false): block unknown DMs with "I don't know you" message
 
 # MCP servers for additional tools
 # mcp_servers:
@@ -60,7 +62,15 @@ conversation_window: 20
 #     url: "https://mcp.example.com/mcp"
 #     api_key: "optional-bearer-token"
 
-# Chat-specific overrides (keyed by Telegram chat ID)
+dms:
+  "123456789":
+    model: "anthropic/claude-haiku-4"   # optional, overrides default
+    commands_enabled: true
+    system_prompt: ""                    # optional per-DM system prompt
+    heartbeat_interval_minutes: 30
+    bash_enabled: true
+
+# Group-specific overrides (keyed by Telegram chat ID, negative)
 chats:
   "-1234567890":
     model: "openai/gpt-4o"               # optional, overrides default
@@ -107,14 +117,18 @@ The data directory is a standalone git repository, not nested inside the applica
 | `every_message` | Bot reads every message and may respond autonomously. |
 | `mention_only` | Bot only responds when explicitly @mentioned or replied to. **Only applies to group chats** (negative chat IDs). **DMs (private chats) always respond** regardless of this setting — users don't @mention bots in 1:1 conversations. |
 
-#### DM tool access
+#### DM access control
 
-DMs have an additional access control separate from group interaction modes:
+DMs are configured via the `dms` map (keyed by user/chat ID) and the `dm_enabled` flag:
 
-| Chat config entry | Behavior |
-|-------------------|----------|
-| No entry for the DM chat ID | Bot responds to all DMs, but **all tools are disabled** (text-only). The bot tells the user to add a chat config entry. |
-| Entry exists with `commands_enabled: true` | Full tool access for that DM. |
+| `dms` entry | `dm_enabled` | Unknown DM behavior |
+|-------------|-------------|---------------------|
+| No entry | `None` (unset) | Text-only respond (backward compat) |
+| No entry | `Some(true)` | Text-only respond |
+| No entry | `Some(false)` | Block with "I don't know you" message (includes user's ID) |
+| Entry exists | n/a | Full tool access for that DM |
+
+When `dms` has any entries and `dm_enabled` is unset, unknown DMs are blocked — the presence of configured DMs implies control. You can override this with `dm_enabled: true`.
 
 This prevents random strangers from running arbitrary bash commands while keeping DMs open for conversation.
 
