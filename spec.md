@@ -52,7 +52,7 @@ openrouter_default_model: "anthropic/claude-sonnet-4"
 conversation_window: 20
 
 # DM access control (empty = anyone can chat, tools disabled)
-dm_whitelist: []                           # user IDs for full DM tool access
+# Add a chat config entry for the DM chat ID to enable tools.
 
 # MCP servers for additional tools
 # mcp_servers:
@@ -66,11 +66,11 @@ chats:
     model: "openai/gpt-4o"               # optional, overrides default
     interaction_mode: "every_message"    # "every_message" | "mention_only"
     interaction_whitelist: []            # user IDs; empty = everyone allowed
-    command_whitelist: []                # user IDs; empty = nobody allowed
+    commands_enabled: false               # whether bot commands are enabled
     system_prompt: ""                    # optional per-chat system prompt
 ```
 
-`/commands` at runtime can modify settings for the active chat (if the sender is on the `command_whitelist`).
+`/commands` at runtime can modify settings for the active chat (if commands are enabled for that chat).
 
 ### 3.2 Git Versioning
 
@@ -107,14 +107,14 @@ The data directory is a standalone git repository, not nested inside the applica
 | `every_message` | Bot reads every message and may respond autonomously. |
 | `mention_only` | Bot only responds when explicitly @mentioned or replied to. **Only applies to group chats** (negative chat IDs). **DMs (private chats) always respond** regardless of this setting — users don't @mention bots in 1:1 conversations. |
 
-#### DM tool access (`dm_whitelist`)
+#### DM tool access
 
 DMs have an additional access control separate from group interaction modes:
 
-| `dm_whitelist` | Behavior |
-|----------------|----------|
-| Empty (default) | Bot responds to all DMs, but **all tools are disabled** (text-only). The bot tells the user to add their ID to the whitelist to enable tools. |
-| Contains user IDs | Only whitelisted users can interact. Whitelisted users get full tool access. Non-whitelisted users are blocked with a message. |
+| Chat config entry | Behavior |
+|-------------------|----------|
+| No entry for the DM chat ID | Bot responds to all DMs, but **all tools are disabled** (text-only). The bot tells the user to add a chat config entry. |
+| Entry exists with `commands_enabled: true` | Full tool access for that DM. |
 
 This prevents random strangers from running arbitrary bash commands while keeping DMs open for conversation.
 
@@ -349,7 +349,7 @@ Model: anthropic/claude-sonnet-4
 Context usage: 37k/252k (15%)
 Interaction mode: EveryMessage
 Interaction whitelist: everyone
-Command whitelist: 123456789, 987654321
+Command whitelist: enabled
 ```
 
 - `Context usage` shows the last known prompt token count against the model's context limit, with percentage.
@@ -360,7 +360,7 @@ Command whitelist: 123456789, 987654321
 | Whitelist | Default | Controls |
 |-----------|---------|----------|
 | `interaction_whitelist` | Empty = **everyone** | Who the bot talks to / responds to |
-| `command_whitelist` | Empty = **nobody** | Who can run `/commands` |
+| `commands_enabled` | `false` | Whether bot commands (`/status`, `/stop`, `/tasks`, `/run`) work |
 
 Whitelists contain Telegram user IDs.
 

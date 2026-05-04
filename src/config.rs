@@ -45,9 +45,9 @@ pub struct ChatConfig {
     /// User IDs allowed to interact with the bot. Empty = everyone.
     #[serde(default)]
     pub interaction_whitelist: Vec<String>,
-    /// User IDs allowed to run commands. Empty = nobody.
+    /// Whether bot commands (/status, /stop, /tasks, /run) are enabled for this chat.
     #[serde(default)]
-    pub command_whitelist: Vec<String>,
+    pub commands_enabled: bool,
     /// Optional per-chat system prompt appended to the base.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub system_prompt: String,
@@ -73,10 +73,7 @@ pub struct Config {
     /// Number of recent messages to include as conversation context.
     #[serde(default = "default_conversation_window")]
     pub conversation_window: usize,
-    /// DM whitelist: user IDs allowed full tool access in DMs.
-    /// Empty = DMs respond but tools disabled. Non-empty = only listed users can interact.
-    #[serde(default)]
-    pub dm_whitelist: Vec<String>,
+
     /// Per-chat configuration overrides, keyed by chat ID string.
     #[serde(default)]
     pub chats: HashMap<String, ChatConfig>,
@@ -147,15 +144,6 @@ impl Config {
             .unwrap_or(&self.openrouter_default_model)
     }
 
-    /// Check whether tools are enabled for a DM user.
-    /// Returns true if dm_whitelist is non-empty AND the user is in it.
-    pub fn dm_tools_enabled(&self, user_id: &str) -> bool {
-        if self.dm_whitelist.is_empty() {
-            return false;
-        }
-        self.dm_whitelist.contains(&user_id.to_string())
-    }
-
     /// Check whether the bash tool is enabled for a given chat.
     /// Per-chat override takes precedence; falls back to global default.
     pub fn is_bash_enabled(&self, chat_id: &str) -> bool {
@@ -189,7 +177,7 @@ pub(crate) fn basic_config() -> Config {
         openrouter_api_key: "test-key".into(),
         openrouter_default_model: "test/model".into(),
         conversation_window: 20,
-        dm_whitelist: vec![],
+
         mcp_servers: vec![],
         heartbeat_interval_minutes: 90,
         heartbeat_scan_interval_seconds: 60,
@@ -240,7 +228,7 @@ mod tests {
         assert_eq!(chat.interaction_mode, InteractionMode::MentionOnly);
         assert!(chat.model.is_none());
         assert!(chat.interaction_whitelist.is_empty());
-        assert!(chat.command_whitelist.is_empty());
+        assert!(!chat.commands_enabled);
         assert!(chat.system_prompt.is_empty());
     }
 
@@ -286,16 +274,16 @@ mod tests {
     }
 
     #[test]
-    fn test_whitelists_serialization() {
+    fn test_chat_config_serialization() {
         let chat = ChatConfig {
             interaction_whitelist: vec!["123".into(), "456".into()],
-            command_whitelist: vec!["789".into()],
+            commands_enabled: true,
             ..Default::default()
         };
         let yaml = serde_yaml::to_string(&chat).unwrap();
         let loaded: ChatConfig = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(loaded.interaction_whitelist, vec!["123", "456"]);
-        assert_eq!(loaded.command_whitelist, vec!["789"]);
+        assert!(loaded.commands_enabled);
     }
 
     #[test]
@@ -318,20 +306,6 @@ mod tests {
         };
         let yaml = serde_yaml::to_string(&chat).unwrap();
         assert!(yaml.contains("custom prompt"));
-    }
-
-    #[test]
-    fn test_dm_tools_disabled_when_whitelist_empty() {
-        let config = basic_config();
-        assert!(!config.dm_tools_enabled("anyone"));
-    }
-
-    #[test]
-    fn test_dm_tools_enabled_for_whitelisted_user() {
-        let mut config = basic_config();
-        config.dm_whitelist = vec!["123".into()];
-        assert!(config.dm_tools_enabled("123"));
-        assert!(!config.dm_tools_enabled("456"));
     }
 
     #[test]

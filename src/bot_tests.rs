@@ -33,7 +33,7 @@ async fn setup_test_bot_with_whitelisted_chat() -> (GlowBot, TempDir, Arc<MockLl
         "-123".into(),
         crate::config::ChatConfig {
             interaction_mode: crate::config::InteractionMode::EveryMessage,
-            command_whitelist: vec!["456".into()],
+            commands_enabled: true,
             interaction_whitelist: vec!["456".into()],
             ..Default::default()
         },
@@ -171,7 +171,7 @@ async fn test_process_message_interaction_whitelist_blocks() {
 #[tokio::test]
 async fn test_process_message_command_unauthorized() {
     let (bot, _dir, _mock) = setup_test_bot().await;
-    // Default: command_whitelist is empty, so nobody can run commands
+    // Default: commands_enabled is false, so nobody can run commands
     let result = bot
         .process_message("-123", "456", "@testuser", "/status", "mybot")
         .await
@@ -403,7 +403,7 @@ async fn test_process_message_with_chat_system_prompt() {
         crate::config::ChatConfig {
             interaction_mode: crate::config::InteractionMode::EveryMessage,
             interaction_whitelist: vec![],
-            command_whitelist: vec![],
+            commands_enabled: false,
             system_prompt: "Custom system prompt".into(),
             ..Default::default()
         },
@@ -608,19 +608,25 @@ async fn test_dm_tools_disabled_by_default() {
 }
 
 #[tokio::test]
-async fn test_dm_blocked_when_whitelist_nonempty_and_user_not_in_it() {
+async fn test_dm_blocked_when_interaction_whitelist_restricts() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
 
     let mut config = crate::config::basic_config();
-    config.dm_whitelist = vec!["999".into()]; // only user 999
+    config.chats.insert(
+        "123".into(),
+        crate::config::ChatConfig {
+            interaction_whitelist: vec!["999".into()],
+            ..Default::default()
+        },
+    );
     config.save(&data_dir.join("config.yaml")).unwrap();
 
     let mock_llm = Arc::new(MockLlmBackend::new());
     let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
 
-    // User 456 is NOT in whitelist = blocked
+    // User 456 is NOT in interaction_whitelist -> blocked
     let result = bot
         .process_message("123", "456", "@test", "Hello", "mybot")
         .await
@@ -629,13 +635,19 @@ async fn test_dm_blocked_when_whitelist_nonempty_and_user_not_in_it() {
 }
 
 #[tokio::test]
-async fn test_dm_allowed_when_whitelisted() {
+async fn test_dm_allowed_when_chat_config_exists() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
 
     let mut config = crate::config::basic_config();
-    config.dm_whitelist = vec!["456".into()];
+    config.chats.insert(
+        "123".into(),
+        crate::config::ChatConfig {
+            commands_enabled: true,
+            ..Default::default()
+        },
+    );
     config.save(&data_dir.join("config.yaml")).unwrap();
 
     let mock_llm = Arc::new(MockLlmBackend::new());
@@ -1329,7 +1341,7 @@ async fn test_process_message_command_run_no_tg_bot() {
 #[tokio::test]
 async fn test_process_message_command_run_unauthorized() {
     let (bot, _dir, _mock) = setup_test_bot().await;
-    // Default: command_whitelist is empty, so nobody can run commands
+    // Default: commands_enabled is false, so nobody can run commands
     let result = bot
         .process_message("-123", "456", "@testuser", "/run", "mybot")
         .await

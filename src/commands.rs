@@ -38,12 +38,9 @@ pub fn parse_command(text: &str) -> Option<Command> {
     }
 }
 
-/// Check if a user is allowed to run commands in a chat.
-pub fn can_run_command(chat_config: &ChatConfig, user_id: &str) -> bool {
-    if chat_config.command_whitelist.is_empty() {
-        return false; // Empty = nobody
-    }
-    chat_config.command_whitelist.contains(&user_id.to_string())
+/// Check if commands are enabled for a chat.
+pub fn can_run_command(chat_config: &ChatConfig) -> bool {
+    chat_config.commands_enabled
 }
 
 /// Check if a user is allowed to interact with the bot in a chat.
@@ -81,10 +78,10 @@ pub fn handle_command(
                 } else {
                     chat.interaction_whitelist.join(", ")
                 },
-                if chat.command_whitelist.is_empty() {
-                    "nobody".to_string()
+                if chat.commands_enabled {
+                    "enabled"
                 } else {
-                    chat.command_whitelist.join(", ")
+                    "disabled"
                 },
             )
         }
@@ -136,15 +133,11 @@ mod tests {
 
     #[test]
     fn test_can_run_command() {
-        let config = ChatConfig {
-            command_whitelist: vec!["123".into()],
-            ..Default::default()
-        };
-        assert!(can_run_command(&config, "123"));
-        assert!(!can_run_command(&config, "456"));
-        // Empty whitelist = nobody
+        let mut config = ChatConfig::default();
+        config.commands_enabled = true;
+        assert!(can_run_command(&config));
         let config = ChatConfig::default();
-        assert!(!can_run_command(&config, "123"));
+        assert!(!can_run_command(&config));
     }
 
     #[test]
@@ -171,7 +164,7 @@ mod tests {
         assert!(resp.contains("1k/10k (10%)"));
         assert!(resp.contains("MentionOnly"));
         assert!(resp.contains("everyone"));
-        assert!(resp.contains("nobody"));
+        assert!(resp.contains("disabled"));
     }
 
     #[test]

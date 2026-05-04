@@ -21,8 +21,8 @@ Add a way for users to delete the persisted SQLite conversation history for a ch
 Deletes all messages from the database for the **current chat**.
 
 ### Permissions
-- Respect the existing `command_whitelist` — same as `/status` and `/tasks`
-- Empty whitelist = nobody can run it (secure by default)
+- Respect the existing `commands_enabled` setting — same as `/status` and `/tasks`
+- Disabled by default = nobody can run it (secure by default)
 
 ### Implementation sketch
 

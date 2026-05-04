@@ -10,7 +10,7 @@ pub fn assemble(
     chat_memory: Option<&Memory>,
     memories: &[Memory],
     tools_enabled: bool,
-    user_id: &str,
+    _user_id: &str,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
 
@@ -58,13 +58,13 @@ pub fn assemble(
     if !tools_enabled {
         parts.push(format!(
             "\n## Important: Tool Access Restricted\n\
-You are in a DM and the dm_whitelist is empty. Your tools (bash, memory, skills) are \
+You are in a DM without a chat config entry. Your tools (bash, memory, skills) are \
 currently DISABLED. You can only respond with text.\n\
 If the user asks you to do something that requires tools, tell them:\n\
-> To enable tools, add your Telegram user ID `{}` to `dm_whitelist` \
-in `config.yaml` and restart me.\n\
-Always include their exact user ID (`{}`) in that message.",
-            user_id, user_id
+> To enable tools, add a chat config entry for this DM (ID `{chat_id}`) \
+in `config.yaml` under `chats` with `commands_enabled: true` and restart me.\n\
+Always include the chat ID (`{chat_id}`) in that message.",
+            chat_id = chat_id
         ));
     }
 
@@ -231,7 +231,7 @@ mod tests {
     fn test_assemble_dm_tools_disabled() {
         let prompt = assemble("123", "", &HashMap::new(), None, &[], false, "789");
         assert!(prompt.contains("Tool Access Restricted"));
-        assert!(prompt.contains("789"));
+        assert!(prompt.contains("123"));
         assert!(prompt.contains("DISABLED"));
     }
 

@@ -252,6 +252,8 @@ pub async fn process_message_impl(
         return handle_bot_command_impl(state, stop_signals, chat_id, user_id, &command, tg_bot, git_repo).await;
     }
 
+    let is_dm = !chat_id.starts_with('-');
+
     // Check interaction permissions
     let chat_config = {
         let s = state.lock().await;
@@ -259,10 +261,12 @@ pub async fn process_message_impl(
     };
 
     if !can_interact(&chat_config, user_id) {
+        if is_dm {
+            return Ok(Some("Sorry, you're not authorized to interact with me in DMs.".into()));
+        }
         return Ok(None);
     }
 
-    let is_dm = !chat_id.starts_with('-');
     if !is_dm
         && matches!(chat_config.interaction_mode, crate::config::InteractionMode::MentionOnly)
         && !is_command
@@ -275,25 +279,13 @@ pub async fn process_message_impl(
         return Ok(None);
     }
 
-    let (tools_enabled, dm_blocked) = {
+    let tools_enabled = if is_dm {
+        // DMs: tools enabled if chat has a config entry, disabled otherwise.
         let s = state.lock().await;
-        let config = &s.config;
-        if is_dm {
-            if config.dm_whitelist.is_empty() {
-                (false, false)
-            } else if config.dm_whitelist.contains(&user_id.to_string()) {
-                (true, false)
-            } else {
-                (false, true)
-            }
-        } else {
-            (true, false)
-        }
+        s.config.chats.contains_key(chat_id)
+    } else {
+        true
     };
-
-    if dm_blocked {
-        return Ok(Some("Sorry, you're not authorized to interact with me in DMs.".into()));
-    }
 
     process_with_llm_impl(state, git_repo, stop_signals, chat_id, user_id, username, text, tools_enabled, tg_bot).await
 }
@@ -303,7 +295,7 @@ async fn handle_bot_command_impl(
     state: &Arc<Mutex<BotState>>,
     stop_signals: &Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
     chat_id: &str,
-    user_id: &str,
+    _user_id: &str,
     command: &crate::commands::Command,
     tg_bot: Option<&teloxide::Bot>,
     _git_repo: &GitRepo,
@@ -321,12 +313,7 @@ async fn handle_bot_command_impl(
     let allowed = {
         let s = state.lock().await;
         let chat_config = s.config.chat_config(chat_id);
-        let is_dm = !chat_id.starts_with('-');
-        if is_dm && s.config.dm_whitelist.contains(&user_id.to_string()) {
-            true
-        } else {
-            can_run_command(&chat_config, user_id)
-        }
+        can_run_command(&chat_config)
     };
 
     if !allowed {
