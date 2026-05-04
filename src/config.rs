@@ -85,7 +85,7 @@ pub struct DmConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DatabaseConfig {
     /// Whether to persist LLM reasoning/thinking content in the database.
-    /// Reasoning is only captured when `conversation.include_thoughts` is also enabled.
+    /// Reasoning is only captured when `conversation.include_reasoning` is also enabled.
     #[serde(default)]
     pub store_reasoning: bool,
 }
@@ -100,14 +100,14 @@ pub struct ConversationConfig {
     /// When enabled, reasoning text from assistant messages is captured and sent back
     /// in the next turn so the model can see its previous thinking.
     #[serde(default)]
-    pub include_thoughts: bool,
+    pub include_reasoning: bool,
 }
 
 impl Default for ConversationConfig {
     fn default() -> Self {
         Self {
             recent_messages_window_size: default_recent_messages_window_size(),
-            include_thoughts: false,
+            include_reasoning: false,
         }
     }
 }
@@ -639,18 +639,18 @@ mod tests {
     fn test_conversation_config_default() {
         let conv = ConversationConfig::default();
         assert_eq!(conv.recent_messages_window_size, 20);
-        assert!(!conv.include_thoughts);
+        assert!(!conv.include_reasoning);
     }
 
     #[test]
     fn test_conversation_config_serialization() {
         let conv = ConversationConfig {
             recent_messages_window_size: 50,
-            include_thoughts: true,
+            include_reasoning: true,
         };
         let yaml = serde_yaml::to_string(&conv).unwrap();
         assert!(yaml.contains("50"));
-        assert!(yaml.contains("include_thoughts"));
+        assert!(yaml.contains("include_reasoning"));
     }
 
     #[test]
@@ -659,12 +659,12 @@ mod tests {
         let path = dir.path().join("config.yaml");
         let mut config = basic_config();
         config.conversation.recent_messages_window_size = 30;
-        config.conversation.include_thoughts = true;
+        config.conversation.include_reasoning = true;
         config.db.store_reasoning = true;
         config.save(&path).unwrap();
         let loaded = Config::load(&path).unwrap();
         assert_eq!(loaded.conversation.recent_messages_window_size, 30);
-        assert!(loaded.conversation.include_thoughts);
+        assert!(loaded.conversation.include_reasoning);
         assert!(loaded.db.store_reasoning);
     }
 

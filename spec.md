@@ -51,7 +51,7 @@ openrouter_default_model: "anthropic/claude-sonnet-4"
 # Conversation context settings
 conversation:
   recent_messages_window_size: 20   # number of recent messages (default: 20)
-  include_thoughts: false           # include LLM reasoning/thinking in next requests (default: false)
+  include_reasoning: false           # include LLM reasoning/thinking in next requests (default: false)
 
 # Database settings
 db:
@@ -226,13 +226,13 @@ Some LLM models (DeepSeek-R1, Claude with extended thinking, OpenAI o-series) re
 **Configuration:**
 ```yaml
 conversation:
-  include_thoughts: false          # default: false
+  include_reasoning: false          # default: false
 db:
   store_reasoning: false          # default: false
 ```
 
 **How it works:**
-- When `conversation.include_thoughts` is `true`, the bot extracts `reasoning` from assistant messages in the API response.
+- When `conversation.include_reasoning` is `true`, the bot extracts `reasoning` from assistant messages in the API response.
 - Reasoning is attached to `ChatMessage` objects and sent back in the next request, so the model sees its previous thinking.
 - When `false` (default), reasoning content is silently discarded — it never enters the turn history.
 - If `db.store_reasoning` is also `true`, reasoning text is persisted in the `reasoning` column of the `messages` table in SQLite.
@@ -434,7 +434,7 @@ Whitelists contain Telegram user IDs.
 - [x] Docker deployment with `glowbot_data/` as a volume
 - [x] GitHub CI/CD with ≥95% test coverage enforced
 - [x] Conversation history (stored in SQLite, retrievable via `get_recent_messages` tool, configurable window size)
-- [x] LLM reasoning/thinking capture and storage (configurable via `conversation.include_thoughts` and `db.store_reasoning`)
+- [x] LLM reasoning/thinking capture and storage (configurable via `conversation.include_reasoning` and `db.store_reasoning`)
 - [x] Typing indicator while LLM is processing
 - [x] MarkdownV2 rendering via `telegram-markdown-v2` crate with plain text fallback
 

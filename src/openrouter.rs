@@ -18,7 +18,7 @@ pub struct ChatMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
     /// Reasoning / thinking content from models that support it (e.g. DeepSeek-R1, Claude thinking).
-    /// Only populated when `conversation.include_thoughts` is enabled.
+    /// Only populated when `conversation.include_reasoning` is enabled.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub reasoning: Option<String>,
 }

@@ -496,10 +496,10 @@ async fn process_with_llm_impl(
     ensure_memory_exists_impl(state, chat_id, user_id, username).await?;
 
     // Read existing conversation history upfront
-    let (history, include_thoughts) = {
+    let (history, include_reasoning) = {
         let s = state.lock().await;
         let win = s.config.conversation.recent_messages_window_size;
-        let include = s.config.conversation.include_thoughts;
+        let include = s.config.conversation.include_reasoning;
         let hist = s
             .db
             .load_messages(chat_id, win)
@@ -575,7 +575,7 @@ async fn process_with_llm_impl(
                 }
 
                 // Record assistant's tool call message in the turn
-                if let (Some(reasoning), true) = (&choice.message.reasoning, include_thoughts) {
+                if let (Some(reasoning), true) = (&choice.message.reasoning, include_reasoning) {
                     turn_messages.push(ChatMessage::assistant_tool_calls_with_reasoning(
                         tool_calls.clone(),
                         reasoning.clone(),
@@ -605,7 +605,7 @@ async fn process_with_llm_impl(
     };
 
     // Record final assistant message in the turn
-    if let (Some(reasoning), true) = (&final_reasoning, include_thoughts) {
+    if let (Some(reasoning), true) = (&final_reasoning, include_reasoning) {
         turn_messages.push(ChatMessage::assistant_with_reasoning(&result, reasoning.clone()));
     } else {
         turn_messages.push(ChatMessage::assistant(&result));
