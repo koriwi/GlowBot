@@ -3,7 +3,7 @@ use super::bot_dispatch::{dispatch_tool, log_tool_call_to};
 use super::bot_heartbeat::run_heartbeat_task;
 use crate::llm::mock::MockLlmBackend;
 use crate::openrouter::{
-    AssistantMessage, ChatCompletionResponse, Choice, FunctionCall, ToolCall,
+    AssistantMessage, ChatCompletionResponse, ChatMessage, Choice, FunctionCall, ToolCall,
 };
 use tempfile::TempDir;
 
