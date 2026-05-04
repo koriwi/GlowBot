@@ -79,10 +79,9 @@ pub(crate) fn update_memory_tool_definition() -> ToolDefinition {
     }
 }
 
-/// All tool definitions.
-pub fn all_tool_definitions() -> Vec<ToolDefinition> {
-    vec![
-        bash_tool_definition(),
+/// All tool definitions. When `include_bash` is false, the bash tool is excluded.
+pub fn all_tool_definitions(include_bash: bool) -> Vec<ToolDefinition> {
+    let mut tools = vec![
         read_memory_tool_definition(),
         update_memory_tool_definition(),
         read_chat_memory_tool_definition(),
@@ -95,7 +94,11 @@ pub fn all_tool_definitions() -> Vec<ToolDefinition> {
         remove_task_tool_definition(),
         get_recent_messages_tool_definition(),
         send_message_tool_definition(),
-    ]
+    ];
+    if include_bash {
+        tools.insert(0, bash_tool_definition());
+    }
+    tools
 }
 
 /// The read_chat_memory tool definition.

@@ -714,10 +714,11 @@ async fn test_build_tools_includes_mcp() {
     let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
     let mut state = bot.state.lock().await;
 
-    // No MCP tools yet — all tool definitions (always includes send_message)
-    let tools = state.build_tools(false);
+    // No MCP tools yet — all tool definitions with bash
+    let tools = state.build_tools(true);
     assert_eq!(tools.len(), 13);
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
+    assert!(tools.iter().any(|t| t.function.name == "bash"));
 
     // Add a fake MCP tool
     state.mcp_tools.push(crate::mcp::McpTool {
@@ -731,9 +732,28 @@ async fn test_build_tools_includes_mcp() {
         transport: "streamable".into(),
     });
 
-    let tools = state.build_tools(false);
+    let tools = state.build_tools(true);
     assert_eq!(tools.len(), 14);
     assert!(tools.iter().any(|t| t.function.name == "mcp_test-srv_test_tool"));
+}
+
+#[tokio::test]
+async fn test_build_tools_without_bash() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+    let state = bot.state.lock().await;
+
+    let tools = state.build_tools(false);
+    assert_eq!(tools.len(), 12); // 13 - bash
+    assert!(!tools.iter().any(|t| t.function.name == "bash"));
+    assert!(tools.iter().any(|t| t.function.name == "send_message"));
 }
 
 #[tokio::test]

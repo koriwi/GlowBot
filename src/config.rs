@@ -55,6 +55,9 @@ pub struct ChatConfig {
     /// If unset, falls back to the global default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub heartbeat_interval_minutes: Option<u64>,
+    /// Override the global bash_enabled setting for this chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bash_enabled: Option<bool>,
 }
 
 /// Global application configuration.
@@ -87,6 +90,10 @@ pub struct Config {
     /// Default: 60s. Increase this if you have many chats and want less filesystem churn.
     #[serde(default = "default_heartbeat_scan_interval")]
     pub heartbeat_scan_interval_seconds: u64,
+    /// Whether the bash tool is enabled globally (default: true).
+    /// Used as fallback when no per-chat override is set.
+    #[serde(default = "default_bash_enabled")]
+    pub bash_enabled: bool,
 }
 
 fn default_model() -> String {
@@ -103,6 +110,10 @@ fn default_heartbeat() -> u64 {
 
 fn default_heartbeat_scan_interval() -> u64 {
     60
+}
+
+fn default_bash_enabled() -> bool {
+    true
 }
 
 impl Config {
@@ -145,6 +156,15 @@ impl Config {
         self.dm_whitelist.contains(&user_id.to_string())
     }
 
+    /// Check whether the bash tool is enabled for a given chat.
+    /// Per-chat override takes precedence; falls back to global default.
+    pub fn is_bash_enabled(&self, chat_id: &str) -> bool {
+        self.chats
+            .get(chat_id)
+            .and_then(|c| c.bash_enabled)
+            .unwrap_or(self.bash_enabled)
+    }
+
     /// Get the effective heartbeat interval for a chat (global default if not overridden).
     /// Returns None if disabled (set to 0).
     pub fn heartbeat_interval(&self, chat_id: &str) -> Option<u64> {
@@ -173,6 +193,7 @@ pub(crate) fn basic_config() -> Config {
         mcp_servers: vec![],
         heartbeat_interval_minutes: 90,
         heartbeat_scan_interval_seconds: 60,
+        bash_enabled: true,
         chats: HashMap::new(),
     }
 }
@@ -311,6 +332,42 @@ mod tests {
         config.dm_whitelist = vec!["123".into()];
         assert!(config.dm_tools_enabled("123"));
         assert!(!config.dm_tools_enabled("456"));
+    }
+
+    #[test]
+    fn test_bash_enabled_global_default() {
+        let config = basic_config();
+        assert!(config.is_bash_enabled("-123"));
+        assert!(config.is_bash_enabled("456"));
+    }
+
+    #[test]
+    fn test_bash_enabled_per_chat_override_false() {
+        let mut config = basic_config();
+        config.chats.insert(
+            "-123".into(),
+            ChatConfig {
+                bash_enabled: Some(false),
+                ..Default::default()
+            },
+        );
+        assert!(!config.is_bash_enabled("-123"));
+        assert!(config.is_bash_enabled("-999")); // uses global true
+    }
+
+    #[test]
+    fn test_bash_enabled_per_chat_override_true_global_false() {
+        let mut config = basic_config();
+        config.bash_enabled = false;
+        config.chats.insert(
+            "-123".into(),
+            ChatConfig {
+                bash_enabled: Some(true),
+                ..Default::default()
+            },
+        );
+        assert!(config.is_bash_enabled("-123"));
+        assert!(!config.is_bash_enabled("-999")); // uses global false
     }
 
     #[test]

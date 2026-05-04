@@ -61,7 +61,8 @@ pub async fn run_heartbeat_task(
 
         let tools = {
             let s = state.lock().await;
-            s.build_tools(true)
+            let bash_enabled = s.config.is_bash_enabled(&cid);
+            s.build_tools(bash_enabled)
         };
 
         let context_limit = {

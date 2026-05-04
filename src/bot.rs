@@ -80,8 +80,8 @@ impl BotState {
     /// Build the full list of tool definitions including MCP tools.
     /// `send_message` is always included — in normal conversations it's for
     /// headsup/intermediate messages; in heartbeat tasks it's for completion reports.
-    pub fn build_tools(&self, include_send_message: bool) -> Vec<crate::openrouter::ToolDefinition> {
-        let mut t = crate::openrouter::all_tool_definitions();
+    pub fn build_tools(&self, include_bash: bool) -> Vec<crate::openrouter::ToolDefinition> {
+        let mut t = crate::openrouter::all_tool_definitions(include_bash);
         for mt in &self.mcp_tools {
             t.push(crate::openrouter::ToolDefinition {
                 def_type: "function".into(),
@@ -424,7 +424,8 @@ async fn process_with_llm_impl(
 
     let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
         let s = state.lock().await;
-        s.build_tools(false)
+        let bash_enabled = s.config.is_bash_enabled(chat_id);
+        s.build_tools(bash_enabled)
     } else {
         vec![]
     };
