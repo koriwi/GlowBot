@@ -53,8 +53,9 @@ conversation:
   recent_messages_window_size: 20   # number of recent messages (default: 20)
   include_thoughts: false           # include LLM reasoning/thinking in next requests (default: false)
 
-# Store LLM reasoning/thinking in the database (only applicable when include_thoughts is true)
-db_store_reasoning: false
+# Database settings
+db:
+  store_reasoning: false    # persist reasoning content in SQLite
 
 # DM access control
 # dm_enabled: true   # unset (None): defaults to true if dms is empty, false if dms has entries
@@ -226,14 +227,15 @@ Some LLM models (DeepSeek-R1, Claude with extended thinking, OpenAI o-series) re
 ```yaml
 conversation:
   include_thoughts: false          # default: false
-db_store_reasoning: false          # default: false
+db:
+  store_reasoning: false          # default: false
 ```
 
 **How it works:**
 - When `conversation.include_thoughts` is `true`, the bot extracts `reasoning` from assistant messages in the API response.
 - Reasoning is attached to `ChatMessage` objects and sent back in the next request, so the model sees its previous thinking.
 - When `false` (default), reasoning content is silently discarded — it never enters the turn history.
-- If `db_store_reasoning` is also `true`, reasoning text is persisted in the `reasoning` column of the `messages` table in SQLite.
+- If `db.store_reasoning` is also `true`, reasoning text is persisted in the `reasoning` column of the `messages` table in SQLite.
 - Reasoning is included in token estimation for context trimming.
 - Reasoning is **not** part of `text_content()` — it's a separate field, so embeddings and tool input don't include it.
 
@@ -432,7 +434,7 @@ Whitelists contain Telegram user IDs.
 - [x] Docker deployment with `glowbot_data/` as a volume
 - [x] GitHub CI/CD with ≥95% test coverage enforced
 - [x] Conversation history (stored in SQLite, retrievable via `get_recent_messages` tool, configurable window size)
-- [x] LLM reasoning/thinking capture and storage (configurable via `conversation.include_thoughts` and `db_store_reasoning`)
+- [x] LLM reasoning/thinking capture and storage (configurable via `conversation.include_thoughts` and `db.store_reasoning`)
 - [x] Typing indicator while LLM is processing
 - [x] MarkdownV2 rendering via `telegram-markdown-v2` crate with plain text fallback
 

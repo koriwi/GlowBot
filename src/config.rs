@@ -81,6 +81,15 @@ pub struct DmConfig {
     pub bash_enabled: Option<bool>,
 }
 
+/// Database-related configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DatabaseConfig {
+    /// Whether to persist LLM reasoning/thinking content in the database.
+    /// Reasoning is only captured when `conversation.include_thoughts` is also enabled.
+    #[serde(default)]
+    pub store_reasoning: bool,
+}
+
 /// Conversation context configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationConfig {
@@ -152,10 +161,9 @@ pub struct Config {
     /// Maximum number of recent embeddings loaded for similarity search.
     #[serde(default = "default_embedding_search_limit")]
     pub embedding_search_limit: usize,
-    /// Whether to persist LLM reasoning/thinking content in the database.
-    /// Reasoning is only captured when `conversation.include_thoughts` is also enabled.
+    /// Database-related configuration.
     #[serde(default)]
-    pub db_store_reasoning: bool,
+    pub db: DatabaseConfig,
 }
 
 fn default_model() -> String {
@@ -286,7 +294,7 @@ pub(crate) fn basic_config() -> Config {
         openrouter_api_key: "test-key".into(),
         openrouter_default_model: "test/model".into(),
         conversation: ConversationConfig::default(),
-        db_store_reasoning: false,
+        db: DatabaseConfig::default(),
 
         mcp_servers: vec![],
         heartbeat_interval_minutes: 90,
@@ -652,18 +660,33 @@ mod tests {
         let mut config = basic_config();
         config.conversation.recent_messages_window_size = 30;
         config.conversation.include_thoughts = true;
-        config.db_store_reasoning = true;
+        config.db.store_reasoning = true;
         config.save(&path).unwrap();
         let loaded = Config::load(&path).unwrap();
         assert_eq!(loaded.conversation.recent_messages_window_size, 30);
         assert!(loaded.conversation.include_thoughts);
-        assert!(loaded.db_store_reasoning);
+        assert!(loaded.db.store_reasoning);
+    }
+
+    #[test]
+    fn test_database_config_default() {
+        let db = DatabaseConfig::default();
+        assert!(!db.store_reasoning);
+    }
+
+    #[test]
+    fn test_database_config_serialization() {
+        let db = DatabaseConfig {
+            store_reasoning: true,
+        };
+        let yaml = serde_yaml::to_string(&db).unwrap();
+        assert!(yaml.contains("store_reasoning"));
     }
 
     #[test]
     fn test_config_defaults_db_store_reasoning_false() {
         let config = basic_config();
-        assert!(!config.db_store_reasoning);
+        assert!(!config.db.store_reasoning);
     }
 
     #[test]
