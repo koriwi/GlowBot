@@ -278,14 +278,15 @@ impl GlowBot {
             let client = crate::openrouter::OpenRouterClient::new(api_key);
 
             for (idx, (msg_id, text)) in unembedded.iter().enumerate() {
+                let text_preview: String = text.chars().take(80).collect();
                 match client.embeddings(&model, text).await {
                     Ok(vec) => {
                         if let Err(e) = db.save_embedding(*msg_id, &vec, &model) {
-                            log::warn!("Failed to save embedding for message {}: {}", msg_id, e);
+                            log::warn!("Failed to save embedding for message {} (model={}, text=\"{}\"): {}", msg_id, model, text_preview, e);
                         }
                     }
                     Err(e) => {
-                        log::warn!("Failed to embed message {}: {}", msg_id, e);
+                        log::warn!("Failed to embed message {} (model={}, text=\"{}\"): {}", msg_id, model, text_preview, e);
                     }
                 }
 
@@ -656,14 +657,15 @@ async fn embed_turn(
         if text.is_empty() {
             continue;
         }
+        let text_preview: String = text.chars().take(80).collect();
         match client.embeddings(embed_model, &text).await {
             Ok(vec) => {
                 if let Err(e) = db.save_embedding(message_ids[i], &vec, embed_model) {
-                    log::warn!("Failed to save embedding for message {}: {}", message_ids[i], e);
+                    log::warn!("Failed to save embedding for message {} (model={}, text=\"{}\"): {}", message_ids[i], embed_model, text_preview, e);
                 }
             }
             Err(e) => {
-                log::warn!("Failed to embed message {}: {}", message_ids[i], e);
+                log::warn!("Failed to embed message {} (model={}, text=\"{}\"): {}", message_ids[i], embed_model, text_preview, e);
             }
         }
     }

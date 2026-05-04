@@ -410,6 +410,16 @@ struct EmbeddingResponse {
     data: Vec<EmbeddingData>,
 }
 
+/// Truncate a string to `max_len` characters, appending "..." if truncated.
+fn truncate_str(s: &str, max_len: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", s.chars().take(max_len).collect::<String>())
+    }
+}
+
 pub struct OpenRouterClient {
     api_key: String,
     http_client: reqwest::Client,
@@ -433,9 +443,9 @@ impl OpenRouterClient {
             .await?;
 
         let status = response.status();
+        let body_text = response.text().await.unwrap_or_else(|e| format!("(failed to read body: {})", e));
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("OpenRouter API error ({}): {}", status, body);
+            anyhow::bail!("OpenRouter API error ({}): {}", status, body_text);
         }
 
         #[derive(Debug, Deserialize)]
@@ -443,7 +453,8 @@ impl OpenRouterClient {
             data: Vec<ModelInfo>,
         }
 
-        let resp: ModelsApiResponse = response.json().await?;
+        let resp: ModelsApiResponse = serde_json::from_str(&body_text)
+            .map_err(|e| anyhow::anyhow!("Failed to parse models response (status {}): {}. Body: {}", status, e, truncate_str(&body_text, 500)))?;
         Ok(resp.data)
     }
 
@@ -462,12 +473,13 @@ impl OpenRouterClient {
             .await?;
 
         let status = response.status();
+        let body_text = response.text().await.unwrap_or_else(|e| format!("(failed to read body: {})", e));
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("OpenRouter embeddings API error ({}): {}", status, body);
+            anyhow::bail!("OpenRouter embeddings API error ({}): {}", status, body_text);
         }
 
-        let resp: EmbeddingResponse = response.json().await?;
+        let resp: EmbeddingResponse = serde_json::from_str(&body_text)
+            .map_err(|e| anyhow::anyhow!("Failed to parse embeddings response (status {}): {}. Body: {}", status, e, truncate_str(&body_text, 500)))?;
         resp.data
             .into_iter()
             .next()
@@ -490,12 +502,13 @@ impl OpenRouterClient {
             .await?;
 
         let status = response.status();
+        let body_text = response.text().await.unwrap_or_else(|e| format!("(failed to read body: {})", e));
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("OpenRouter API error ({}): {}", status, body);
+            anyhow::bail!("OpenRouter API error ({}): {}", status, body_text);
         }
 
-        let completion: ChatCompletionResponse = response.json().await?;
+        let completion: ChatCompletionResponse = serde_json::from_str(&body_text)
+            .map_err(|e| anyhow::anyhow!("Failed to parse chat completion response (status {}): {}. Body: {}", status, e, truncate_str(&body_text, 500)))?;
         Ok(completion)
     }
 }

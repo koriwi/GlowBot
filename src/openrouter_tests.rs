@@ -510,3 +510,13 @@ fn test_embedding_response_empty_errors() {
     let resp: EmbeddingResponse = serde_json::from_value(json).unwrap();
     assert!(resp.data.is_empty());
 }
+
+#[test]
+fn test_truncate_str() {
+    assert_eq!(truncate_str("hi", 5), "hi");
+    assert_eq!(truncate_str("hello", 5), "hello");
+    assert_eq!(truncate_str("hello world", 5), "hello...");
+    assert_eq!(truncate_str("", 5), "");
+    // Multi-byte boundary: takes first 3 chars, not bytes
+    assert_eq!(truncate_str("héllo world", 3), "hél...");
+}
