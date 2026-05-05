@@ -95,6 +95,63 @@ pub(crate) async fn dispatch_tool(
                 "Error: send_message not available in this context.".into()
             }
         }
+        "send_media" => {
+            let file_path = args["file_path"].as_str().unwrap_or("");
+            if file_path.is_empty() {
+                return "Error: file_path required".into();
+            }
+            let caption = args["caption"].as_str().unwrap_or("");
+            let data_dir = { state.lock().await.data_dir.clone() };
+            let full_path = if std::path::Path::new(file_path).is_absolute() {
+                std::path::PathBuf::from(file_path)
+            } else {
+                data_dir.join(file_path)
+            };
+            if !full_path.exists() {
+                return format!("Error: file not found: {}", full_path.display());
+            }
+            if let Some(bot) = tg_bot {
+                let chat = ChatId(cid.parse().unwrap_or_default());
+                let input = teloxide::types::InputFile::file(&full_path);
+                let ext = full_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                let result = match ext.as_str() {
+                    "jpg" | "jpeg" | "png" | "gif" | "webp" => {
+                        bot.send_photo(chat, input)
+                            .caption(caption)
+                            .await
+                            .map(|_| ())
+                    }
+                    "mp4" | "mov" | "avi" | "webm" => {
+                        bot.send_video(chat, input)
+                            .caption(caption)
+                            .await
+                            .map(|_| ())
+                    }
+                    "mp3" | "ogg" | "wav" | "flac" => {
+                        bot.send_audio(chat, input)
+                            .caption(caption)
+                            .await
+                            .map(|_| ())
+                    }
+                    _ => {
+                        bot.send_document(chat, input)
+                            .caption(caption)
+                            .await
+                            .map(|_| ())
+                    }
+                };
+                match result {
+                    Ok(()) => format!("Media sent: {}", full_path.display()),
+                    Err(e) => format!("Failed to send media: {}", e),
+                }
+            } else {
+                "Error: send_media not available in this context.".into()
+            }
+        }
         "bash" => {
             if !state.lock().await.config.is_bash_enabled(&cid) {
                 return format!(

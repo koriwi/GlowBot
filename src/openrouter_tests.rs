@@ -89,7 +89,7 @@ fn test_chat_completion_request_seialization() {
 #[test]
 fn test_all_tool_definitions_with_bash() {
     let tools = all_tool_definitions(true, None);
-    assert_eq!(tools.len(), 13);
+    assert_eq!(tools.len(), 14);
     assert_eq!(tools[0].function.name, "bash");
     assert_eq!(tools[1].function.name, "read_memory");
     assert_eq!(tools[2].function.name, "update_memory");
@@ -98,7 +98,7 @@ fn test_all_tool_definitions_with_bash() {
 #[test]
 fn test_all_tool_definitions_without_bash() {
     let tools = all_tool_definitions(false, None);
-    assert_eq!(tools.len(), 12);
+    assert_eq!(tools.len(), 13);
     assert_eq!(tools[0].function.name, "read_memory");
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
 }
@@ -368,25 +368,25 @@ fn test_deserialize_tool_call_invalid_args() {
 
 #[test]
 fn test_all_tool_definitions_with_embedding_model() {
-    // With bash + embedding: 12 base + bash + search_conversations = 14
+    // With bash + embedding: 13 base + bash + search_conversations = 15
     let tools = all_tool_definitions(true, Some("openai/text-embedding-3-small"));
-    assert_eq!(tools.len(), 14);
+    assert_eq!(tools.len(), 15);
     assert_eq!(tools[0].function.name, "bash");
     assert!(tools
         .iter()
         .any(|t| t.function.name == "search_conversations"));
 
-    // Without bash, with embedding: 12 base + search_conversations = 13
+    // Without bash, with embedding: 13 base + search_conversations = 14
     let tools = all_tool_definitions(false, Some("openai/text-embedding-3-small"));
-    assert_eq!(tools.len(), 13);
+    assert_eq!(tools.len(), 14);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "search_conversations"));
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
 
-    // Without embedding model, without bash: 12 base = 12 (no search_conversations)
+    // Without embedding model, without bash: 13 base = 13 (no search_conversations)
     let tools = all_tool_definitions(false, None);
-    assert_eq!(tools.len(), 12);
+    assert_eq!(tools.len(), 13);
     assert!(!tools
         .iter()
         .any(|t| t.function.name == "search_conversations"));

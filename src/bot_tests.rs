@@ -850,7 +850,7 @@ async fn test_build_tools_includes_mcp() {
 
     // No MCP tools yet — all tool definitions with bash
     let tools = state.build_tools(true);
-    assert_eq!(tools.len(), 13);
+    assert_eq!(tools.len(), 14);
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
     assert!(tools.iter().any(|t| t.function.name == "bash"));
 
@@ -867,7 +867,7 @@ async fn test_build_tools_includes_mcp() {
     });
 
     let tools = state.build_tools(true);
-    assert_eq!(tools.len(), 14);
+    assert_eq!(tools.len(), 15);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
@@ -887,7 +887,7 @@ async fn test_build_tools_without_bash() {
     let state = bot.state.lock().await;
 
     let tools = state.build_tools(false);
-    assert_eq!(tools.len(), 12); // 13 - bash
+    assert_eq!(tools.len(), 13); // 14 - bash
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
 }
@@ -1006,6 +1006,92 @@ async fn test_dispatch_send_message_no_tg_bot() {
     )
     .await;
     assert_eq!(out, "Error: send_message not available in this context.");
+}
+
+#[tokio::test]
+async fn test_dispatch_send_media_empty_file_path() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "send_media",
+        &serde_json::json!({"file_path":""}),
+        None,
+    )
+    .await;
+    assert_eq!(out, "Error: file_path required");
+}
+
+#[tokio::test]
+async fn test_dispatch_send_media_file_not_found() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "send_media",
+        &serde_json::json!({"file_path":"nonexistent.png"}),
+        None,
+    )
+    .await;
+    assert!(out.starts_with("Error: file not found:"));
+}
+
+#[tokio::test]
+async fn test_dispatch_send_media_no_tg_bot() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    // Create a dummy file so the file-exists check passes before the tg_bot check
+    std::fs::write(data_dir.join("test.png"), b"fake png").unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "send_media",
+        &serde_json::json!({"file_path":"test.png"}),
+        None,
+    )
+    .await;
+    assert_eq!(out, "Error: send_media not available in this context.");
 }
 
 #[tokio::test]

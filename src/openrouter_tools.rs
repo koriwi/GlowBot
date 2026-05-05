@@ -102,6 +102,7 @@ pub fn all_tool_definitions(
     if embedding_model.is_some() {
         tools.push(search_conversations_tool_definition());
     }
+    tools.push(send_media_tool_definition());
     if include_bash {
         tools.insert(0, bash_tool_definition());
     }
@@ -327,6 +328,31 @@ pub(crate) fn send_message_tool_definition() -> ToolDefinition {
                     }
                 },
                 "required": ["text"]
+            }),
+        },
+    }
+}
+
+/// The send_media tool definition.
+pub(crate) fn send_media_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "send_media".into(),
+            description: "Send a media file to the current chat. Use this to upload files generated via bash — screenshots, plots, logfiles, exports, etc. Auto-detects media type from file extension (photos, videos, audio, documents). File paths can be relative to the data directory or absolute.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the media file. Relative paths are resolved against the data directory."
+                    },
+                    "caption": {
+                        "type": "string",
+                        "description": "Optional caption to send with the media."
+                    }
+                },
+                "required": ["file_path"]
             }),
         },
     }
