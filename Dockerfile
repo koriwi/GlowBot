@@ -20,10 +20,12 @@ RUN touch src/lib.rs src/main.rs && \
     cargo build --release
 
 # Download sqldiff from SQLite tools for database migrations
+# Docker's TARGETARCH uses "amd64" but SQLite download names use "x64"
 ARG TARGETARCH=amd64
 RUN apt-get update && apt-get install -y --no-install-recommends unzip && \
     rm -rf /var/lib/apt/lists/* && \
-    curl -sSL "https://sqlite.org/2026/sqlite-tools-linux-${TARGETARCH}-3530100.zip" \
+    SQLITE_ARCH="$(echo "$TARGETARCH" | sed 's/amd64/x64/')" && \
+    curl -sSL "https://sqlite.org/2026/sqlite-tools-linux-${SQLITE_ARCH}-3530100.zip" \
     -o /tmp/sqlite-tools.zip && \
     cd /tmp && unzip -q sqlite-tools.zip && \
     mv sqldiff /usr/local/bin/sqldiff && \
