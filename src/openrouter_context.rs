@@ -146,12 +146,20 @@ pub fn trim_message_list(
 }
 
 /// Format token usage as a human-readable string like "37k/252k (15%)".
+/// When the context limit is unknown, reports the used tokens if available,
+/// or "no data yet" if nothing has been recorded.
 pub fn format_context_usage(used: u64, limit: u64) -> String {
     if limit == 0 {
-        return "unknown".to_string();
+        if used > 0 {
+            let used_k = used / 1000;
+            format!("{}k used (context limit unknown)", used_k)
+        } else {
+            "no token data yet".to_string()
+        }
+    } else {
+        let pct = ((used as f64 / limit as f64) * 100.0).round() as u64;
+        let used_k = used / 1000;
+        let limit_k = limit / 1000;
+        format!("{}k/{}k ({}%)", used_k, limit_k, pct)
     }
-    let pct = ((used as f64 / limit as f64) * 100.0).round() as u64;
-    let used_k = used / 1000;
-    let limit_k = limit / 1000;
-    format!("{}k/{}k ({}%)", used_k, limit_k, pct)
 }

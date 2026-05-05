@@ -1,5 +1,6 @@
 use super::BotState;
 use crate::git::GitRepo;
+use crate::openrouter::OpenRouterClient;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -67,6 +68,36 @@ pub(crate) async fn handle_bot_command_impl(
             return Ok(Some("🔄 Running task agent for this chat now...".into()));
         }
         return Ok(Some("Run command cannot be used in this context.".into()));
+    }
+
+    // If the model's context length isn't cached, fetch it on-demand for /status
+    {
+        let s = state.lock().await;
+        let model = s.effective_model(chat_id);
+        let needs_fetch = !s.model_context_lengths.contains_key(&model);
+        let api_key = s.config.openrouter.api_key.clone();
+        drop(s);
+
+        if needs_fetch {
+            let client = OpenRouterClient::new(api_key);
+            match client.fetch_models().await {
+                Ok(models) => {
+                    let mut s = state.lock().await;
+                    let old_count = s.model_context_lengths.len();
+                    for m in models {
+                        s.model_context_lengths.insert(m.id, m.context_length);
+                    }
+                    log::info!(
+                        "Fetched {} model context lengths on-demand for /status (had {} before)",
+                        s.model_context_lengths.len() - old_count,
+                        old_count
+                    );
+                }
+                Err(e) => {
+                    log::warn!("Failed to fetch model context lengths for /status: {}", e);
+                }
+            }
+        }
     }
 
     let response = {

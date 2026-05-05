@@ -121,6 +121,7 @@ impl BotState {
         let model = self.effective_model(chat_id);
         let raw_limit = self.model_context_lengths.get(&model).copied().unwrap_or(0);
         let effective_limit = if raw_limit == 0 {
+            log::warn!("Model '{}' not found in context length cache; context usage will be limited", model);
             0
         } else {
             (raw_limit as f64 * crate::openrouter::TOKEN_ESTIMATE_MARGIN) as u64

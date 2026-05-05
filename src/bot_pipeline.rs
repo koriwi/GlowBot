@@ -48,10 +48,13 @@ pub(crate) async fn process_with_llm_impl(
         let s = state.lock().await;
         let win = s.config.conversation.recent_messages_window_size;
         let include = s.config.conversation.include_reasoning;
-        let hist = s
-            .db
-            .load_messages(chat_id, win)
-            .unwrap_or_default();
+        let hist = match s.db.load_messages(chat_id, win) {
+            Ok(msgs) => msgs,
+            Err(e) => {
+                log::error!("Failed to load conversation history for chat {}: {}", chat_id, e);
+                Vec::new()
+            }
+        };
         (hist, include)
     };
 

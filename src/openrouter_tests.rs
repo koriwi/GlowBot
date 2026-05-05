@@ -277,7 +277,11 @@ fn test_format_context_usage() {
     assert_eq!(format_context_usage(0, 100000), "0k/100k (0%)");
     assert_eq!(format_context_usage(1000, 10000), "1k/10k (10%)");
     assert_eq!(format_context_usage(999, 1000), "0k/1k (100%)");
-    assert_eq!(format_context_usage(500, 0), "unknown");
+    // limit unknown, but usage available
+    assert_eq!(format_context_usage(5000, 0), "5k used (context limit unknown)");
+    assert_eq!(format_context_usage(500, 0), "0k used (context limit unknown)");
+    // limit unknown, no usage data
+    assert_eq!(format_context_usage(0, 0), "no token data yet");
 }
 
 #[test]

@@ -315,7 +315,13 @@ pub(crate) async fn dispatch_tool(
             let count = count.clamp(1, 50);
             let history = {
                 let s = state.lock().await;
-                s.db.load_messages(&cid, count).unwrap_or_default()
+                match s.db.load_messages(&cid, count) {
+                    Ok(msgs) => msgs,
+                    Err(e) => {
+                        log::error!("Failed to load messages for get_recent_messages tool: {}", e);
+                        Vec::new()
+                    }
+                }
             };
             let items: Vec<_> = history.iter()
                 .map(|m| serde_json::json!({

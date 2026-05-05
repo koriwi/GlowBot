@@ -1484,8 +1484,8 @@ fn test_context_usage_formatting() {
         model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     };
-    // No context cached -> unknown
-    assert_eq!(state.context_usage("-123"), "unknown");
+    // No context cached, no usage -> no token data yet
+    assert_eq!(state.context_usage("-123"), "no token data yet");
     // Cache context length for the default model
     state.model_context_lengths.insert("test/model".into(), 200000);
     // Effective limit = 200k * 0.75 = 150k
