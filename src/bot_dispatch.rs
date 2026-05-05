@@ -86,6 +86,9 @@ pub(crate) async fn dispatch_tool(
             }
         }
         "bash" => {
+            if !state.lock().await.config.is_bash_enabled(&cid) {
+                return format!("Error: bash is disabled for this chat. Enable it in config or ask an admin.");
+            }
             let cmd = args["command"].as_str().unwrap_or("");
             let dir = { state.lock().await.data_dir.clone() };
             match crate::bash::execute_in_dir(cmd, &dir).await {
