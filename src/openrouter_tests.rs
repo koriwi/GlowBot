@@ -75,7 +75,7 @@ fn test_chat_completion_request_seialization() {
     let req = ChatCompletionRequest {
         model: "test/model".into(),
         messages: vec![ChatMessage::system("sys"), ChatMessage::user("hi")],
-        tools: Some(all_tool_definitions(true, None)),
+        tools: Some(all_tool_definitions(true, None, "/media")),
         tool_choice: None,
     };
     let json = serde_json::to_string(&req).unwrap();
@@ -88,7 +88,7 @@ fn test_chat_completion_request_seialization() {
 
 #[test]
 fn test_all_tool_definitions_with_bash() {
-    let tools = all_tool_definitions(true, None);
+    let tools = all_tool_definitions(true, None, "/media");
     assert_eq!(tools.len(), 14);
     assert_eq!(tools[0].function.name, "bash");
     assert_eq!(tools[1].function.name, "read_memory");
@@ -97,7 +97,7 @@ fn test_all_tool_definitions_with_bash() {
 
 #[test]
 fn test_all_tool_definitions_without_bash() {
-    let tools = all_tool_definitions(false, None);
+    let tools = all_tool_definitions(false, None, "/media");
     assert_eq!(tools.len(), 13);
     assert_eq!(tools[0].function.name, "read_memory");
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
@@ -369,7 +369,7 @@ fn test_deserialize_tool_call_invalid_args() {
 #[test]
 fn test_all_tool_definitions_with_embedding_model() {
     // With bash + embedding: 13 base + bash + search_conversations = 15
-    let tools = all_tool_definitions(true, Some("openai/text-embedding-3-small"));
+    let tools = all_tool_definitions(true, Some("openai/text-embedding-3-small"), "/media");
     assert_eq!(tools.len(), 15);
     assert_eq!(tools[0].function.name, "bash");
     assert!(tools
@@ -377,7 +377,7 @@ fn test_all_tool_definitions_with_embedding_model() {
         .any(|t| t.function.name == "search_conversations"));
 
     // Without bash, with embedding: 13 base + search_conversations = 14
-    let tools = all_tool_definitions(false, Some("openai/text-embedding-3-small"));
+    let tools = all_tool_definitions(false, Some("openai/text-embedding-3-small"), "/media");
     assert_eq!(tools.len(), 14);
     assert!(tools
         .iter()
@@ -385,7 +385,7 @@ fn test_all_tool_definitions_with_embedding_model() {
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
 
     // Without embedding model, without bash: 13 base = 13 (no search_conversations)
-    let tools = all_tool_definitions(false, None);
+    let tools = all_tool_definitions(false, None, "/media");
     assert_eq!(tools.len(), 13);
     assert!(!tools
         .iter()

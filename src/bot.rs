@@ -95,6 +95,7 @@ impl BotState {
         let mut t = crate::openrouter::all_tool_definitions(
             include_bash,
             self.config.embedding.model.as_deref(),
+            &self.config.media_dir,
         );
         for mt in &self.mcp_tools {
             t.push(crate::openrouter::ToolDefinition {

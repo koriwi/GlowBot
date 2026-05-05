@@ -117,5 +117,6 @@ pub(crate) fn basic_config() -> Config {
         chats: HashMap::new(),
         dms: HashMap::new(),
         dm_enabled: None,
+        media_dir: default_media_dir(),
     }
 }

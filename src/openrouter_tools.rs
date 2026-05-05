@@ -81,9 +81,11 @@ pub(crate) fn update_memory_tool_definition() -> ToolDefinition {
 
 /// All tool definitions. When `include_bash` is false, the bash tool is excluded.
 /// When `model` is Some, adds the search_conversations RAG tool.
+/// `media_dir` is the configured media directory path, shown in the send_media description.
 pub fn all_tool_definitions(
     include_bash: bool,
     embedding_model: Option<&str>,
+    media_dir: &str,
 ) -> Vec<ToolDefinition> {
     let mut tools = vec![
         read_memory_tool_definition(),
@@ -102,7 +104,7 @@ pub fn all_tool_definitions(
     if embedding_model.is_some() {
         tools.push(search_conversations_tool_definition());
     }
-    tools.push(send_media_tool_definition());
+    tools.push(send_media_tool_definition(media_dir));
     if include_bash {
         tools.insert(0, bash_tool_definition());
     }
@@ -334,12 +336,17 @@ pub(crate) fn send_message_tool_definition() -> ToolDefinition {
 }
 
 /// The send_media tool definition.
-pub(crate) fn send_media_tool_definition() -> ToolDefinition {
+pub(crate) fn send_media_tool_definition(media_dir: &str) -> ToolDefinition {
+    let desc = format!(
+        "Send a media file to the current chat. Use this to upload files generated via bash or MCP tools — screenshots, plots, logfiles, exports, downloads, etc. Auto-detects media type from file extension (photos, videos, audio, documents). \
+         File paths can be relative to the data directory, absolute, or inside the media directory at '{}'.",
+        media_dir
+    );
     ToolDefinition {
         def_type: "function".into(),
         function: FunctionDef {
             name: "send_media".into(),
-            description: "Send a media file to the current chat. Use this to upload files generated via bash — screenshots, plots, logfiles, exports, etc. Auto-detects media type from file extension (photos, videos, audio, documents). File paths can be relative to the data directory or absolute.".into(),
+            description: desc,
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

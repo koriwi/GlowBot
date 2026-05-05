@@ -27,6 +27,11 @@ heartbeat_interval_minutes: 90       # per-chat interval in minutes (default: 90
 # Global bash tool toggle — used as fallback when no per-chat override is set
 bash_enabled: true                   # (default: true)
 
+# Directory where media files (images, videos, etc.) are stored,
+# typically populated by MCP tools or bash downloads.
+# The send_media tool references this path for finding files.
+media_dir: "/media"                  # (default: /media)
+
 # MCP servers for additional tools (Model Context Protocol)
 # mcp_servers:
 #   - name: "my-server"

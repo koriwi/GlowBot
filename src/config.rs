@@ -191,6 +191,11 @@ pub struct Config {
     /// Database-related configuration.
     #[serde(default)]
     pub db: DatabaseConfig,
+    /// Directory where media files (images, videos, etc.) are stored,
+    /// typically used by MCP tools or bash commands for downloads.
+    /// The send_media tool uses this path for finding files.
+    #[serde(default = "default_media_dir")]
+    pub media_dir: String,
 }
 
 fn default_recent_messages_window_size() -> usize {
@@ -207,6 +212,10 @@ fn default_bash_enabled() -> bool {
 
 fn default_embedding_search_limit() -> usize {
     1000
+}
+
+fn default_media_dir() -> String {
+    "/media".into()
 }
 
 #[path = "config_methods.rs"]
