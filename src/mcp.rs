@@ -186,36 +186,77 @@ impl McpClient {
     }
 
     /// Discover tools from the server.
-    async fn discover_tools(&self) -> anyhow::Result<Vec<McpTool>> {
-        // Send initialized notification
-        let _ = self.rpc_call("notifications/initialized", None).await;
-
-        // List tools
-        let tools_result = self.rpc_call("tools/list", None).await?;
-        let tools_array = tools_result
+    /// Parse tool entries from a `tools/list` response result into McpTool structs.
+    fn parse_tools_from_result(
+        &self,
+        result: &serde_json::Value,
+    ) -> Vec<McpTool> {
+        let tools_array = result
             .get("tools")
             .and_then(|t| t.as_array())
             .cloned()
             .unwrap_or_default();
 
         let session_id = self.session_id.lock().unwrap().clone();
-        let tools: Vec<McpTool> = tools_array
+        tools_array
             .into_iter()
             .filter_map(|t| {
+                let name = t.get("name")?.as_str()?.to_string();
+                // description is optional per MCP spec
+                let description = t
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                // inputSchema is optional per MCP spec
+                let input_schema = t
+                    .get("inputSchema")
+                    .cloned()
+                    .unwrap_or(serde_json::json!({}));
                 Some(McpTool {
                     server_name: self.server.name.clone(),
-                    name: t.get("name")?.as_str()?.to_string(),
-                    description: t.get("description")?.as_str()?.to_string(),
-                    input_schema: t.get("inputSchema")?.clone(),
+                    name,
+                    description,
+                    input_schema,
                     server_url: self.server.url.clone(),
                     api_key: self.server.api_key.clone(),
                     session_id: session_id.clone(),
                     transport: self.server.transport.clone(),
                 })
             })
-            .collect();
+            .collect()
+    }
 
-        Ok(tools)
+    /// Discover tools from the server, following pagination cursors.
+    async fn discover_tools(&self) -> anyhow::Result<Vec<McpTool>> {
+        // Send initialized notification
+        let _ = self.rpc_call("notifications/initialized", None).await;
+
+        let mut all_tools = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let params = cursor.as_ref().map(|c| {
+                serde_json::json!({"cursor": c})
+            });
+
+            let result = self.rpc_call("tools/list", params).await?;
+
+            let page_tools = self.parse_tools_from_result(&result);
+            all_tools.extend(page_tools);
+
+            // Check for next cursor (pagination support)
+            cursor = result
+                .get("nextCursor")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            if cursor.is_none() {
+                break;
+            }
+        }
+
+        Ok(all_tools)
     }
 }
 
