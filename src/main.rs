@@ -224,6 +224,11 @@ async fn handle_message(
     .await
     {
         Ok(Some(response)) => {
+            log::info!(
+                "main: got response for chat {} (len={}), sending...",
+                chat_id,
+                response.len()
+            );
             // MarkdownV2: escape reserved chars that LLMs output in natural text,
             // but preserve formatting markers: * _ ` ~
             let escaped = glowbot::escape_v2_safe(&response);
@@ -238,7 +243,9 @@ async fn handle_message(
                 }
             }
         }
-        Ok(None) => {}
+        Ok(None) => {
+            log::info!("main: no response for chat {}", chat_id);
+        }
         Err(e) => {
             log::error!("Error processing message: {}", e);
         }

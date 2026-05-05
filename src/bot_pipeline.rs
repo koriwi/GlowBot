@@ -19,6 +19,13 @@ pub(crate) async fn process_with_llm_impl(
     tools_enabled: bool,
     tg_bot: Option<&teloxide::Bot>,
 ) -> anyhow::Result<Option<String>> {
+    log::info!(
+        "pipeline: starting LLM processing for chat={}, user={}, text=\"{}\"",
+        chat_id,
+        user_id,
+        text.chars().take(100).collect::<String>()
+    );
+
     // Set up stop signal for this chat (clear any previous signal)
     {
         let mut signals = stop_signals.lock().unwrap();
@@ -90,7 +97,7 @@ pub(crate) async fn process_with_llm_impl(
     let (result, final_reasoning) = {
         let mut final_text = None;
         let mut final_reasoning = None;
-        for _round in 0..max_tool_rounds {
+        for round in 0..max_tool_rounds {
             if check_stopped() {
                 return Ok(Some("⏹ Stopped.".into()));
             }
@@ -109,11 +116,24 @@ pub(crate) async fn process_with_llm_impl(
                 tools: Some(tools.clone()),
                 tool_choice: None,
             };
+            let msg_count = request.messages.len();
 
             let (response, usage) = {
                 let s = state.lock().await;
+                log::info!(
+                    "pipeline: calling LLM model={}, round={}, messages={}",
+                    model,
+                    round,
+                    msg_count
+                );
                 let resp = s.llm.chat_completion(&request).await?;
                 let usage = resp.usage.clone().unwrap_or_default();
+                log::info!(
+                    "pipeline: LLM response received, prompt_tokens={}, completion_tokens={}, has_tool_calls={}",
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                    resp.choices.first().and_then(|c| c.message.tool_calls.as_ref()).map(|t| t.len()).unwrap_or(0)
+                );
                 (resp, usage)
             };
             {
@@ -189,9 +209,18 @@ pub(crate) async fn process_with_llm_impl(
     // Store the completed turn in conversation history
     let message_ids = {
         let s = state.lock().await;
+        log::info!(
+            "pipeline: saving turn to DB ({} messages)",
+            turn_messages.len()
+        );
         s.db.save_messages(chat_id, &turn_messages)
             .unwrap_or_default()
     };
+    log::info!(
+        "pipeline: stored {} messages in DB for chat {}",
+        message_ids.len(),
+        chat_id
+    );
 
     // Embed messages in the background if embedding model is configured
     {
@@ -222,6 +251,11 @@ pub(crate) async fn process_with_llm_impl(
         }
     }
 
+    log::info!(
+        "pipeline: done, returning response (len={}) for chat={}",
+        result.len(),
+        chat_id
+    );
     Ok(Some(result))
 }
 

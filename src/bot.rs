@@ -368,6 +368,7 @@ pub async fn process_message_impl(
 
     // Check if it's a bot command
     if let Some(command) = parse_command(text) {
+        log::info!("bot: parsed command {:?}, dispatching to command handler", command);
         return handle_bot_command_impl(
             state,
             stop_signals,
@@ -389,6 +390,11 @@ pub async fn process_message_impl(
             s.config.chat_config(chat_id)
         };
         if !can_interact(&chat_config, user_id) {
+            log::info!(
+                "bot: user {} not in interaction whitelist for chat {}, ignoring",
+                user_id,
+                chat_id
+            );
             return Ok(None);
         }
     }
@@ -405,10 +411,17 @@ pub async fn process_message_impl(
         && !is_command
         && !is_mention
     {
+        log::info!(
+            "bot: chat {} is mention-only and message was not a mention, ignoring",
+            chat_id
+        );
         return Ok(None);
     }
 
     if is_command && !is_mention {
+        log::info!(
+            "bot: message looks like a command but no mention, ignoring"
+        );
         return Ok(None);
     }
 
@@ -426,11 +439,20 @@ pub async fn process_message_impl(
     };
 
     if dm_blocked {
+        log::info!(
+            "bot: DM from unknown user {} blocked (dms not enabled and no dm config entry)",
+            user_id
+        );
         return Ok(Some(format!(
             "I don't know you yet. Please ask the bot owner to add your user ID (`{}`) to the `dms` section in the config.",
             user_id
         )));
     }
+
+    log::info!(
+        "bot: routing to LLM pipeline (chat={}, user={}, tools_enabled={}, is_dm={})",
+        chat_id, user_id, tools_enabled, is_dm
+    );
 
     self::bot_pipeline::process_with_llm_impl(
         state,
