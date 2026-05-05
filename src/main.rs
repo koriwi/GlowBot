@@ -207,7 +207,8 @@ async fn handle_message(
     };
     let _guard = chat_lock.lock().await;
 
-    // Check if we were stopped while waiting for the lock
+    // Check if we were stopped while waiting for the lock.
+    // Clear the signal so subsequent messages are processed normally.
     {
         let stopped = stop_signals
             .lock()
@@ -218,6 +219,11 @@ async fn handle_message(
             })
             .unwrap_or(false);
         if stopped {
+            if let Ok(signals) = stop_signals.lock() {
+                if let Some(sig) = signals.get(&chat_id) {
+                    sig.store(false, std::sync::atomic::Ordering::SeqCst);
+                }
+            }
             return;
         }
     }
