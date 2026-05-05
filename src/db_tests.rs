@@ -1,5 +1,66 @@
 use super::*;
 
+// ─── migration test (must be first — uses real on-disk DB) ───────
+
+/// Simulate an old database that was created without the `reasoning` column.
+/// The migration in `init()` should add the column automatically.
+#[test]
+fn test_migration_adds_reasoning_column() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let db_path = dir.path().join("glowbot.db");
+
+    // Create a v0 database manually (no reasoning column)
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute(
+            "CREATE TABLE messages (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id     TEXT    NOT NULL,
+                role        TEXT    NOT NULL,
+                content     TEXT    NOT NULL,
+                name        TEXT,
+                tool_calls  TEXT,
+                tool_call_id TEXT,
+                created_at  INTEGER NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+        // Leave user_version at 0 (the default)
+        conn.close().unwrap();
+    }
+
+    // Now open with Database::new — it should migrate
+    let db = Database::new(&db_path).unwrap();
+
+    // Save a message with reasoning and read it back
+    let msg = ChatMessage::assistant_with_reasoning("answer", "thinking...".into());
+    db.save_messages("-test", &[msg]).unwrap();
+
+    let loaded = db.load_messages("-test", 10).unwrap();
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].reasoning.as_deref(), Some("thinking..."));
+}
+
+/// Verify that a second open doesn't break anything (idempotent migration).
+#[test]
+fn test_migration_idempotent() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let db_path = dir.path().join("glowbot.db");
+
+    // Open once — creates + migrates
+    let db1 = Database::new(&db_path).unwrap();
+    drop(db1);
+
+    // Open again — migration should be a no-op
+    let db2 = Database::new(&db_path).unwrap();
+
+    let msg = ChatMessage::assistant_with_reasoning("x", "y".into());
+    db2.save_messages("-test2", &[msg]).unwrap();
+    let loaded = db2.load_messages("-test2", 10).unwrap();
+    assert_eq!(loaded[0].reasoning.as_deref(), Some("y"));
+}
+
 fn make_db() -> Database {
     Database::open_in_memory().unwrap()
 }

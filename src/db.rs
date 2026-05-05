@@ -33,6 +33,13 @@ impl Database {
     }
 
     fn init(conn: &Connection) -> anyhow::Result<()> {
+        // Read current schema version (SQLite built-in pragma)
+        let version: i64 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .context("Failed to read user_version")?;
+
+        // ── create / migrate tables ────────────────────────────────
+
         conn.execute(
             "CREATE TABLE IF NOT EXISTS messages (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,6 +88,23 @@ impl Database {
             [],
         )
         .context("Failed to create message_embeddings model index")?;
+
+        // ── run migrations ─────────────────────────────────────────
+
+        if version < 1 {
+            // v1: add reasoning column for extended thinking support
+            // Ignore "duplicate column" error in case the column already
+            // exists (e.g. the table was created fresh with the column above).
+            let _ = conn.execute(
+                "ALTER TABLE messages ADD COLUMN reasoning TEXT",
+                [],
+            );
+        }
+
+        // Bump schema version to current
+        let current_version: i64 = 1;
+        conn.pragma_update(None, "user_version", current_version)
+            .context("Failed to update user_version")?;
 
         Ok(())
     }
