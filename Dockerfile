@@ -19,11 +19,16 @@ COPY src ./src
 RUN touch src/lib.rs src/main.rs && \
     cargo build --release
 
-# Download sqlite-schema-diff for database migrations
+# Download sqldiff from SQLite tools for database migrations
 ARG TARGETARCH=amd64
-RUN curl -sSL "https://github.com/MizuchiLabs/sqlite-schema-diff/releases/download/v0.1.9/sqlite-schema-diff_linux_${TARGETARCH}" \
-    -o /usr/local/bin/sqlite-schema-diff && \
-    chmod +x /usr/local/bin/sqlite-schema-diff
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && \
+    rm -rf /var/lib/apt/lists/* && \
+    curl -sSL "https://sqlite.org/2026/sqlite-tools-linux-${TARGETARCH}-3530100.zip" \
+    -o /tmp/sqlite-tools.zip && \
+    cd /tmp && unzip -q sqlite-tools.zip && \
+    mv sqldiff /usr/local/bin/sqldiff && \
+    chmod +x /usr/local/bin/sqldiff && \
+    rm -f sqlite-tools.zip sqlite3
 
 # Stage 2: Slim runtime
 FROM debian:bookworm-slim
@@ -43,8 +48,8 @@ WORKDIR /home/glowbot
 # Copy the binary
 COPY --from=builder /app/target/release/glowbot /usr/local/bin/glowbot
 
-# Copy schema-diff binary and schema files
-COPY --from=builder /usr/local/bin/sqlite-schema-diff /usr/local/bin/sqlite-schema-diff
+# Copy sqldiff binary and schema files
+COPY --from=builder /usr/local/bin/sqldiff /usr/local/bin/sqldiff
 COPY schema /app/schema
 
 # Create data directory

@@ -20,6 +20,7 @@ futures = "0.3"
 async-trait = "0.1"
 telegram-markdown-v2 = "0.2"
 rusqlite = { version = "0.32", features = ["bundled"] }
+tempfile = "3"
 
 [dev-dependencies]
 mockall = "0.13"

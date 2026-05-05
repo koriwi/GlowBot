@@ -1,10 +1,10 @@
 use super::*;
 
-// ─── migration tests (require sqlite-schema-diff binary) ────────
+// ─── migration tests (require sqldiff binary) ───────────────────
 
-/// Helper: check if sqlite-schema-diff is available on PATH.
-fn has_schema_diff() -> bool {
-    std::process::Command::new("sqlite-schema-diff")
+/// Helper: check if sqldiff is available on PATH.
+fn has_sqldiff() -> bool {
+    std::process::Command::new("sqldiff")
         .arg("--help")
         .output()
         .map(|o| o.status.success())
@@ -21,11 +21,11 @@ fn setup_schema_dir(dir: &std::path::Path) {
             chat_id     TEXT    NOT NULL,
             role        TEXT    NOT NULL,
             content     TEXT    NOT NULL,
-            reasoning   TEXT,
             name        TEXT,
             tool_calls  TEXT,
             tool_call_id TEXT,
-            created_at  INTEGER NOT NULL
+            created_at  INTEGER NOT NULL,
+            reasoning   TEXT
         );
         CREATE INDEX idx_messages_chat_created ON messages(chat_id, created_at);
         ",
@@ -48,11 +48,11 @@ fn setup_schema_dir(dir: &std::path::Path) {
 }
 
 /// Simulate an old database that was created without the `reasoning` column.
-/// sqlite-schema-diff should add the column automatically.
+/// sqldiff should generate ALTER TABLE ADD COLUMN to add it.
 #[test]
 fn test_migration_adds_reasoning_column() {
-    if !has_schema_diff() {
-        eprintln!("Skipping: sqlite-schema-diff not installed");
+    if !has_sqldiff() {
+        eprintln!("Skipping: sqldiff not installed");
         return;
     }
 
@@ -96,8 +96,8 @@ fn test_migration_adds_reasoning_column() {
 /// Verify that a second open doesn't break anything (idempotent migration).
 #[test]
 fn test_migration_idempotent() {
-    if !has_schema_diff() {
-        eprintln!("Skipping: sqlite-schema-diff not installed");
+    if !has_sqldiff() {
+        eprintln!("Skipping: sqldiff not installed");
         return;
     }
 
