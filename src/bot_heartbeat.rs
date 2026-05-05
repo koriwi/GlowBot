@@ -22,7 +22,11 @@ pub async fn run_heartbeat_task(
         let (task_id, task_desc) = {
             let s = state.lock().await;
             let list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
-            match list.tasks.iter().find(|t| !tried_this_cycle.contains(&t.id)) {
+            match list
+                .tasks
+                .iter()
+                .find(|t| !tried_this_cycle.contains(&t.id))
+            {
                 Some(t) => (t.id.clone(), t.description.clone()),
                 None => break,
             }
@@ -85,9 +89,14 @@ pub async fn run_heartbeat_task(
                     .saturating_add(tail_tokens)
                     .saturating_add(tools_tokens)
                     .saturating_add(crate::openrouter::RESPONSE_RESERVE_TOKENS);
-                let effective_limit = (context_limit as f64 * crate::openrouter::TOKEN_ESTIMATE_MARGIN) as u64;
+                let effective_limit =
+                    (context_limit as f64 * crate::openrouter::TOKEN_ESTIMATE_MARGIN) as u64;
                 if fixed > effective_limit && messages.len() > 4 {
-                    log::info!("Heartbeat chat {}: trimming {} old tool rounds to fit context", cid, messages.len() - 4);
+                    log::info!(
+                        "Heartbeat chat {}: trimming {} old tool rounds to fit context",
+                        cid,
+                        messages.len() - 4
+                    );
                     crate::openrouter::trim_message_list(&messages, 2, 2)
                 } else {
                     messages.clone()
@@ -144,6 +153,10 @@ pub async fn run_heartbeat_task(
     }
 
     if !tried_this_cycle.is_empty() {
-        log::info!("Heartbeat chat {}: processed {} task(s) this cycle", cid, tried_this_cycle.len());
+        log::info!(
+            "Heartbeat chat {}: processed {} task(s) this cycle",
+            cid,
+            tried_this_cycle.len()
+        );
     }
 }

@@ -13,11 +13,26 @@ pub struct Database {
 }
 
 impl Database {
-    /// Open (or create) the database at the given path and initialise tables.
-    pub fn new(db_path: &Path) -> anyhow::Result<Self> {
+    /// Open (or create) the database at the given path and run migrations.
+    ///
+    /// Uses `sqlite-schema-diff` to diff the schema directory against the
+    /// live database, falling back to direct SQL initialisation if the
+    /// binary is not available.
+    pub fn new(db_path: &Path, schema_dir: &Path) -> anyhow::Result<Self> {
         let conn = Connection::open(db_path)
             .with_context(|| format!("Failed to open database: {}", db_path.display()))?;
-        Self::init(&conn)?;
+
+        match Self::migrate_with_schema_diff(&conn, db_path, schema_dir) {
+            Ok(()) => {}
+            Err(e) => {
+                log::warn!(
+                    "sqlite-schema-diff failed, falling back to direct init: {}",
+                    e
+                );
+                Self::init_direct(&conn)?;
+            }
+        }
+
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -26,21 +41,51 @@ impl Database {
     /// Create an in-memory database for tests.
     pub fn open_in_memory() -> anyhow::Result<Self> {
         let conn = Connection::open_in_memory().context("Failed to open in-memory database")?;
-        Self::init(&conn)?;
+        Self::init_direct(&conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
     }
 
-    fn init(conn: &Connection) -> anyhow::Result<()> {
-        // Read current schema version (SQLite built-in pragma)
-        let version: i64 = conn
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .context("Failed to read user_version")?;
+    /// Run `sqlite-schema-diff apply` as a subprocess to migrate the
+    /// database to match the schema directory.
+    fn migrate_with_schema_diff(
+        _conn: &Connection,
+        db_path: &Path,
+        schema_dir: &Path,
+    ) -> anyhow::Result<()> {
+        let output = std::process::Command::new("sqlite-schema-diff")
+            .args([
+                "apply",
+                "--database",
+                db_path.to_str().context("db_path is not valid UTF-8")?,
+                "--schema",
+                schema_dir
+                    .to_str()
+                    .context("schema_dir is not valid UTF-8")?,
+                "--backup=false",
+                "--skip-destructive",
+                "--force",
+            ])
+            .output()
+            .context("Failed to run sqlite-schema-diff. Is it installed?")?;
 
-        // ── create / migrate tables ────────────────────────────────
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("sqlite-schema-diff failed:\n{}", stderr);
+        }
 
-        conn.execute(
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.trim().is_empty() {
+            log::info!("Schema migration applied:\n{}", stdout.trim());
+        }
+        Ok(())
+    }
+
+    /// Direct schema initialisation — used for tests and as a fallback
+    /// when `sqlite-schema-diff` is not available.
+    fn init_direct(conn: &Connection) -> anyhow::Result<()> {
+        conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS messages (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id     TEXT    NOT NULL,
@@ -51,61 +96,22 @@ impl Database {
                 tool_calls  TEXT,
                 tool_call_id TEXT,
                 created_at  INTEGER NOT NULL
-            )",
-            [],
-        )
-        .context("Failed to create messages table")?;
-
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_messages_chat_created
-             ON messages(chat_id, created_at)",
-            [],
-        )
-        .context("Failed to create messages index")?;
-
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS message_embeddings (
+            );
+            CREATE INDEX IF NOT EXISTS idx_messages_chat_created
+             ON messages(chat_id, created_at);
+            CREATE TABLE IF NOT EXISTS message_embeddings (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
                 embedding   BLOB NOT NULL,
                 model       TEXT NOT NULL,
                 created_at  INTEGER NOT NULL
-            )",
-            [],
-        )
-        .context("Failed to create message_embeddings table")?;
-
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_embeddings_message
-             ON message_embeddings(message_id)",
-            [],
-        )
-        .context("Failed to create message_embeddings index")?;
-
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_embeddings_model_message
-             ON message_embeddings(model, message_id)",
-            [],
-        )
-        .context("Failed to create message_embeddings model index")?;
-
-        // ── run migrations ─────────────────────────────────────────
-
-        if version < 1 {
-            // v1: add reasoning column for extended thinking support
-            // Ignore "duplicate column" error in case the column already
-            // exists (e.g. the table was created fresh with the column above).
-            let _ = conn.execute(
-                "ALTER TABLE messages ADD COLUMN reasoning TEXT",
-                [],
             );
-        }
-
-        // Bump schema version to current
-        let current_version: i64 = 1;
-        conn.pragma_update(None, "user_version", current_version)
-            .context("Failed to update user_version")?;
-
+            CREATE INDEX IF NOT EXISTS idx_embeddings_message
+             ON message_embeddings(message_id);
+            CREATE INDEX IF NOT EXISTS idx_embeddings_model_message
+             ON message_embeddings(model, message_id);",
+        )
+        .context("Failed to initialize database schema")?;
         Ok(())
     }
 
@@ -143,10 +149,8 @@ impl Database {
         let mut msgs = Vec::with_capacity(limit.min(20));
         for row in rows {
             let raw = row?;
-            let content: ChatContent =
-                serde_json::from_str(&raw.content_json).with_context(|| {
-                    format!("Failed to deserialize content for chat {}", chat_id)
-                })?;
+            let content: ChatContent = serde_json::from_str(&raw.content_json)
+                .with_context(|| format!("Failed to deserialize content for chat {}", chat_id))?;
             let tool_calls = raw
                 .tool_calls_json
                 .map(|s| serde_json::from_str(&s))
@@ -215,10 +219,7 @@ impl Database {
     /// Delete all messages for a given chat (e.g. on `/clear`).
     pub fn clear_messages(&self, chat_id: &str) -> anyhow::Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "DELETE FROM messages WHERE chat_id = ?1",
-            params![chat_id],
-        )?;
+        conn.execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])?;
         Ok(())
     }
 
@@ -289,7 +290,8 @@ impl Database {
             let (id, content_json) = row?;
             let text = match serde_json::from_str::<ChatContent>(&content_json) {
                 Ok(ChatContent::Text(t)) => t,
-                Ok(ChatContent::Parts(parts)) => parts.iter()
+                Ok(ChatContent::Parts(parts)) => parts
+                    .iter()
                     .map(|p| match p {
                         crate::openrouter::ContentPart::Text { text } => text.clone(),
                     })
@@ -347,7 +349,8 @@ impl Database {
             let raw = row?;
             let text = match serde_json::from_str::<ChatContent>(&raw.content_json) {
                 Ok(ChatContent::Text(t)) => t,
-                Ok(ChatContent::Parts(parts)) => parts.iter()
+                Ok(ChatContent::Parts(parts)) => parts
+                    .iter()
                     .map(|p| match p {
                         crate::openrouter::ContentPart::Text { text } => text.clone(),
                     })

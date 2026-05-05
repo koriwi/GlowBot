@@ -9,16 +9,16 @@ pub(crate) use openrouter_tools::*;
 #[path = "openrouter_context.rs"]
 mod openrouter_context;
 pub use openrouter_context::{
-    build_trimmed_request, estimate_message_tokens, estimate_messages_tokens,
-    estimate_tokens, estimate_tools_tokens, format_context_usage, trim_message_list,
-    RESPONSE_RESERVE_TOKENS, TOKEN_ESTIMATE_MARGIN,
+    build_trimmed_request, estimate_message_tokens, estimate_messages_tokens, estimate_tokens,
+    estimate_tools_tokens, format_context_usage, trim_message_list, RESPONSE_RESERVE_TOKENS,
+    TOKEN_ESTIMATE_MARGIN,
 };
 
 #[path = "openrouter_client.rs"]
 mod openrouter_client;
-pub use openrouter_client::OpenRouterClient;
 #[cfg(test)]
 pub(crate) use openrouter_client::truncate_str;
+pub use openrouter_client::OpenRouterClient;
 
 /// An OpenRouter chat message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -268,7 +268,6 @@ pub(crate) struct EmbeddingData {
 pub(crate) struct EmbeddingResponse {
     pub(crate) data: Vec<EmbeddingData>,
 }
-
 
 #[cfg(test)]
 #[path = "openrouter_tests.rs"]

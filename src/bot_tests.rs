@@ -1,6 +1,6 @@
-use super::*;
 use super::bot_dispatch::{dispatch_tool, log_tool_call_to};
 use super::bot_heartbeat::run_heartbeat_task;
+use super::*;
 use crate::llm::mock::MockLlmBackend;
 use crate::openrouter::{
     AssistantMessage, ChatCompletionResponse, ChatMessage, Choice, FunctionCall, ToolCall,
@@ -53,7 +53,9 @@ async fn test_bot_creation() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
-    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
 
     let mock_llm = Arc::new(MockLlmBackend::new());
     let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
@@ -127,7 +129,8 @@ async fn test_process_message_mention_responds() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let result = bot
         .process_message("-123", "456", "@testuser", "@mybot Hello!", "mybot")
@@ -150,7 +153,8 @@ async fn test_process_message_every_message_mode() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let result = bot
         .process_message("-123", "456", "@testuser", "Hello", "mybot")
@@ -258,7 +262,8 @@ async fn test_process_message_with_tool_call() {
             },
             finish_reason: Some("tool_calls".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     // Second response: final text after tool result
     mock.add_response(ChatCompletionResponse {
@@ -271,7 +276,8 @@ async fn test_process_message_with_tool_call() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let result = bot
         .process_message("-123", "456", "@testuser", "Run echo", "mybot")
@@ -284,7 +290,10 @@ async fn test_process_message_with_tool_call() {
 async fn test_process_message_empty_choices() {
     let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 
-    mock.add_response(ChatCompletionResponse { choices: vec![], ..Default::default() });
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![],
+        ..Default::default()
+    });
 
     let result = bot
         .process_message("-123", "456", "@testuser", "Hello", "mybot")
@@ -308,7 +317,8 @@ async fn test_process_message_empty_tool_calls() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let result = bot
         .process_message("-123", "456", "@testuser", "Hello", "mybot")
@@ -340,7 +350,8 @@ async fn test_process_message_loop_limit() {
                 },
                 finish_reason: Some("tool_calls".into()),
             }],
-        ..Default::default()});
+            ..Default::default()
+        });
     }
 
     let result = bot
@@ -378,7 +389,8 @@ async fn test_process_message_bash_tool_error() {
             },
             finish_reason: Some("tool_calls".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     mock.add_response(ChatCompletionResponse {
         choices: vec![Choice {
@@ -390,7 +402,8 @@ async fn test_process_message_bash_tool_error() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let result = bot
         .process_message("-123", "456", "@testuser", "Run bad command", "mybot")
@@ -429,7 +442,8 @@ async fn test_process_message_with_chat_system_prompt() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
     let result = bot
@@ -444,7 +458,9 @@ async fn test_new_with_llm_with_skills_dir_with_empty_subdirs() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
-    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
 
     // Create a skills dir with a subdirectory that has no skill.md
     let skills_dir = data_dir.join("skills");
@@ -474,7 +490,8 @@ async fn test_dm_always_responds_even_in_mention_only_mode() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     // Positive chat ID = DM, default mention_only mode
     let result = bot
@@ -511,7 +528,8 @@ async fn test_process_message_with_read_memory_tool() {
             },
             finish_reason: Some("tool_calls".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     // Then LLM responds after reading memory
     mock.add_response(ChatCompletionResponse {
@@ -524,7 +542,8 @@ async fn test_process_message_with_read_memory_tool() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let result = bot
         .process_message("-123", "456", "@testuser", "Who am I?", "mybot")
@@ -568,7 +587,8 @@ async fn test_process_message_with_update_memory_tool() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let result = bot
         .process_message("-123", "456", "@testuser", "My name is Learned", "mybot")
@@ -589,7 +609,12 @@ async fn test_log_tool_call() {
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
 
-    log_tool_call_to(&data_dir, "bash", r#"{"command":"echo hi"}"#, "stdout: hi\n");
+    log_tool_call_to(
+        &data_dir,
+        "bash",
+        r#"{"command":"echo hi"}"#,
+        "stdout: hi\n",
+    );
 
     let log_path = data_dir.join("tool_calls.log");
     assert!(log_path.exists());
@@ -612,7 +637,8 @@ async fn test_dm_tools_disabled_by_default() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     // DM (positive chat ID), default no dms config, dm_enabled_effective=true = text-only respond
     let result = bot
@@ -677,7 +703,8 @@ async fn test_dm_allowed_when_in_dms() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
     let result = bot
@@ -726,7 +753,11 @@ async fn test_dm_blocked_message_contains_user_id() {
         .unwrap();
     let msg = result.unwrap();
     assert!(msg.contains("I don't know you"));
-    assert!(msg.contains("789012"), "message should include user_id: {}", msg);
+    assert!(
+        msg.contains("789012"),
+        "message should include user_id: {}",
+        msg
+    );
 }
 
 #[tokio::test]
@@ -750,7 +781,8 @@ async fn test_dm_text_only_when_dm_enabled_true_no_entry() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
     let result = bot
@@ -836,7 +868,9 @@ async fn test_build_tools_includes_mcp() {
 
     let tools = state.build_tools(true);
     assert_eq!(tools.len(), 14);
-    assert!(tools.iter().any(|t| t.function.name == "mcp_test-srv_test_tool"));
+    assert!(tools
+        .iter()
+        .any(|t| t.function.name == "mcp_test-srv_test_tool"));
 }
 
 #[tokio::test]
@@ -892,7 +926,8 @@ async fn test_get_recent_messages_tool() {
             },
             finish_reason: Some("tool_calls".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     // After reading context, LLM responds
     mock.add_response(ChatCompletionResponse {
@@ -905,7 +940,8 @@ async fn test_get_recent_messages_tool() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let result = bot
         .process_message("-123", "456", "@alice", "Recall what I said", "mybot")
@@ -930,10 +966,17 @@ async fn test_dispatch_send_message_empty_text() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "send_message", &serde_json::json!({"text":""}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "send_message",
+        &serde_json::json!({"text":""}),
+        None,
+    )
+    .await;
     assert_eq!(out, "Error: text required");
 }
 
@@ -951,10 +994,17 @@ async fn test_dispatch_send_message_no_tg_bot() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "send_message", &serde_json::json!({"text":"hi"}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "send_message",
+        &serde_json::json!({"text":"hi"}),
+        None,
+    )
+    .await;
     assert_eq!(out, "Error: send_message not available in this context.");
 }
 
@@ -972,10 +1022,17 @@ async fn test_dispatch_bash_empty_command() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "bash", &serde_json::json!({"command":""}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "bash",
+        &serde_json::json!({"command":""}),
+        None,
+    )
+    .await;
     assert!(out.contains("exit code"));
 }
 
@@ -997,8 +1054,19 @@ async fn test_dispatch_bash_disabled() {
         model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "bash", &serde_json::json!({"command":"echo hi"}), None).await;
-    assert!(out.contains("disabled"), "expected disabled message, got: {}", out);
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "bash",
+        &serde_json::json!({"command":"echo hi"}),
+        None,
+    )
+    .await;
+    assert!(
+        out.contains("disabled"),
+        "expected disabled message, got: {}",
+        out
+    );
 }
 
 #[tokio::test]
@@ -1015,10 +1083,17 @@ async fn test_dispatch_read_memory_missing() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "read_memory", &serde_json::json!({"user_id":"999"}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "read_memory",
+        &serde_json::json!({"user_id":"999"}),
+        None,
+    )
+    .await;
     assert!(out.contains("No memory file found"));
 }
 
@@ -1036,10 +1111,17 @@ async fn test_dispatch_update_memory_no_fields() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "update_memory", &serde_json::json!({"user_id":"999"}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "update_memory",
+        &serde_json::json!({"user_id":"999"}),
+        None,
+    )
+    .await;
     assert_eq!(out, "No fields to update.");
 }
 
@@ -1057,10 +1139,17 @@ async fn test_dispatch_add_task_empty() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "add_task", &serde_json::json!({"description":""}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "add_task",
+        &serde_json::json!({"description":""}),
+        None,
+    )
+    .await;
     assert_eq!(out, "Error: description required");
 }
 
@@ -1078,11 +1167,18 @@ async fn test_dispatch_list_tasks_non_empty() {
         data_dir: data_dir.clone(),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     // Add a task first
-    dispatch_tool(&state, "-123", "add_task", &serde_json::json!({"description":"do the thing"}), None).await;
+    dispatch_tool(
+        &state,
+        "-123",
+        "add_task",
+        &serde_json::json!({"description":"do the thing"}),
+        None,
+    )
+    .await;
     let out = dispatch_tool(&state, "-123", "list_tasks", &serde_json::json!({}), None).await;
     assert!(out.contains("do the thing"));
 }
@@ -1101,12 +1197,26 @@ async fn test_dispatch_remove_task_empty_and_not_found() {
         data_dir: data_dir.clone(),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "remove_task", &serde_json::json!({"id":""}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "remove_task",
+        &serde_json::json!({"id":""}),
+        None,
+    )
+    .await;
     assert_eq!(out, "Error: id required");
-    let out = dispatch_tool(&state, "-123", "remove_task", &serde_json::json!({"id":"nope"}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "remove_task",
+        &serde_json::json!({"id":"nope"}),
+        None,
+    )
+    .await;
     assert!(out.contains("not found"));
 }
 
@@ -1124,10 +1234,17 @@ async fn test_dispatch_create_skill_validation() {
         data_dir: data_dir.clone(),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "create_skill", &serde_json::json!({"name":"","description":"","body":""}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "create_skill",
+        &serde_json::json!({"name":"","description":"","body":""}),
+        None,
+    )
+    .await;
     assert!(out.contains("required"));
 }
 
@@ -1145,10 +1262,17 @@ async fn test_dispatch_read_skill_not_found() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "read_skill", &serde_json::json!({"name":"ghost"}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "read_skill",
+        &serde_json::json!({"name":"ghost"}),
+        None,
+    )
+    .await;
     assert!(out.contains("not found"));
 }
 
@@ -1166,10 +1290,17 @@ async fn test_dispatch_update_skill_not_found() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "update_skill", &serde_json::json!({"name":"missing","description":"d","body":"b"}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "update_skill",
+        &serde_json::json!({"name":"missing","description":"d","body":"b"}),
+        None,
+    )
+    .await;
     assert!(out.contains("not found"));
 }
 
@@ -1187,7 +1318,7 @@ async fn test_dispatch_unknown_tool() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "narnia", &serde_json::json!({}), None).await;
@@ -1208,7 +1339,7 @@ async fn test_dispatch_mcp_tool_not_found() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "mcp_no_no", &serde_json::json!({}), None).await;
@@ -1229,10 +1360,17 @@ async fn test_get_recent_messages_empty_history() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-                model_context_lengths: HashMap::new(),
+        model_context_lengths: HashMap::new(),
         last_usage: HashMap::new(),
     }));
-    let out = dispatch_tool(&state, "-123", "get_recent_messages", &serde_json::json!({"count":5}), None).await;
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "get_recent_messages",
+        &serde_json::json!({"count":5}),
+        None,
+    )
+    .await;
     assert!(out.contains("messages"));
 }
 
@@ -1274,8 +1412,12 @@ async fn test_conversation_history_window_trims() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
-    let _ = bot.process_message("-123", "456", "user", "hello", "mybot").await.unwrap();
+        ..Default::default()
+    });
+    let _ = bot
+        .process_message("-123", "456", "user", "hello", "mybot")
+        .await
+        .unwrap();
     let h_len = {
         let state = bot.state.lock().await;
         state.db.load_messages("-123", 20).unwrap().len()
@@ -1290,7 +1432,9 @@ async fn test_heartbeat_no_tasks() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
-    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
     let mock_llm = Arc::new(MockLlmBackend::new());
     let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
     let tg_bot = teloxide::Bot::new("ignored");
@@ -1302,9 +1446,13 @@ async fn test_heartbeat_completes_task() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
-    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
     let mock_llm = Arc::new(MockLlmBackend::new());
-    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone()).await.unwrap();
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone())
+        .await
+        .unwrap();
 
     // add a pending task
     let mut list = crate::tasks::TaskList::default();
@@ -1329,7 +1477,8 @@ async fn test_heartbeat_completes_task() {
             },
             finish_reason: Some("tool_calls".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     mock_llm.add_response(ChatCompletionResponse {
         choices: vec![Choice {
@@ -1341,7 +1490,8 @@ async fn test_heartbeat_completes_task() {
             },
             finish_reason: Some("stop".into()),
         }],
-    ..Default::default()});
+        ..Default::default()
+    });
 
     let tg_bot = teloxide::Bot::new("ignored");
     run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
@@ -1355,9 +1505,13 @@ async fn test_heartbeat_llm_error() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
-    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
     let mock_llm = Arc::new(MockLlmBackend::new());
-    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone()).await.unwrap();
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone())
+        .await
+        .unwrap();
 
     let mut list = crate::tasks::TaskList::default();
     list.add("error task");
@@ -1381,9 +1535,13 @@ async fn test_heartbeat_two_tasks_first_uncompleted() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
     std::fs::create_dir_all(&data_dir).unwrap();
-    crate::config::basic_config().save(&data_dir.join("config.yaml")).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
     let mock_llm = Arc::new(MockLlmBackend::new());
-    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone()).await.unwrap();
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone())
+        .await
+        .unwrap();
 
     let mut list = crate::tasks::TaskList::default();
     let id1 = list.add("task one — not done yet");
@@ -1487,15 +1645,20 @@ fn test_context_usage_formatting() {
     // No context cached, no usage -> no token data yet
     assert_eq!(state.context_usage("-123"), "no token data yet");
     // Cache context length for the default model
-    state.model_context_lengths.insert("test/model".into(), 200000);
+    state
+        .model_context_lengths
+        .insert("test/model".into(), 200000);
     // Effective limit = 200k * 0.75 = 150k
     assert_eq!(state.context_usage("-123"), "0k/150k (0%)");
     // Set usage
-    state.last_usage.insert("-123".into(), crate::openrouter::Usage {
-        prompt_tokens: 37000,
-        completion_tokens: 500,
-        total_tokens: 37500,
-    });
+    state.last_usage.insert(
+        "-123".into(),
+        crate::openrouter::Usage {
+            prompt_tokens: 37000,
+            completion_tokens: 500,
+            total_tokens: 37500,
+        },
+    );
     assert_eq!(state.context_usage("-123"), "37k/150k (25%)");
 }
 
@@ -1588,7 +1751,10 @@ async fn test_dispatch_search_conversations_with_results() {
     let db = crate::db::Database::open_in_memory().unwrap();
     // Store a message and its embedding
     let ids = db
-        .save_messages("-123", &[ChatMessage::user("Alice talked about Rust programming")])
+        .save_messages(
+            "-123",
+            &[ChatMessage::user("Alice talked about Rust programming")],
+        )
         .unwrap();
     db.save_embedding(ids[0], &[1.0f32, 0.0, 0.0, 0.0], "test-embed-model")
         .unwrap();

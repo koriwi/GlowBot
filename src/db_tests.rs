@@ -1,13 +1,65 @@
 use super::*;
 
-// ─── migration test (must be first — uses real on-disk DB) ───────
+// ─── migration tests (require sqlite-schema-diff binary) ────────
+
+/// Helper: check if sqlite-schema-diff is available on PATH.
+fn has_schema_diff() -> bool {
+    std::process::Command::new("sqlite-schema-diff")
+        .arg("--help")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Helper: write schema .sql files into a temp directory.
+fn setup_schema_dir(dir: &std::path::Path) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(
+        dir.join("messages.sql"),
+        "CREATE TABLE messages (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id     TEXT    NOT NULL,
+            role        TEXT    NOT NULL,
+            content     TEXT    NOT NULL,
+            reasoning   TEXT,
+            name        TEXT,
+            tool_calls  TEXT,
+            tool_call_id TEXT,
+            created_at  INTEGER NOT NULL
+        );
+        CREATE INDEX idx_messages_chat_created ON messages(chat_id, created_at);
+        ",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("message_embeddings.sql"),
+        "CREATE TABLE message_embeddings (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+            embedding   BLOB NOT NULL,
+            model       TEXT NOT NULL,
+            created_at  INTEGER NOT NULL
+        );
+        CREATE INDEX idx_embeddings_message ON message_embeddings(message_id);
+        CREATE INDEX idx_embeddings_model_message ON message_embeddings(model, message_id);
+        ",
+    )
+    .unwrap();
+}
 
 /// Simulate an old database that was created without the `reasoning` column.
-/// The migration in `init()` should add the column automatically.
+/// sqlite-schema-diff should add the column automatically.
 #[test]
 fn test_migration_adds_reasoning_column() {
+    if !has_schema_diff() {
+        eprintln!("Skipping: sqlite-schema-diff not installed");
+        return;
+    }
+
     let dir = tempfile::TempDir::new().unwrap();
     let db_path = dir.path().join("glowbot.db");
+    let schema_dir = dir.path().join("schema");
+    setup_schema_dir(&schema_dir);
 
     // Create a v0 database manually (no reasoning column)
     {
@@ -26,12 +78,11 @@ fn test_migration_adds_reasoning_column() {
             [],
         )
         .unwrap();
-        // Leave user_version at 0 (the default)
         conn.close().unwrap();
     }
 
     // Now open with Database::new — it should migrate
-    let db = Database::new(&db_path).unwrap();
+    let db = Database::new(&db_path, &schema_dir).unwrap();
 
     // Save a message with reasoning and read it back
     let msg = ChatMessage::assistant_with_reasoning("answer", "thinking...".into());
@@ -45,15 +96,22 @@ fn test_migration_adds_reasoning_column() {
 /// Verify that a second open doesn't break anything (idempotent migration).
 #[test]
 fn test_migration_idempotent() {
+    if !has_schema_diff() {
+        eprintln!("Skipping: sqlite-schema-diff not installed");
+        return;
+    }
+
     let dir = tempfile::TempDir::new().unwrap();
     let db_path = dir.path().join("glowbot.db");
+    let schema_dir = dir.path().join("schema");
+    setup_schema_dir(&schema_dir);
 
     // Open once — creates + migrates
-    let db1 = Database::new(&db_path).unwrap();
+    let db1 = Database::new(&db_path, &schema_dir).unwrap();
     drop(db1);
 
     // Open again — migration should be a no-op
-    let db2 = Database::new(&db_path).unwrap();
+    let db2 = Database::new(&db_path, &schema_dir).unwrap();
 
     let msg = ChatMessage::assistant_with_reasoning("x", "y".into());
     db2.save_messages("-test2", &[msg]).unwrap();
@@ -179,8 +237,8 @@ fn test_save_and_search_embeddings() {
     assert_eq!(ids.len(), 1);
 
     // Create two simple 4-dim embeddings (mock)
-    let emb1 = vec![1.0f32, 0.0, 0.0, 0.0];  // aligns with query
-    let emb2 = vec![0.0f32, 1.0, 0.0, 0.0];  // orthogonal
+    let emb1 = vec![1.0f32, 0.0, 0.0, 0.0]; // aligns with query
+    let emb2 = vec![0.0f32, 1.0, 0.0, 0.0]; // orthogonal
 
     // Save another message
     let msg2 = ChatMessage::user("Bob enjoys Python");
@@ -199,10 +257,18 @@ fn test_save_and_search_embeddings() {
 
     assert_eq!(results.len(), 2);
     // First result should be most similar
-    assert!((results[0].1 - 1.0).abs() < 0.01, "Expected ~1.0, got {}", results[0].1);
+    assert!(
+        (results[0].1 - 1.0).abs() < 0.01,
+        "Expected ~1.0, got {}",
+        results[0].1
+    );
     assert!(results[0].2.contains("Rust"));
     // Second result should be ~0.0 (orthogonal)
-    assert!(results[1].1.abs() < 0.01, "Expected ~0.0, got {}", results[1].1);
+    assert!(
+        results[1].1.abs() < 0.01,
+        "Expected ~0.0, got {}",
+        results[1].1
+    );
 }
 
 #[test]
@@ -214,12 +280,8 @@ fn test_search_embeddings_respects_limit() {
         let ids = db
             .save_messages(chat_id, &[ChatMessage::user(&format!("msg {i}"))])
             .unwrap();
-        db.save_embedding(
-            ids[0],
-            &vec![i as f32, 0.0, 0.0, 0.0],
-            "test-model",
-        )
-        .unwrap();
+        db.save_embedding(ids[0], &vec![i as f32, 0.0, 0.0, 0.0], "test-model")
+            .unwrap();
     }
 
     let query = vec![0.0f32, 1.0, 0.0, 0.0];
@@ -241,8 +303,7 @@ fn test_search_embeddings_model_filter() {
     let ids = db
         .save_messages(chat_id, &[ChatMessage::user("test")])
         .unwrap();
-    db.save_embedding(ids[0], &[1.0, 0.0], "model-a")
-        .unwrap();
+    db.save_embedding(ids[0], &[1.0, 0.0], "model-a").unwrap();
 
     // Search with different model should find nothing
     let results = db
@@ -274,10 +335,8 @@ fn test_cleanup_mismatched_embeddings() {
     let ids = db
         .save_messages(chat_id, &[ChatMessage::user("a"), ChatMessage::user("b")])
         .unwrap();
-    db.save_embedding(ids[0], &[1.0], "old-model")
-        .unwrap();
-    db.save_embedding(ids[1], &[1.0], "new-model")
-        .unwrap();
+    db.save_embedding(ids[0], &[1.0], "old-model").unwrap();
+    db.save_embedding(ids[1], &[1.0], "new-model").unwrap();
 
     let cleaned = db.cleanup_mismatched_embeddings("new-model").unwrap();
     assert_eq!(cleaned, 1);
@@ -306,8 +365,7 @@ fn test_find_unembedded_messages() {
         .unwrap();
 
     // Embed only the middle message
-    db.save_embedding(ids[1], &[1.0], "any-model")
-        .unwrap();
+    db.save_embedding(ids[1], &[1.0], "any-model").unwrap();
 
     let unembedded = db.find_unembedded_messages().unwrap();
     assert_eq!(unembedded.len(), 2);
@@ -350,8 +408,7 @@ fn test_search_embeddings_dimension_mismatch_skipped() {
         .save_messages("-222", &[ChatMessage::user("test")])
         .unwrap();
     // Store a 2-dim vector
-    db.save_embedding(ids[0], &[1.0, 0.5], "model-x")
-        .unwrap();
+    db.save_embedding(ids[0], &[1.0, 0.5], "model-x").unwrap();
 
     // Search with a 4-dim query
     let results = db
@@ -414,7 +471,10 @@ fn test_tool_calls_with_reasoning_roundtrip() {
     assert_eq!(loaded.len(), 1);
     let tc = loaded[0].tool_calls.as_ref().unwrap();
     assert_eq!(tc[0].id, "call_99");
-    assert_eq!(loaded[0].reasoning.as_deref(), Some("Considering using bash..."));
+    assert_eq!(
+        loaded[0].reasoning.as_deref(),
+        Some("Considering using bash...")
+    );
 }
 
 #[test]
@@ -434,8 +494,7 @@ fn test_search_embedding_skips_empty_text() {
     let ids = db
         .save_messages("-000", &[ChatMessage::assistant("")])
         .unwrap();
-    db.save_embedding(ids[0], &[1.0, 0.0], "model-e")
-        .unwrap();
+    db.save_embedding(ids[0], &[1.0, 0.0], "model-e").unwrap();
 
     let results = db
         .search_embeddings("-000", &[1.0, 0.0], "model-e", 10)

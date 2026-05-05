@@ -22,14 +22,18 @@ pub(crate) async fn process_with_llm_impl(
     // Set up stop signal for this chat (clear any previous signal)
     {
         let mut signals = stop_signals.lock().unwrap();
-        signals.entry(chat_id.to_string())
+        signals
+            .entry(chat_id.to_string())
             .or_insert_with(|| Arc::new(std::sync::atomic::AtomicBool::new(false)))
             .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
     let check_stopped = || -> bool {
         if let Ok(signals) = stop_signals.lock() {
-            signals.get(chat_id).map(|s| s.load(std::sync::atomic::Ordering::SeqCst)).unwrap_or(false)
+            signals
+                .get(chat_id)
+                .map(|s| s.load(std::sync::atomic::Ordering::SeqCst))
+                .unwrap_or(false)
         } else {
             false
         }
@@ -37,7 +41,10 @@ pub(crate) async fn process_with_llm_impl(
 
     let (system_prompt, model) = {
         let s = state.lock().await;
-        (s.assemble_system_prompt(chat_id, tools_enabled, user_id), s.effective_model(chat_id))
+        (
+            s.assemble_system_prompt(chat_id, tools_enabled, user_id),
+            s.effective_model(chat_id),
+        )
     };
 
     // Ensure user has a memory file
@@ -51,7 +58,11 @@ pub(crate) async fn process_with_llm_impl(
         let hist = match s.db.load_messages(chat_id, win) {
             Ok(msgs) => msgs,
             Err(e) => {
-                log::error!("Failed to load conversation history for chat {}: {}", chat_id, e);
+                log::error!(
+                    "Failed to load conversation history for chat {}: {}",
+                    chat_id,
+                    e
+                );
                 Vec::new()
             }
         };
@@ -136,7 +147,14 @@ pub(crate) async fn process_with_llm_impl(
                 }
 
                 let data_dir = { state.lock().await.data_dir.clone() };
-                let results = super::bot_dispatch::dispatch_tool_calls(state, chat_id, tool_calls, Some(&data_dir), tg_bot).await;
+                let results = super::bot_dispatch::dispatch_tool_calls(
+                    state,
+                    chat_id,
+                    tool_calls,
+                    Some(&data_dir),
+                    tg_bot,
+                )
+                .await;
                 turn_messages.extend(results);
 
                 if check_stopped() {
@@ -150,12 +168,20 @@ pub(crate) async fn process_with_llm_impl(
             break;
         }
 
-        (final_text.unwrap_or_else(|| "I ran into a loop processing your request. Please try again.".into()), final_reasoning)
+        (
+            final_text.unwrap_or_else(|| {
+                "I ran into a loop processing your request. Please try again.".into()
+            }),
+            final_reasoning,
+        )
     };
 
     // Record final assistant message in the turn
     if let (Some(reasoning), true) = (&final_reasoning, include_reasoning) {
-        turn_messages.push(ChatMessage::assistant_with_reasoning(&result, reasoning.clone()));
+        turn_messages.push(ChatMessage::assistant_with_reasoning(
+            &result,
+            reasoning.clone(),
+        ));
     } else {
         turn_messages.push(ChatMessage::assistant(&result));
     }
@@ -163,7 +189,8 @@ pub(crate) async fn process_with_llm_impl(
     // Store the completed turn in conversation history
     let message_ids = {
         let s = state.lock().await;
-        s.db.save_messages(chat_id, &turn_messages).unwrap_or_default()
+        s.db.save_messages(chat_id, &turn_messages)
+            .unwrap_or_default()
     };
 
     // Embed messages in the background if embedding model is configured
@@ -180,7 +207,16 @@ pub(crate) async fn process_with_llm_impl(
                 drop(s);
 
                 tokio::spawn(async move {
-                    embed_turn(&db, &api_key, &embed_model, max_chars, allow_split, &message_ids, &turn_messages).await;
+                    embed_turn(
+                        &db,
+                        &api_key,
+                        &embed_model,
+                        max_chars,
+                        allow_split,
+                        &message_ids,
+                        &turn_messages,
+                    )
+                    .await;
                 });
             }
         }
@@ -215,11 +251,23 @@ async fn embed_turn(
             match client.embeddings(embed_model, chunk).await {
                 Ok(vec) => {
                     if let Err(e) = db.save_embedding(message_ids[i], &vec, embed_model) {
-                        log::warn!("Failed to save embedding for message {} (model={}, text=\"{}\"): {}", message_ids[i], embed_model, text_preview, e);
+                        log::warn!(
+                            "Failed to save embedding for message {} (model={}, text=\"{}\"): {}",
+                            message_ids[i],
+                            embed_model,
+                            text_preview,
+                            e
+                        );
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed to embed message {} (model={}, text=\"{}\"): {}", message_ids[i], embed_model, text_preview, e);
+                    log::warn!(
+                        "Failed to embed message {} (model={}, text=\"{}\"): {}",
+                        message_ids[i],
+                        embed_model,
+                        text_preview,
+                        e
+                    );
                 }
             }
         }

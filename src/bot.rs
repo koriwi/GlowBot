@@ -4,16 +4,16 @@ use crate::db::Database;
 use crate::git::GitRepo;
 use crate::llm::LlmBackend;
 use crate::openrouter::Usage;
+#[path = "bot_commands.rs"]
+mod bot_commands;
 #[path = "bot_dispatch.rs"]
 mod bot_dispatch;
 #[path = "bot_heartbeat.rs"]
 mod bot_heartbeat;
 #[path = "bot_pipeline.rs"]
 mod bot_pipeline;
-#[path = "bot_commands.rs"]
-mod bot_commands;
-pub use self::bot_heartbeat::run_heartbeat_task;
 use self::bot_commands::handle_bot_command_impl;
+pub use self::bot_heartbeat::run_heartbeat_task;
 use crate::skills::{load_all_skills, Skill};
 use std::collections::HashMap;
 use std::path::Path;
@@ -121,7 +121,10 @@ impl BotState {
         let model = self.effective_model(chat_id);
         let raw_limit = self.model_context_lengths.get(&model).copied().unwrap_or(0);
         let effective_limit = if raw_limit == 0 {
-            log::warn!("Model '{}' not found in context length cache; context usage will be limited", model);
+            log::warn!(
+                "Model '{}' not found in context length cache; context usage will be limited",
+                model
+            );
             0
         } else {
             (raw_limit as f64 * crate::openrouter::TOKEN_ESTIMATE_MARGIN) as u64
@@ -165,12 +168,16 @@ impl GlowBot {
             );
         }
 
+        let schema_dir = std::env::var("GLOWBOT_SCHEMA_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("schema"));
+
         let state = BotState {
             config,
             skills,
             llm,
             data_dir: data_dir.to_path_buf(),
-            db: Database::new(&data_dir.join("conversations.db"))?,
+            db: Database::new(&data_dir.join("conversations.db"), &schema_dir)?,
             mcp_tools,
             model_context_lengths: HashMap::new(),
             last_usage: HashMap::new(),
@@ -233,7 +240,18 @@ impl GlowBot {
         text: &str,
         bot_username: &str,
     ) -> anyhow::Result<Option<String>> {
-        process_message_impl(&self.state, &self.git_repo, &self.stop_signals, chat_id, user_id, username, text, bot_username, None).await
+        process_message_impl(
+            &self.state,
+            &self.git_repo,
+            &self.stop_signals,
+            chat_id,
+            user_id,
+            username,
+            text,
+            bot_username,
+            None,
+        )
+        .await
     }
 
     /// Clean up mismatched embeddings and start async backfill.
@@ -286,7 +304,8 @@ impl GlowBot {
 
             let client = crate::openrouter::OpenRouterClient::new(api_key);
 
-            let chunker = |t: &str| self::bot_pipeline::chunk_for_embedding(t, max_chars, allow_split);
+            let chunker =
+                |t: &str| self::bot_pipeline::chunk_for_embedding(t, max_chars, allow_split);
             for (idx, (msg_id, text)) in unembedded.iter().enumerate() {
                 for chunk in &chunker(text) {
                     let text_preview: String = chunk.chars().take(80).collect();
@@ -297,7 +316,13 @@ impl GlowBot {
                             }
                         }
                         Err(e) => {
-                            log::warn!("Failed to embed message {} (model={}, text=\"{}\"): {}", msg_id, model, text_preview, e);
+                            log::warn!(
+                                "Failed to embed message {} (model={}, text=\"{}\"): {}",
+                                msg_id,
+                                model,
+                                text_preview,
+                                e
+                            );
                         }
                     }
                 }
@@ -343,7 +368,16 @@ pub async fn process_message_impl(
 
     // Check if it's a bot command
     if let Some(command) = parse_command(text) {
-        return handle_bot_command_impl(state, stop_signals, chat_id, user_id, &command, tg_bot, _git_repo).await;
+        return handle_bot_command_impl(
+            state,
+            stop_signals,
+            chat_id,
+            user_id,
+            &command,
+            tg_bot,
+            _git_repo,
+        )
+        .await;
     }
 
     let is_dm = !chat_id.starts_with('-');
@@ -363,7 +397,10 @@ pub async fn process_message_impl(
         && {
             let s = state.lock().await;
             let chat_config = s.config.chat_config(chat_id);
-            matches!(chat_config.interaction_mode, crate::config::InteractionMode::MentionOnly)
+            matches!(
+                chat_config.interaction_mode,
+                crate::config::InteractionMode::MentionOnly
+            )
         }
         && !is_command
         && !is_mention
@@ -395,10 +432,20 @@ pub async fn process_message_impl(
         )));
     }
 
-    self::bot_pipeline::process_with_llm_impl(state, _git_repo, stop_signals, chat_id, user_id, username, text, tools_enabled, tg_bot).await
+    self::bot_pipeline::process_with_llm_impl(
+        state,
+        _git_repo,
+        stop_signals,
+        chat_id,
+        user_id,
+        username,
+        text,
+        tools_enabled,
+        tg_bot,
+    )
+    .await
 }
 
 #[cfg(test)]
 #[path = "bot_tests.rs"]
 mod tests;
-

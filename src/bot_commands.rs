@@ -22,14 +22,19 @@ pub(crate) async fn handle_bot_command_impl(
                 signal.store(true, std::sync::atomic::Ordering::SeqCst);
             }
         }
-        return Ok(Some("Stop signal sent. Current operations will be cancelled.".into()));
+        return Ok(Some(
+            "Stop signal sent. Current operations will be cancelled.".into(),
+        ));
     }
 
     let allowed = {
         let s = state.lock().await;
         let is_dm = !chat_id.starts_with('-');
         if is_dm {
-            s.config.dm_config(chat_id).map(|d| d.commands_enabled).unwrap_or(false)
+            s.config
+                .dm_config(chat_id)
+                .map(|d| d.commands_enabled)
+                .unwrap_or(false)
         } else {
             let chat_config = s.config.chat_config(chat_id);
             crate::commands::can_run_command(&chat_config)

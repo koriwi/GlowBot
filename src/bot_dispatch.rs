@@ -5,7 +5,12 @@ use teloxide::prelude::*;
 use tokio::sync::Mutex;
 
 /// Log a tool call to `tool_calls.log` in the given data directory.
-pub(crate) fn log_tool_call_to(data_dir: &std::path::Path, tool_name: &str, args: &str, result: &str) {
+pub(crate) fn log_tool_call_to(
+    data_dir: &std::path::Path,
+    tool_name: &str,
+    args: &str,
+    result: &str,
+) {
     let log_path = data_dir.join("tool_calls.log");
     let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
     let result_summary: String = result.chars().take(300).collect();
@@ -31,7 +36,12 @@ pub(crate) fn log_tool_call_to(data_dir: &std::path::Path, tool_name: &str, args
         || result.contains("request failed")
         || result.contains("RPC error");
     if is_error {
-        log::warn!("tool {} error (args: {}): {}", tool_name, args_summary, result_summary);
+        log::warn!(
+            "tool {} error (args: {}): {}",
+            tool_name,
+            args_summary,
+            result_summary
+        );
     } else {
         log::info!("tool {}: {}", tool_name, args_summary);
     }
@@ -87,7 +97,9 @@ pub(crate) async fn dispatch_tool(
         }
         "bash" => {
             if !state.lock().await.config.is_bash_enabled(&cid) {
-                return format!("Error: bash is disabled for this chat. Enable it in config or ask an admin.");
+                return format!(
+                    "Error: bash is disabled for this chat. Enable it in config or ask an admin."
+                );
             }
             let cmd = args["command"].as_str().unwrap_or("");
             let dir = { state.lock().await.data_dir.clone() };
@@ -318,17 +330,23 @@ pub(crate) async fn dispatch_tool(
                 match s.db.load_messages(&cid, count) {
                     Ok(msgs) => msgs,
                     Err(e) => {
-                        log::error!("Failed to load messages for get_recent_messages tool: {}", e);
+                        log::error!(
+                            "Failed to load messages for get_recent_messages tool: {}",
+                            e
+                        );
                         Vec::new()
                     }
                 }
             };
-            let items: Vec<_> = history.iter()
-                .map(|m| serde_json::json!({
-                    "role": &m.role,
-                    "content": m.text_content(),
-                    "name": m.name.as_deref().unwrap_or("")
-                }))
+            let items: Vec<_> = history
+                .iter()
+                .map(|m| {
+                    serde_json::json!({
+                        "role": &m.role,
+                        "content": m.text_content(),
+                        "name": m.name.as_deref().unwrap_or("")
+                    })
+                })
                 .collect();
             serde_json::json!({"messages": items}).to_string()
         }
@@ -360,8 +378,7 @@ pub(crate) async fn dispatch_tool(
 
             let results = {
                 let s = state.lock().await;
-                s.db
-                    .search_embeddings(&cid, &query_embedding, &embedding_model, search_limit)
+                s.db.search_embeddings(&cid, &query_embedding, &embedding_model, search_limit)
                     .unwrap_or_default()
             };
 

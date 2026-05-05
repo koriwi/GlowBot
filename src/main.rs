@@ -54,15 +54,15 @@ async fn run_bot() -> anyhow::Result<()> {
 
     // Register slash commands with Telegram so they show in the menu and autocomplete
     let commands = vec![
-      BotCommand::new("status", "Show current config for this chat"),
-      BotCommand::new("tasks", "Show pending tasks for this chat"),
-      BotCommand::new("run", "Run task agent immediately for this chat"),
-      BotCommand::new("stop", "Stop the bot"),
+        BotCommand::new("status", "Show current config for this chat"),
+        BotCommand::new("tasks", "Show pending tasks for this chat"),
+        BotCommand::new("run", "Run task agent immediately for this chat"),
+        BotCommand::new("stop", "Stop the bot"),
     ];
     if let Err(e) = tg_bot.set_my_commands(commands).await {
-      log::warn!("Failed to set bot commands: {}", e);
+        log::warn!("Failed to set bot commands: {}", e);
     } else {
-      log::info!("Registered bot commands with Telegram");
+        log::info!("Registered bot commands with Telegram");
     }
 
     // Spawn heartbeat task runner in the background
@@ -177,7 +177,10 @@ async fn handle_message(
             }
         }
         let _ = tg_bot
-            .send_message(chat, "⏹ Stop signal sent. Current operations will be cancelled.")
+            .send_message(
+                chat,
+                "⏹ Stop signal sent. Current operations will be cancelled.",
+            )
             .await;
         return;
     }
@@ -197,7 +200,10 @@ async fn handle_message(
         let stopped = stop_signals
             .lock()
             .ok()
-            .and_then(|s| s.get(&chat_id).map(|sig| sig.load(std::sync::atomic::Ordering::SeqCst)))
+            .and_then(|s| {
+                s.get(&chat_id)
+                    .map(|sig| sig.load(std::sync::atomic::Ordering::SeqCst))
+            })
             .unwrap_or(false);
         if stopped {
             return;
@@ -330,7 +336,10 @@ async fn run_chat_heartbeat(
             state.has_pending_tasks(&chat_id)
         };
         if !has_tasks {
-            log::info!("Heartbeat chat {}: no tasks remaining, exiting loop", chat_id);
+            log::info!(
+                "Heartbeat chat {}: no tasks remaining, exiting loop",
+                chat_id
+            );
             break;
         }
 

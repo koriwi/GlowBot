@@ -278,8 +278,14 @@ fn test_format_context_usage() {
     assert_eq!(format_context_usage(1000, 10000), "1k/10k (10%)");
     assert_eq!(format_context_usage(999, 1000), "0k/1k (100%)");
     // limit unknown, but usage available
-    assert_eq!(format_context_usage(5000, 0), "5k used (context limit unknown)");
-    assert_eq!(format_context_usage(500, 0), "0k used (context limit unknown)");
+    assert_eq!(
+        format_context_usage(5000, 0),
+        "5k used (context limit unknown)"
+    );
+    assert_eq!(
+        format_context_usage(500, 0),
+        "0k used (context limit unknown)"
+    );
     // limit unknown, no usage data
     assert_eq!(format_context_usage(0, 0), "no token data yet");
 }
@@ -366,18 +372,24 @@ fn test_all_tool_definitions_with_embedding_model() {
     let tools = all_tool_definitions(true, Some("openai/text-embedding-3-small"));
     assert_eq!(tools.len(), 14);
     assert_eq!(tools[0].function.name, "bash");
-    assert!(tools.iter().any(|t| t.function.name == "search_conversations"));
+    assert!(tools
+        .iter()
+        .any(|t| t.function.name == "search_conversations"));
 
     // Without bash, with embedding: 12 base + search_conversations = 13
     let tools = all_tool_definitions(false, Some("openai/text-embedding-3-small"));
     assert_eq!(tools.len(), 13);
-    assert!(tools.iter().any(|t| t.function.name == "search_conversations"));
+    assert!(tools
+        .iter()
+        .any(|t| t.function.name == "search_conversations"));
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
 
     // Without embedding model, without bash: 12 base = 12 (no search_conversations)
     let tools = all_tool_definitions(false, None);
     assert_eq!(tools.len(), 12);
-    assert!(!tools.iter().any(|t| t.function.name == "search_conversations"));
+    assert!(!tools
+        .iter()
+        .any(|t| t.function.name == "search_conversations"));
 }
 
 #[test]
@@ -389,7 +401,10 @@ fn test_search_conversations_tool_definition() {
 
     let params = &def.function.parameters;
     assert_eq!(params["type"], "object");
-    assert!(params["required"].as_array().unwrap().contains(&serde_json::json!("query")));
+    assert!(params["required"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("query")));
     assert!(params["properties"]["query"]["type"] == "string");
     assert!(params["properties"]["count"]["type"] == "integer");
 }
@@ -417,7 +432,10 @@ fn test_assistant_message_with_reasoning() {
     });
     let msg: AssistantMessage = serde_json::from_value(json).unwrap();
     assert_eq!(msg.content.as_deref(), Some("The answer is 42."));
-    assert_eq!(msg.reasoning.as_deref(), Some("Let me think step by step..."));
+    assert_eq!(
+        msg.reasoning.as_deref(),
+        Some("Let me think step by step...")
+    );
     assert!(msg.tool_calls.is_none());
 }
 
@@ -480,7 +498,11 @@ fn test_estimate_tokens_with_reasoning() {
     let msg = ChatMessage::assistant_with_reasoning("ok", "a".repeat(400));
     let tokens = estimate_message_tokens(&msg);
     // 4 (role) + 1 ("ok" ≈ 1 token) + 100 (400 chars / 4) = ~105
-    assert!(tokens >= 100 && tokens <= 110, "unexpected tokens: {}", tokens);
+    assert!(
+        tokens >= 100 && tokens <= 110,
+        "unexpected tokens: {}",
+        tokens
+    );
 }
 
 #[test]

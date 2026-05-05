@@ -292,10 +292,13 @@ fn test_config_load_save_with_dms() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("config.yaml");
     let mut config = basic_config();
-    config.dms.insert("42".into(), DmConfig {
-        commands_enabled: true,
-        ..Default::default()
-    });
+    config.dms.insert(
+        "42".into(),
+        DmConfig {
+            commands_enabled: true,
+            ..Default::default()
+        },
+    );
     config.dm_enabled = Some(false);
     config.save(&path).unwrap();
     let loaded = Config::load(&path).unwrap();

@@ -19,6 +19,12 @@ COPY src ./src
 RUN touch src/lib.rs src/main.rs && \
     cargo build --release
 
+# Download sqlite-schema-diff for database migrations
+ARG TARGETARCH=amd64
+RUN curl -sSL "https://github.com/MizuchiLabs/sqlite-schema-diff/releases/download/v0.1.9/sqlite-schema-diff_linux_${TARGETARCH}" \
+    -o /usr/local/bin/sqlite-schema-diff && \
+    chmod +x /usr/local/bin/sqlite-schema-diff
+
 # Stage 2: Slim runtime
 FROM debian:bookworm-slim
 
@@ -37,9 +43,14 @@ WORKDIR /home/glowbot
 # Copy the binary
 COPY --from=builder /app/target/release/glowbot /usr/local/bin/glowbot
 
+# Copy schema-diff binary and schema files
+COPY --from=builder /usr/local/bin/sqlite-schema-diff /usr/local/bin/sqlite-schema-diff
+COPY schema /app/schema
+
 # Create data directory
 RUN mkdir -p /home/glowbot/glowbot_data
 
 ENV GLOWBOT_DATA_DIR=/home/glowbot/glowbot_data
+ENV GLOWBOT_SCHEMA_DIR=/app/schema
 
 ENTRYPOINT ["glowbot"]

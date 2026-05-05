@@ -63,10 +63,7 @@ pub fn handle_command(
     match command {
         Command::Status => {
             let chat = config.chat_config(chat_id);
-            let model = chat
-                .model
-                .as_deref()
-                .unwrap_or(&config.openrouter.model);
+            let model = chat.model.as_deref().unwrap_or(&config.openrouter.model);
             format!(
                 "Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
                 chat_id,
@@ -111,7 +108,10 @@ mod tests {
         assert_eq!(parse_command("/status@otherbot"), Some(Command::Status));
         assert_eq!(parse_command("/stop@somebot"), Some(Command::Stop));
         // With arguments
-        assert_eq!(parse_command("/tasks@glowythebot extra"), Some(Command::Tasks));
+        assert_eq!(
+            parse_command("/tasks@glowythebot extra"),
+            Some(Command::Tasks)
+        );
     }
 
     #[test]

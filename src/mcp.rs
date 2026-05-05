@@ -254,13 +254,14 @@ pub async fn invoke_tool(tool: &McpTool, arguments: &serde_json::Value) -> Strin
             let body_text = response.text().await.unwrap_or_default();
             if !status.is_success() {
                 let preview: String = body_text.chars().take(500).collect();
-                log::warn!("{} HTTP {} from {}: {}", tool_label, status.as_u16(), tool.server_url, preview);
-                return format!(
-                    "{} HTTP {}: {}",
+                log::warn!(
+                    "{} HTTP {} from {}: {}",
                     tool_label,
                     status.as_u16(),
+                    tool.server_url,
                     preview
                 );
+                return format!("{} HTTP {}: {}", tool_label, status.as_u16(), preview);
             }
             match serde_json::from_str::<JsonRpcResponse>(&body_text) {
                 Ok(rpc) => {
@@ -274,18 +275,28 @@ pub async fn invoke_tool(tool: &McpTool, arguments: &serde_json::Value) -> Strin
                 }
                 Err(e) => {
                     let preview: String = body_text.chars().take(500).collect();
-                    log::warn!("{} failed to parse response ({} bytes) from {}: {} | body: {}", tool_label, body_text.len(), tool.server_url, e, preview);
-                    format!(
-                        "{} parse error: {} | body (first 500 chars): {}",
+                    log::warn!(
+                        "{} failed to parse response ({} bytes) from {}: {} | body: {}",
                         tool_label,
+                        body_text.len(),
+                        tool.server_url,
                         e,
                         preview
+                    );
+                    format!(
+                        "{} parse error: {} | body (first 500 chars): {}",
+                        tool_label, e, preview
                     )
                 }
             }
         }
         Err(e) => {
-            log::warn!("{} request failed to {}: {}", tool_label, tool.server_url, e);
+            log::warn!(
+                "{} request failed to {}: {}",
+                tool_label,
+                tool.server_url,
+                e
+            );
             format!("{} request failed: {}", tool_label, e)
         }
     }
@@ -332,7 +343,6 @@ pub async fn discover_all(servers: &[McpServer]) -> anyhow::Result<Vec<McpTool>>
 
     Ok(all_tools)
 }
-
 
 #[cfg(test)]
 #[path = "mcp_tests.rs"]

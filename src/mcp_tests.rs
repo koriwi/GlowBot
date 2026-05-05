@@ -31,9 +31,14 @@ fn jsonrpc_err(id: u64, message: &str) -> serde_json::Value {
 async fn test_mcp_client_initialize_success() {
     let mock = MockServer::start().await;
     Mock::given(matchers::method("POST"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_ok(1, serde_json::json!({"protocolVersion": "2024-11-05"})))
-            .insert_header("mcp-session-id", "sess123"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(jsonrpc_ok(
+                    1,
+                    serde_json::json!({"protocolVersion": "2024-11-05"}),
+                ))
+                .insert_header("mcp-session-id", "sess123"),
+        )
         .mount(&mock)
         .await;
 
@@ -55,7 +60,10 @@ async fn test_mcp_client_initialize_all_versions_fail() {
     let client = McpClient::new(test_server(&mock.uri()));
     let result = client.initialize().await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("All protocol versions failed"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("All protocol versions failed"));
 }
 
 #[tokio::test]
@@ -65,8 +73,10 @@ async fn test_mcp_client_discover_tools() {
     // initialize handler (body contains protocolVersion)
     Mock::given(matchers::method("POST"))
         .and(matchers::body_string_contains("protocolVersion"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_ok(1, serde_json::json!({"protocolVersion": "2024-11-05"}))))
+        .respond_with(ResponseTemplate::new(200).set_body_json(jsonrpc_ok(
+            1,
+            serde_json::json!({"protocolVersion": "2024-11-05"}),
+        )))
         .mount(&mock)
         .await;
 
@@ -76,8 +86,9 @@ async fn test_mcp_client_discover_tools() {
     // notifications/initialized handler
     Mock::given(matchers::method("POST"))
         .and(matchers::body_string_contains("notifications/initialized"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_ok(2, serde_json::Value::Null)))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(jsonrpc_ok(2, serde_json::Value::Null)),
+        )
         .mount(&mock)
         .await;
 
@@ -105,28 +116,33 @@ async fn test_discover_all_with_server() {
     // initialize (has protocolVersion in body)
     Mock::given(matchers::method("POST"))
         .and(matchers::body_string_contains("protocolVersion"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_ok(1, serde_json::json!({"protocolVersion": "2024-11-05"}))))
+        .respond_with(ResponseTemplate::new(200).set_body_json(jsonrpc_ok(
+            1,
+            serde_json::json!({"protocolVersion": "2024-11-05"}),
+        )))
         .mount(&mock)
         .await;
 
     // notifications/initialized
     Mock::given(matchers::method("POST"))
         .and(matchers::body_string_contains("notifications/initialized"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_ok(2, serde_json::Value::Null)))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(jsonrpc_ok(2, serde_json::Value::Null)),
+        )
         .mount(&mock)
         .await;
 
     // tools/list
     Mock::given(matchers::method("POST"))
         .and(matchers::body_string_contains("tools/list"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_ok(3, serde_json::json!({
+        .respond_with(ResponseTemplate::new(200).set_body_json(jsonrpc_ok(
+            3,
+            serde_json::json!({
                 "tools": [
                     {"name": "fetch", "description": "Fetch URL", "inputSchema": {"type": "object"}}
                 ]
-            }))))
+            }),
+        )))
         .mount(&mock)
         .await;
 
@@ -166,8 +182,10 @@ async fn test_discover_all_empty_servers() {
 async fn test_invoke_tool_success() {
     let mock = MockServer::start().await;
     Mock::given(matchers::method("POST"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_ok(1, serde_json::json!({"result": "found it"}))))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(jsonrpc_ok(1, serde_json::json!({"result": "found it"}))),
+        )
         .mount(&mock)
         .await;
 
@@ -190,8 +208,7 @@ async fn test_invoke_tool_success() {
 async fn test_invoke_tool_error_response() {
     let mock = MockServer::start().await;
     Mock::given(matchers::method("POST"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_err(1, "tool exploded")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(jsonrpc_err(1, "tool exploded")))
         .mount(&mock)
         .await;
 
@@ -231,7 +248,11 @@ async fn test_invoke_tool_parse_error() {
 
     let result = invoke_tool(&tool, &serde_json::json!({})).await;
     assert!(result.contains("parse error"), "result: {}", result);
-    assert!(result.contains("not json"), "body should be in error, got: {}", result);
+    assert!(
+        result.contains("not json"),
+        "body should be in error, got: {}",
+        result
+    );
 }
 
 #[tokio::test]
@@ -272,15 +293,19 @@ async fn test_rpc_call_http_error() {
 async fn test_rpc_call_jsonrpc_error() {
     let mock = MockServer::start().await;
     Mock::given(matchers::method("POST"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_err(1, "something went wrong")))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(jsonrpc_err(1, "something went wrong")),
+        )
         .mount(&mock)
         .await;
 
     let client = McpClient::new(test_server(&mock.uri()));
     let result = client.rpc_call("test", None).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("something went wrong"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("something went wrong"));
 }
 
 #[tokio::test]
@@ -289,8 +314,10 @@ async fn test_discover_tools_empty_response() {
     // initialize
     Mock::given(matchers::method("POST"))
         .and(matchers::body_string_contains("protocolVersion"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_ok(1, serde_json::json!({"protocolVersion": "2024-11-05"}))))
+        .respond_with(ResponseTemplate::new(200).set_body_json(jsonrpc_ok(
+            1,
+            serde_json::json!({"protocolVersion": "2024-11-05"}),
+        )))
         .mount(&mock)
         .await;
 
@@ -299,15 +326,18 @@ async fn test_discover_tools_empty_response() {
 
     Mock::given(matchers::method("POST"))
         .and(matchers::body_string_contains("notifications/initialized"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_ok(2, serde_json::Value::Null)))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(jsonrpc_ok(2, serde_json::Value::Null)),
+        )
         .mount(&mock)
         .await;
 
     Mock::given(matchers::method("POST"))
         .and(matchers::body_string_contains("tools/list"))
-        .respond_with(ResponseTemplate::new(200)
-            .set_body_json(jsonrpc_ok(3, serde_json::json!({"tools": []}))))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(jsonrpc_ok(3, serde_json::json!({"tools": []}))),
+        )
         .mount(&mock)
         .await;
 
