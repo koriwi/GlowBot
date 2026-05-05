@@ -11,11 +11,12 @@ pub fn assemble(
     memories: &[Memory],
     tools_enabled: bool,
     _user_id: &str,
+    media_dir: &str,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     // 1. Base prompt (with chat context)
-    parts.push(base_prompt(chat_id));
+    parts.push(base_prompt(chat_id, media_dir));
 
     // 2. Per-chat system prompt
     if !chat_system_prompt.is_empty() {
@@ -72,7 +73,7 @@ Always include the chat ID (`{chat_id}`) in that message.",
 }
 
 /// The base system prompt that all messages start with.
-fn base_prompt(chat_id: &str) -> String {
+fn base_prompt(chat_id: &str, media_dir: &str) -> String {
     format!(
         r#"You are GlowBot, a helpful, friendly Telegram chatbot. You have access to tools for executing bash commands and managing memory.
 
@@ -92,7 +93,7 @@ Your personality:
 - When you know you'll need to make several tool calls before answering, use `send_message` to give the user a quick headsup (e.g. "ok, give me a second, taking a look now..."). Use it sparingly — at most once per turn, and never for your final answer (which is sent automatically).
 - The current chat ID is: {chat_id}
 - Memory files live under chats/{chat_id}/ — you can also read them raw with bash if needed.
-- When using the `send_media` tool, tool-returned paths (e.g. `/foo/bar.jpg`) must be passed as `/media/foo/bar.jpg`. Always prepend `/media` to the path before calling `send_media`.
+- When using the `send_media` tool, tool-returned paths (e.g. `/foo/bar.jpg`) must be passed as `{media_dir}/foo/bar.jpg`. Always prepend `{media_dir}` to the path before calling `send_media`.
 - You may use curl, jq, grep, find, and other standard Unix tools via bash.
 - Never run destructive commands (rm -rf, format, etc.) unless explicitly asked.
 - If a command fails, try to diagnose and fix it.
@@ -108,7 +109,7 @@ mod tests {
 
     #[test]
     fn test_assemble_basic() {
-        let prompt = assemble("-123", "", &HashMap::new(), None, &[], true, "456");
+        let prompt = assemble("-123", "", &HashMap::new(), None, &[], true, "456", "/media");
         assert!(prompt.contains("GlowBot"));
         assert!(prompt.contains("bash"));
         assert!(prompt.contains("-123"));
@@ -126,6 +127,7 @@ mod tests {
             &[],
             true,
             "456",
+            "/media",
         );
         assert!(prompt.contains("Be extra helpful"));
         assert!(prompt.contains("Chat-specific instructions"));
@@ -146,7 +148,7 @@ mod tests {
                 body: "Use curl to do things.\n".into(),
             },
         );
-        let prompt = assemble("-123", "", &skills, None, &[], true, "456");
+        let prompt = assemble("-123", "", &skills, None, &[], true, "456", "/media");
         assert!(prompt.contains("test-skill"));
         assert!(prompt.contains("A test skill"));
         assert!(!prompt.contains("Use curl"));
@@ -158,7 +160,7 @@ mod tests {
         let mut mem = Memory::new("123", "@testuser");
         mem.frontmatter.call_name = "Tester".into();
         mem.frontmatter.description = "Loves testing.".into();
-        let prompt = assemble("-123", "", &HashMap::new(), None, &[mem], true, "456");
+        let prompt = assemble("-123", "", &HashMap::new(), None, &[mem], true, "456", "/media");
         assert!(prompt.contains("Tester"));
         assert!(prompt.contains("@testuser"));
         assert!(prompt.contains("Known users"));
@@ -189,6 +191,7 @@ mod tests {
             &[mem],
             true,
             "456",
+            "/media",
         );
         assert!(prompt.contains("GlowBot"));
         assert!(prompt.contains("chat prompt here"));
@@ -208,6 +211,7 @@ mod tests {
             &[],
             true,
             "456",
+            "/media",
         );
         assert!(prompt.contains("About this conversation"));
         assert!(prompt.contains("Study Group"));
@@ -224,13 +228,14 @@ mod tests {
             &[],
             true,
             "456",
+            "/media",
         );
         assert!(!prompt.contains("About this conversation"));
     }
 
     #[test]
     fn test_assemble_dm_tools_disabled() {
-        let prompt = assemble("123", "", &HashMap::new(), None, &[], false, "789");
+        let prompt = assemble("123", "", &HashMap::new(), None, &[], false, "789", "/media");
         assert!(prompt.contains("Tool Access Restricted"));
         assert!(prompt.contains("123"));
         assert!(prompt.contains("DISABLED"));
@@ -238,7 +243,14 @@ mod tests {
 
     #[test]
     fn test_assemble_dm_tools_enabled() {
-        let prompt = assemble("123", "", &HashMap::new(), None, &[], true, "789");
+        let prompt = assemble("123", "", &HashMap::new(), None, &[], true, "789", "/media");
         assert!(!prompt.contains("Tool Access Restricted"));
+    }
+
+    #[test]
+    fn test_assemble_uses_custom_media_dir() {
+        let prompt = assemble("123", "", &HashMap::new(), None, &[], true, "789", "/custom_media");
+        assert!(prompt.contains("/custom_media/foo/bar.jpg"));
+        assert!(!prompt.contains("/media/foo/bar.jpg"));
     }
 }

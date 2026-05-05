@@ -80,6 +80,7 @@ impl BotState {
             &memories,
             tools_enabled,
             user_id,
+            &self.config.media_dir,
         )
     }
 
