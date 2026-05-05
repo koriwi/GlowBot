@@ -102,8 +102,14 @@ fn test_config_save_to_invalid_path() {
 }
 
 #[test]
-fn test_default_model() {
-    assert_eq!(default_model(), "anthropic/claude-sonnet-4");
+fn test_missing_model_is_error() {
+    let yaml = r#"
+telegram_token: "test-token"
+openrouter:
+  api_key: "test-key"
+"#;
+    let result: Result<Config, _> = serde_yaml::from_str(yaml);
+    assert!(result.is_err());
 }
 
 #[test]

@@ -147,8 +147,7 @@ impl Default for EmbeddingConfig {
 pub struct OpenRouterConfig {
     /// OpenRouter API key.
     pub api_key: String,
-    /// Default model to use.
-    #[serde(default = "default_model")]
+    /// Model to use (required).
     pub model: String,
 }
 
@@ -192,10 +191,6 @@ pub struct Config {
     /// Database-related configuration.
     #[serde(default)]
     pub db: DatabaseConfig,
-}
-
-fn default_model() -> String {
-    "anthropic/claude-sonnet-4".to_string()
 }
 
 fn default_recent_messages_window_size() -> usize {

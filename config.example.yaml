@@ -4,7 +4,7 @@ telegram_token: "your-telegram-bot-token-here"
 # OpenRouter
 openrouter:
   api_key: "your-openrouter-api-key-here"
-  model: "anthropic/claude-sonnet-4"
+  model: "your-model-name-here"
 
 # Conversation context settings
 conversation:
