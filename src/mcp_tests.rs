@@ -230,7 +230,8 @@ async fn test_invoke_tool_parse_error() {
     };
 
     let result = invoke_tool(&tool, &serde_json::json!({})).await;
-    assert!(result.contains("Failed to parse MCP response"));
+    assert!(result.contains("parse error"), "result: {}", result);
+    assert!(result.contains("not json"), "body should be in error, got: {}", result);
 }
 
 #[tokio::test]
@@ -248,7 +249,7 @@ async fn test_invoke_tool_network_error() {
     };
 
     let result = invoke_tool(&tool, &serde_json::json!({})).await;
-    assert!(result.contains("MCP request failed"));
+    assert!(result.contains("request failed"), "result: {}", result);
 }
 
 #[tokio::test]

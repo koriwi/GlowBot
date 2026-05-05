@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 pub(crate) fn log_tool_call_to(data_dir: &std::path::Path, tool_name: &str, args: &str, result: &str) {
     let log_path = data_dir.join("tool_calls.log");
     let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
-    let result_summary: String = result.chars().take(200).collect();
+    let result_summary: String = result.chars().take(300).collect();
     let args_summary: String = args.chars().take(200).collect();
     let line = format!(
         "[{}] {} | args: {} | result: {}\n",
@@ -23,7 +23,18 @@ pub(crate) fn log_tool_call_to(data_dir: &std::path::Path, tool_name: &str, args
             use std::io::Write;
             f.write_all(line.as_bytes())
         });
-    log::info!("tool {}: {}", tool_name, args_summary);
+
+    // Emit a warning when tools return errors, info otherwise
+    let is_error = result.starts_with("Error")
+        || result.contains("parse error")
+        || result.contains("HTTP")
+        || result.contains("request failed")
+        || result.contains("RPC error");
+    if is_error {
+        log::warn!("tool {} error (args: {}): {}", tool_name, args_summary, result_summary);
+    } else {
+        log::info!("tool {}: {}", tool_name, args_summary);
+    }
 }
 
 /// Dispatch a batch of tool calls and return the result messages.

@@ -221,6 +221,7 @@ impl McpClient {
 
 /// Invoke an MCP tool and return the result.
 pub async fn invoke_tool(tool: &McpTool, arguments: &serde_json::Value) -> String {
+    let tool_label = format!("mcp_{}_{}", tool.server_name, tool.name);
     let client = reqwest::Client::new();
     let request = JsonRpcRequest {
         jsonrpc: "2.0".into(),
@@ -248,19 +249,45 @@ pub async fn invoke_tool(tool: &McpTool, arguments: &serde_json::Value) -> Strin
     }
 
     match req.json(&request).send().await {
-        Ok(response) => match response.json::<JsonRpcResponse>().await {
-            Ok(rpc) => {
-                if let Some(err) = rpc.error {
-                    format!("MCP tool error: {}", err.message)
-                } else {
-                    rpc.result
-                        .map(|r| r.to_string())
-                        .unwrap_or_else(|| "null".into())
+        Ok(response) => {
+            let status = response.status();
+            let body_text = response.text().await.unwrap_or_default();
+            if !status.is_success() {
+                let preview: String = body_text.chars().take(500).collect();
+                log::warn!("{} HTTP {} from {}: {}", tool_label, status.as_u16(), tool.server_url, preview);
+                return format!(
+                    "{} HTTP {}: {}",
+                    tool_label,
+                    status.as_u16(),
+                    preview
+                );
+            }
+            match serde_json::from_str::<JsonRpcResponse>(&body_text) {
+                Ok(rpc) => {
+                    if let Some(err) = rpc.error {
+                        format!("{} RPC error: {}", tool_label, err.message)
+                    } else {
+                        rpc.result
+                            .map(|r| r.to_string())
+                            .unwrap_or_else(|| "null".into())
+                    }
+                }
+                Err(e) => {
+                    let preview: String = body_text.chars().take(500).collect();
+                    log::warn!("{} failed to parse response ({} bytes) from {}: {} | body: {}", tool_label, body_text.len(), tool.server_url, e, preview);
+                    format!(
+                        "{} parse error: {} | body (first 500 chars): {}",
+                        tool_label,
+                        e,
+                        preview
+                    )
                 }
             }
-            Err(e) => format!("Failed to parse MCP response: {}", e),
-        },
-        Err(e) => format!("MCP request failed: {}", e),
+        }
+        Err(e) => {
+            log::warn!("{} request failed to {}: {}", tool_label, tool.server_url, e);
+            format!("{} request failed: {}", tool_label, e)
+        }
     }
 }
 
