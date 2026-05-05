@@ -256,6 +256,227 @@ async fn test_invoke_tool_parse_error() {
 }
 
 #[tokio::test]
+async fn test_invoke_tool_session_expired_and_reinitialized() {
+    let mock = MockServer::start().await;
+
+    // Call 1: tools/call with stale session → HTTP 500 "Session not found"
+    Mock::given(matchers::method("POST"))
+        .and(matchers::body_string_contains("tools/call"))
+        .and(matchers::header("mcp-session-id", "oldsess"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("Session not found"))
+        .mount(&mock)
+        .await;
+
+    // Call 2: initialize (body contains protocolVersion)
+    Mock::given(matchers::method("POST"))
+        .and(matchers::body_string_contains("protocolVersion"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(jsonrpc_ok(
+                    1,
+                    serde_json::json!({"protocolVersion": "2024-11-05"}),
+                ))
+                .insert_header("mcp-session-id", "newsess456"),
+        )
+        .mount(&mock)
+        .await;
+
+    // Call 3: notifications/initialized
+    Mock::given(matchers::method("POST"))
+        .and(matchers::body_string_contains("notifications/initialized"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(jsonrpc_ok(2, serde_json::Value::Null)),
+        )
+        .mount(&mock)
+        .await;
+
+    // Call 4: tools/call with new session → success
+    Mock::given(matchers::method("POST"))
+        .and(matchers::body_string_contains("tools/call"))
+        .and(matchers::header("mcp-session-id", "newsess456"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(jsonrpc_ok(3, serde_json::json!({"result": "ok after reinit"}))),
+        )
+        .mount(&mock)
+        .await;
+
+    let tool = McpTool {
+        server_name: "s".into(),
+        name: "search".into(),
+        description: "d".into(),
+        input_schema: serde_json::json!({}),
+        server_url: mock.uri(),
+        api_key: None,
+        session_id: Some("oldsess".into()),
+        transport: "streamable".into(),
+    };
+
+    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    assert!(
+        result.contains("ok after reinit"),
+        "Expected 'ok after reinit' in: {}",
+        result
+    );
+}
+
+#[tokio::test]
+async fn test_invoke_tool_session_expired_reinit_fails_returns_original_error() {
+    let mock = MockServer::start().await;
+
+    // Call 1: tools/call → HTTP 500 "Session not found"
+    Mock::given(matchers::method("POST"))
+        .and(matchers::body_string_contains("tools/call"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("Session not found"))
+        .mount(&mock)
+        .await;
+
+    // Re-init fails: initialize returns error
+    Mock::given(matchers::method("POST"))
+        .and(matchers::body_string_contains("protocolVersion"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("server gone"))
+        .mount(&mock)
+        .await;
+
+    let tool = McpTool {
+        server_name: "s".into(),
+        name: "search".into(),
+        description: "d".into(),
+        input_schema: serde_json::json!({}),
+        server_url: mock.uri(),
+        api_key: None,
+        session_id: Some("oldsess".into()),
+        transport: "streamable".into(),
+    };
+
+    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    assert!(
+        result.contains("Session not found"),
+        "Expected original error preserved, got: {}",
+        result
+    );
+}
+
+#[tokio::test]
+async fn test_invoke_tool_http_500_other_error_no_retry() {
+    let mock = MockServer::start().await;
+
+    // tools/call → HTTP 500 with some other error (not session-related)
+    Mock::given(matchers::method("POST"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("Internal server error"))
+        .mount(&mock)
+        .await;
+
+    let tool = McpTool {
+        server_name: "s".into(),
+        name: "search".into(),
+        description: "d".into(),
+        input_schema: serde_json::json!({}),
+        server_url: mock.uri(),
+        api_key: None,
+        session_id: Some("sess1".into()),
+        transport: "streamable".into(),
+    };
+
+    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    assert!(
+        result.contains("Internal server error"),
+        "Expected error returned without retry, got: {}",
+        result
+    );
+}
+
+#[tokio::test]
+async fn test_invoke_tool_no_session_id_still_retries_on_session_not_found() {
+    let mock = MockServer::start().await;
+
+    // Mount retry mock FIRST (more specific), then fallback mock (less specific).
+    // Wiremock matches the first mounted mock, so the retry must be 
+    // mounted before the catch-all fallback.
+
+    // Retry: tools/call with fresh session → success (mounted first, highest priority)
+    Mock::given(matchers::method("POST"))
+        .and(matchers::body_string_contains("tools/call"))
+        .and(matchers::header("mcp-session-id", "fresh"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(jsonrpc_ok(3, serde_json::json!({"ok": true}))),
+        )
+        .mount(&mock)
+        .await;
+
+    // Call 1: tools/call without session → HTTP 500 "Session not found" (fallback)
+    Mock::given(matchers::method("POST"))
+        .and(matchers::body_string_contains("tools/call"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("Session not found"))
+        .mount(&mock)
+        .await;
+
+    // Re-init: initialize → 200 with session
+    Mock::given(matchers::method("POST"))
+        .and(matchers::body_string_contains("protocolVersion"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(jsonrpc_ok(
+                    1,
+                    serde_json::json!({"protocolVersion": "2024-11-05"}),
+                ))
+                .insert_header("mcp-session-id", "fresh"),
+        )
+        .mount(&mock)
+        .await;
+
+    // notifications/initialized
+    Mock::given(matchers::method("POST"))
+        .and(matchers::body_string_contains("notifications/initialized"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(jsonrpc_ok(2, serde_json::Value::Null)),
+        )
+        .mount(&mock)
+        .await;
+
+    let tool = McpTool {
+        server_name: "s".into(),
+        name: "search".into(),
+        description: "d".into(),
+        input_schema: serde_json::json!({}),
+        server_url: mock.uri(),
+        api_key: None,
+        session_id: None, // no session yet, but server still says "Session not found"
+        transport: "streamable".into(),
+    };
+
+    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    assert!(result.contains("ok"), "Expected retry success, got: {}", result);
+}
+
+#[tokio::test]
+async fn test_invoke_tool_stateless_transport_no_retry() {
+    let mock = MockServer::start().await;
+
+    // For "http" (stateless) transport, 500 Session not found shouldn't trigger retry
+    Mock::given(matchers::method("POST"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("Session not found"))
+        .mount(&mock)
+        .await;
+
+    let tool = McpTool {
+        server_name: "s".into(),
+        name: "search".into(),
+        description: "d".into(),
+        input_schema: serde_json::json!({}),
+        server_url: mock.uri(),
+        api_key: None,
+        session_id: Some("sess1".into()),
+        transport: "http".into(),
+    };
+
+    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    // Should return the error without attempting re-init (no initialize mock mounted)
+    assert!(result.contains("Session not found"));
+}
+
+#[tokio::test]
 async fn test_invoke_tool_network_error() {
     // Use a URL that's guaranteed to fail
     let tool = McpTool {

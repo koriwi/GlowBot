@@ -260,8 +260,8 @@ impl McpClient {
     }
 }
 
-/// Invoke an MCP tool and return the result.
-pub async fn invoke_tool(tool: &McpTool, arguments: &serde_json::Value) -> String {
+/// Invoke an MCP tool over HTTP once (no session recovery).
+async fn invoke_tool_once(tool: &McpTool, arguments: &serde_json::Value) -> String {
     let tool_label = format!("mcp_{}_{}", tool.server_name, tool.name);
     let client = reqwest::Client::new();
     let request = JsonRpcRequest {
@@ -341,6 +341,82 @@ pub async fn invoke_tool(tool: &McpTool, arguments: &serde_json::Value) -> Strin
             format!("{} request failed: {}", tool_label, e)
         }
     }
+}
+
+/// Re-initialize the MCP session: send initialize → notifications/initialized.
+/// Returns the new session ID on success.
+async fn reinitialize_mcp_session(tool: &McpTool) -> Option<String> {
+    // Only session-based transports can be re-initialized
+    if tool.transport != "streamable" {
+        return None;
+    }
+
+    let server = McpServer {
+        name: tool.server_name.clone(),
+        transport: tool.transport.clone(),
+        url: tool.server_url.clone(),
+        api_key: tool.api_key.clone(),
+    };
+
+    let client = McpClient::new(server);
+
+    // Step 1: initialize (protocol negotiation + session capture)
+    if let Err(e) = client.initialize().await {
+        log::warn!(
+            "MCP session re-init initialize failed for {}: {}",
+            tool.server_name,
+            e
+        );
+        return None;
+    }
+
+    // Step 2: notifications/initialized
+    if let Err(e) = client.rpc_call("notifications/initialized", None).await {
+        log::warn!(
+            "MCP session re-init notifications/initialized failed for {}: {}",
+            tool.server_name,
+            e
+        );
+        return None;
+    }
+
+    let sid = client.session_id.lock().unwrap().clone();
+    sid
+}
+
+/// Invoke an MCP tool and return the result.
+/// On HTTP 500 "Session not found", automatically re-initializes the session and retries once.
+pub async fn invoke_tool(tool: &McpTool, arguments: &serde_json::Value) -> String {
+    let result = invoke_tool_once(tool, arguments).await;
+
+    // Detect stale session: HTTP 500 with "Session not found" (session expired server-side)
+    let is_session_lost = result.contains("HTTP 500")
+        && result.to_lowercase().contains("session not found");
+
+    if is_session_lost {
+        log::info!(
+            "MCP session expired for {}/{}, attempting re-initialization",
+            tool.server_name,
+            tool.name
+        );
+
+        if let Some(new_session_id) = reinitialize_mcp_session(tool).await {
+            let mut new_tool = tool.clone();
+            new_tool.session_id = Some(new_session_id);
+            log::info!(
+                "MCP session re-initialized for {}, retrying tool call",
+                tool.server_name
+            );
+            return invoke_tool_once(&new_tool, arguments).await;
+        }
+
+        log::warn!(
+            "MCP session re-initialization failed for {}",
+            tool.server_name
+        );
+    }
+
+    result
 }
 
 /// Connect to all configured MCP servers and return discovered tools.
