@@ -192,6 +192,7 @@ impl GlowBot {
     }
 
     /// Fetch model context lengths from OpenRouter and populate the cache.
+    #[allow(dead_code)]
     pub async fn fetch_model_contexts(&self) -> anyhow::Result<()> {
         let api_key = {
             let s = self.state.lock().await;

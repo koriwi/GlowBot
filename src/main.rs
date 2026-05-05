@@ -27,16 +27,28 @@ async fn run_bot() -> anyhow::Result<()> {
     let telegram_token = config.telegram_token.clone();
     let openrouter_key = config.openrouter.api_key.clone();
 
-    let llm = Arc::new(OpenRouterBackend::new(openrouter_key));
+    let llm = Arc::new(OpenRouterBackend::new(openrouter_key.clone()));
     let bot = GlowBot::new_with_llm(&data_dir, llm).await?;
     let bot = Arc::new(Mutex::new(bot));
 
-    // Fetch model context lengths from OpenRouter in the background
+    // Fetch model context lengths from OpenRouter in the background.
+    // Avoid holding the bot lock during the HTTP call so message processing isn't blocked.
     {
-        let bot_clone = Arc::clone(&bot);
+        let api_key = openrouter_key.clone();
+        let state = bot.lock().await.state.clone();
         tokio::spawn(async move {
-            if let Err(e) = bot_clone.lock().await.fetch_model_contexts().await {
-                log::warn!("Failed to fetch model context lengths: {}", e);
+            let client = glowbot::openrouter::OpenRouterClient::new(api_key);
+            match client.fetch_models().await {
+                Ok(models) => {
+                    let mut s = state.lock().await;
+                    for m in &models {
+                        s.model_context_lengths.insert(m.id.clone(), m.context_length);
+                    }
+                    log::info!("Cached {} model context lengths from OpenRouter", models.len());
+                }
+                Err(e) => {
+                    log::warn!("Failed to fetch model context lengths: {}", e);
+                }
             }
         });
     }
