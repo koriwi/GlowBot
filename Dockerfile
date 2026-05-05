@@ -33,7 +33,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends unzip && \
     rm -f sqlite-tools.zip sqlite3
 
 # Stage 2: Slim runtime
-FROM debian:bookworm-slim
+# Uses trixie (glibc 2.40+) because sqldiff from sqlite.org requires glibc >= 2.38
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
