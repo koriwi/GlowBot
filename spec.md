@@ -384,6 +384,7 @@ Commands are Telegram bot commands (`/command`) used for control and settings. *
 | `/status` | Show current config + context usage for this chat | command whitelist |
 | `/tasks` | List all pending tasks for this chat | command whitelist |
 | `/stop` | Interrupt ongoing LLM processing for this chat | none (always available) |
+| `/new` | Reset conversation context — stores a cutoff timestamp; only messages after this point are included in future context | command whitelist |
 
 #### `/status` output format
 

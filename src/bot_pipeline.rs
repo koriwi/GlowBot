@@ -62,7 +62,8 @@ pub(crate) async fn process_with_llm_impl(
         let s = state.lock().await;
         let win = s.config.conversation.recent_messages_window_size;
         let include = s.config.conversation.include_reasoning;
-        let hist = match s.db.load_messages(chat_id, win) {
+        let cutoff = s.db.get_cutoff(chat_id).unwrap_or(None);
+        let hist = match s.db.load_messages(chat_id, win, cutoff) {
             Ok(msgs) => msgs,
             Err(e) => {
                 log::error!(

@@ -1506,7 +1506,7 @@ async fn test_conversation_history_window_trims() {
         .unwrap();
     let h_len = {
         let state = bot.state.lock().await;
-        state.db.load_messages("-123", 20).unwrap().len()
+        state.db.load_messages("-123", 20, None).unwrap().len()
     };
     assert_eq!(h_len, 20);
 }
@@ -1714,6 +1714,85 @@ async fn test_process_message_command_run_unauthorized() {
         result,
         Some("You are not authorized to run bot commands.".into())
     );
+}
+
+#[tokio::test]
+async fn test_process_message_command_new() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/new", "mybot")
+        .await
+        .unwrap();
+    let text = result.unwrap();
+    assert!(text.contains("Context reset"), "got: {}", text);
+
+    // Verify the cutoff was stored
+    let cutoff = {
+        let state = bot.state.lock().await;
+        state.db.get_cutoff("-123").unwrap()
+    };
+    assert!(cutoff.is_some());
+    // Should be recent (within last 5 seconds)
+    let now = chrono::Utc::now().timestamp();
+    assert!(
+        (now - cutoff.unwrap()).abs() < 5,
+        "cutoff {} not close to now {}",
+        cutoff.unwrap(),
+        now
+    );
+}
+
+#[tokio::test]
+async fn test_process_message_command_new_unauthorized() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // Default: commands_enabled is false
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/new", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(
+        result,
+        Some("You are not authorized to run bot commands.".into())
+    );
+}
+
+#[tokio::test]
+async fn test_conversation_history_respects_cutoff() {
+    let (bot, _dir, mock_llm) = setup_test_bot_with_whitelisted_chat().await;
+
+    // Set a cutoff in the future so ALL existing messages are filtered
+    {
+        let state = bot.state.lock().await;
+        state.db.set_cutoff("-123", chrono::Utc::now().timestamp() + 3600).unwrap();
+    }
+
+    // Queue a simple LLM response
+    mock_llm.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Hello from the future!".into()),
+                tool_calls: None,
+                reasoning: None,
+                role: Some("assistant".into()),
+            },
+            finish_reason: Some("stop".into()),
+        }],
+        usage: None,
+    });
+
+    // Save an old message first
+    {
+        let state = bot.state.lock().await;
+        state.db.save_messages("-123", &[ChatMessage::user("old history")]).unwrap();
+    }
+
+    let result = bot
+        .process_message("-123", "456", "@testuser", "Hi!", "mybot")
+        .await
+        .unwrap();
+
+    // Should still respond (current message is always included)
+    assert_eq!(result, Some("Hello from the future!".into()));
 }
 
 #[test]

@@ -11,6 +11,8 @@ pub enum Command {
     Tasks,
     /// /run — trigger heartbeat/task agent immediately
     Run,
+    /// /new — set a "forget" cutoff; only messages after this point are included in context
+    New,
 }
 
 /// Parse a Telegram message to see if it's a bot command.
@@ -34,6 +36,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "/stop" => Some(Command::Stop),
         "/tasks" => Some(Command::Tasks),
         "/run" => Some(Command::Run),
+        "/new" => Some(Command::New),
         _ => None,
     }
 }
@@ -85,6 +88,7 @@ pub fn handle_command(
         Command::Stop => "Stop command received.".to_string(),
         Command::Tasks => String::new(), // handled in handle_bot_command
         Command::Run => String::new(),   // handled in handle_bot_command
+        Command::New => String::new(),    // handled in handle_bot_command
     }
 }
 
@@ -118,6 +122,12 @@ mod tests {
     fn test_parse_command_run() {
         assert_eq!(parse_command("/run"), Some(Command::Run));
         assert_eq!(parse_command("/run@glowythebot"), Some(Command::Run));
+    }
+
+    #[test]
+    fn test_parse_command_new() {
+        assert_eq!(parse_command("/new"), Some(Command::New));
+        assert_eq!(parse_command("/new@glowythebot"), Some(Command::New));
     }
 
     #[test]

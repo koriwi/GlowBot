@@ -1,8 +1,18 @@
-use crate::openrouter::{ChatContent, ChatMessage};
+use crate::openrouter::{ChatContent, ChatMessage, ToolCall};
 use anyhow::Context;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+
+/// Intermediate row type for message loading.
+struct RawMessage {
+    role: String,
+    content_json: String,
+    reasoning: Option<String>,
+    name: Option<String>,
+    tool_calls_json: Option<String>,
+    tool_call_id: Option<String>,
+}
 
 /// Persistent SQLite-backed conversation history.
 /// One row per message; read with a sliding window configurable via
@@ -139,7 +149,11 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_embeddings_message
              ON message_embeddings(message_id);
             CREATE INDEX IF NOT EXISTS idx_embeddings_model_message
-             ON message_embeddings(model, message_id);",
+             ON message_embeddings(model, message_id);
+            CREATE TABLE IF NOT EXISTS chat_cutoffs (
+                chat_id  TEXT    PRIMARY KEY,
+                cutoff_at INTEGER NOT NULL
+            );" ,
         )
         .context("Failed to initialize database schema")?;
 
@@ -151,42 +165,38 @@ impl Database {
     }
 
     /// Load the most recent `limit` messages for a chat, ordered from oldest to newest.
-    pub fn load_messages(&self, chat_id: &str, limit: usize) -> anyhow::Result<Vec<ChatMessage>> {
+    /// If `since` is provided, only messages with `created_at > since` are returned.
+    pub fn load_messages(&self, chat_id: &str, limit: usize, since: Option<i64>) -> anyhow::Result<Vec<ChatMessage>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
+
+        let sql = if since.is_some() {
+            "SELECT role, content, reasoning, name, tool_calls, tool_call_id
+             FROM messages
+             WHERE chat_id = ?1 AND created_at > ?2
+             ORDER BY id DESC
+             LIMIT ?3"
+        } else {
             "SELECT role, content, reasoning, name, tool_calls, tool_call_id
              FROM messages
              WHERE chat_id = ?1
              ORDER BY id DESC
-             LIMIT ?2",
-        )?;
+             LIMIT ?2"
+        };
+        let mut stmt = conn.prepare(sql)?;
 
-        struct Raw {
-            role: String,
-            content_json: String,
-            reasoning: Option<String>,
-            name: Option<String>,
-            tool_calls_json: Option<String>,
-            tool_call_id: Option<String>,
-        }
+        let raws: Vec<RawMessage> = if let Some(s) = since {
+            stmt.query_map(params![chat_id, s, limit as i64], Self::map_row)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        } else {
+            stmt.query_map(params![chat_id, limit as i64], Self::map_row)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
 
-        let rows = stmt.query_map(params![chat_id, limit as i64], |row| {
-            Ok(Raw {
-                role: row.get(0)?,
-                content_json: row.get(1)?,
-                reasoning: row.get(2)?,
-                name: row.get(3)?,
-                tool_calls_json: row.get(4)?,
-                tool_call_id: row.get(5)?,
-            })
-        })?;
-
-        let mut msgs = Vec::with_capacity(limit.min(20));
-        for row in rows {
-            let raw = row?;
+        let mut msgs = Vec::with_capacity(raws.len());
+        for raw in raws {
             let content: ChatContent = serde_json::from_str(&raw.content_json)
                 .with_context(|| format!("Failed to deserialize content for chat {}", chat_id))?;
-            let tool_calls = raw
+            let tool_calls: Option<Vec<ToolCall>> = raw
                 .tool_calls_json
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
@@ -205,6 +215,18 @@ impl Database {
         // rows come back newest-first; reverse to chronological order
         msgs.reverse();
         Ok(msgs)
+    }
+
+    /// Helper to map a row into a Raw struct for load_messages.
+    fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawMessage> {
+        Ok(RawMessage {
+            role: row.get(0)?,
+            content_json: row.get(1)?,
+            reasoning: row.get(2)?,
+            name: row.get(3)?,
+            tool_calls_json: row.get(4)?,
+            tool_call_id: row.get(5)?,
+        })
     }
 
     /// Insert a batch of messages in a single transaction.
@@ -256,6 +278,31 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])?;
         Ok(())
+    }
+
+    /// Set the "forget" cutoff timestamp for a chat. Messages with `created_at <= cutoff_at`
+    /// are excluded from future `load_messages` calls when `since` is provided.
+    pub fn set_cutoff(&self, chat_id: &str, cutoff_at: i64) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO chat_cutoffs (chat_id, cutoff_at) VALUES (?1, ?2)
+             ON CONFLICT(chat_id) DO UPDATE SET cutoff_at = ?2",
+            params![chat_id, cutoff_at],
+        )?;
+        Ok(())
+    }
+
+    /// Get the cutoff timestamp for a chat, if set.
+    pub fn get_cutoff(&self, chat_id: &str) -> anyhow::Result<Option<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT cutoff_at FROM chat_cutoffs WHERE chat_id = ?1",
+        )?;
+        let result = stmt.query_row(params![chat_id], |row| row.get(0)).optional();
+        match result {
+            Ok(val) => Ok(val),
+            Err(e) => Err(anyhow::anyhow!("Failed to get cutoff: {}", e)),
+        }
     }
 
     // ─── embedding helpers ────────────────────────────────────────────

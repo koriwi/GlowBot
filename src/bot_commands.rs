@@ -60,6 +60,22 @@ pub(crate) async fn handle_bot_command_impl(
         return Ok(Some(response));
     }
 
+    // /new sets a forget cutoff timestamp — messages before this are excluded from context
+    if matches!(command, crate::commands::Command::New) {
+        let ts = chrono::Utc::now().timestamp();
+        {
+            let s = state.lock().await;
+            s.db.set_cutoff(chat_id, ts)?;
+        }
+        let formatted = chrono::DateTime::from_timestamp(ts, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            .unwrap_or_else(|| ts.to_string());
+        return Ok(Some(format!(
+            "🆕 Context reset. All messages before {} are now excluded from future conversation context.",
+            formatted
+        )));
+    }
+
     // /run triggers the heartbeat task agent immediately for this chat
     if matches!(command, crate::commands::Command::Run) {
         if let Some(bot) = tg_bot {

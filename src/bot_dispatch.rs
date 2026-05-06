@@ -384,7 +384,8 @@ pub(crate) async fn dispatch_tool(
             let count = count.clamp(1, 50);
             let history = {
                 let s = state.lock().await;
-                match s.db.load_messages(&cid, count) {
+                let cutoff = s.db.get_cutoff(&cid).unwrap_or(None);
+                match s.db.load_messages(&cid, count, cutoff) {
                     Ok(msgs) => msgs,
                     Err(e) => {
                         log::error!(

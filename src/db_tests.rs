@@ -88,7 +88,7 @@ fn test_migration_adds_reasoning_column() {
     let msg = ChatMessage::assistant_with_reasoning("answer", "thinking...".into());
     db.save_messages("-test", &[msg]).unwrap();
 
-    let loaded = db.load_messages("-test", 10).unwrap();
+    let loaded = db.load_messages("-test", 10, None).unwrap();
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].reasoning.as_deref(), Some("thinking..."));
 }
@@ -115,7 +115,7 @@ fn test_migration_idempotent() {
 
     let msg = ChatMessage::assistant_with_reasoning("x", "y".into());
     db2.save_messages("-test2", &[msg]).unwrap();
-    let loaded = db2.load_messages("-test2", 10).unwrap();
+    let loaded = db2.load_messages("-test2", 10, None).unwrap();
     assert_eq!(loaded[0].reasoning.as_deref(), Some("y"));
 }
 
@@ -135,7 +135,7 @@ fn test_roundtrip_messages() {
     ];
     db.save_messages(chat_id, &msgs).unwrap();
 
-    let loaded = db.load_messages(chat_id, 10).unwrap();
+    let loaded = db.load_messages(chat_id, 10, None).unwrap();
     assert_eq!(loaded.len(), 3);
     assert_eq!(loaded[0].text_content(), "Hello");
     assert_eq!(loaded[1].text_content(), "Hi Alice!");
@@ -152,7 +152,7 @@ fn test_window_limit() {
             .unwrap();
     }
 
-    let loaded = db.load_messages(chat_id, 3).unwrap();
+    let loaded = db.load_messages(chat_id, 3, None).unwrap();
     assert_eq!(loaded.len(), 3);
     assert_eq!(loaded[0].text_content(), "msg7");
     assert_eq!(loaded[1].text_content(), "msg8");
@@ -176,7 +176,7 @@ fn test_tool_calls_roundtrip() {
     }]);
 
     db.save_messages(chat_id, &[msg.clone()]).unwrap();
-    let loaded = db.load_messages(chat_id, 10).unwrap();
+    let loaded = db.load_messages(chat_id, 10, None).unwrap();
     assert_eq!(loaded.len(), 1);
     assert!(loaded[0].tool_calls.is_some());
     let tc = loaded[0].tool_calls.as_ref().unwrap();
@@ -187,7 +187,7 @@ fn test_tool_calls_roundtrip() {
 #[test]
 fn test_empty_chat() {
     let db = make_db();
-    let loaded = db.load_messages("nonexistent", 10).unwrap();
+    let loaded = db.load_messages("nonexistent", 10, None).unwrap();
     assert!(loaded.is_empty());
 }
 
@@ -198,10 +198,10 @@ fn test_clear_messages() {
 
     db.save_messages(chat_id, &[ChatMessage::user("test")])
         .unwrap();
-    assert_eq!(db.load_messages(chat_id, 10).unwrap().len(), 1);
+    assert_eq!(db.load_messages(chat_id, 10, None).unwrap().len(), 1);
 
     db.clear_messages(chat_id).unwrap();
-    assert!(db.load_messages(chat_id, 10).unwrap().is_empty());
+    assert!(db.load_messages(chat_id, 10, None).unwrap().is_empty());
 }
 
 // ─── embedding tests ──────────────────────────────────────────
@@ -428,7 +428,7 @@ fn test_reasoning_roundtrip() {
     let msg = ChatMessage::assistant_with_reasoning("The answer is 42.", "Let me think...".into());
     db.save_messages(chat_id, &[msg]).unwrap();
 
-    let loaded = db.load_messages(chat_id, 10).unwrap();
+    let loaded = db.load_messages(chat_id, 10, None).unwrap();
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].text_content(), "The answer is 42.");
     assert_eq!(loaded[0].reasoning.as_deref(), Some("Let me think..."));
@@ -442,7 +442,7 @@ fn test_reasoning_null_roundtrip() {
     let msg = ChatMessage::assistant("simple reply");
     db.save_messages(chat_id, &[msg]).unwrap();
 
-    let loaded = db.load_messages(chat_id, 10).unwrap();
+    let loaded = db.load_messages(chat_id, 10, None).unwrap();
     assert_eq!(loaded.len(), 1);
     assert!(loaded[0].reasoning.is_none());
 }
@@ -467,7 +467,7 @@ fn test_tool_calls_with_reasoning_roundtrip() {
     );
 
     db.save_messages(chat_id, &[msg]).unwrap();
-    let loaded = db.load_messages(chat_id, 10).unwrap();
+    let loaded = db.load_messages(chat_id, 10, None).unwrap();
     assert_eq!(loaded.len(), 1);
     let tc = loaded[0].tool_calls.as_ref().unwrap();
     assert_eq!(tc[0].id, "call_99");
@@ -501,4 +501,99 @@ fn test_search_embedding_skips_empty_text() {
         .unwrap();
     // Empty text messages should be skipped
     assert!(results.is_empty());
+}
+
+// ─── cutoff tests ──────────────────────────────────────────
+
+#[test]
+fn test_set_and_get_cutoff() {
+    let db = make_db();
+
+    // Initially no cutoff
+    assert!(db.get_cutoff("-chat").unwrap().is_none());
+
+    // Set a cutoff
+    db.set_cutoff("-chat", 1000).unwrap();
+    assert_eq!(db.get_cutoff("-chat").unwrap(), Some(1000));
+
+    // Overwrite
+    db.set_cutoff("-chat", 2000).unwrap();
+    assert_eq!(db.get_cutoff("-chat").unwrap(), Some(2000));
+}
+
+#[test]
+fn test_load_messages_with_since_filters_correctly() {
+    let db = make_db();
+    let chat_id = "-ct";
+
+    // Save 3 messages. They all get the same `created_at` timestamp,
+    // so we can't rely on real timestamps. Instead, insert messages with
+    // different timestamps via raw SQL.
+    let msgs = vec![
+        ChatMessage::user("msg1"),
+        ChatMessage::user("msg2"),
+        ChatMessage::user("msg3"),
+    ];
+    db.save_messages(chat_id, &msgs).unwrap();
+
+    // Manually set created_at to distinct values so we can test filtering
+    {
+        let conn = db.conn.lock().unwrap();
+        conn.execute("UPDATE messages SET created_at = 100 WHERE rowid = 1", [])
+            .unwrap();
+        conn.execute("UPDATE messages SET created_at = 200 WHERE rowid = 2", [])
+            .unwrap();
+        conn.execute("UPDATE messages SET created_at = 300 WHERE rowid = 3", [])
+            .unwrap();
+    }
+
+    // Load with since=150 — should get msg2 and msg3
+    let loaded = db.load_messages(chat_id, 10, Some(150)).unwrap();
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded[0].text_content(), "msg2");
+    assert_eq!(loaded[1].text_content(), "msg3");
+
+    // Load with since=250 — only msg3
+    let loaded = db.load_messages(chat_id, 10, Some(250)).unwrap();
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].text_content(), "msg3");
+
+    // Load with since=400 — nothing
+    let loaded = db.load_messages(chat_id, 10, Some(400)).unwrap();
+    assert!(loaded.is_empty());
+}
+
+#[test]
+fn test_load_messages_without_since_returns_all() {
+    let db = make_db();
+    let chat_id = "-ns";
+
+    let msgs = vec![
+        ChatMessage::user("a"),
+        ChatMessage::user("b"),
+        ChatMessage::user("c"),
+    ];
+    db.save_messages(chat_id, &msgs).unwrap();
+
+    let loaded = db.load_messages(chat_id, 10, None).unwrap();
+    assert_eq!(loaded.len(), 3);
+}
+
+#[test]
+fn test_load_messages_with_since_respects_limit() {
+    let db = make_db();
+    let chat_id = "-sl";
+
+    for i in 0..5 {
+        db.save_messages(chat_id, &[ChatMessage::user(&format!("msg{i}"))])
+            .unwrap();
+    }
+
+    // All messages pass the filter (since=0), but limit should still apply
+    let loaded = db.load_messages(chat_id, 3, Some(0)).unwrap();
+    assert_eq!(loaded.len(), 3);
+    // Should be the last 3 messages
+    assert_eq!(loaded[0].text_content(), "msg2");
+    assert_eq!(loaded[1].text_content(), "msg3");
+    assert_eq!(loaded[2].text_content(), "msg4");
 }
