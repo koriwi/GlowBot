@@ -10,13 +10,14 @@ pub fn assemble(
     chat_memory: Option<&Memory>,
     memories: &[Memory],
     tools_enabled: bool,
+    bash_enabled: bool,
     _user_id: &str,
     media_dir: &str,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     // 1. Base prompt (with chat context)
-    parts.push(base_prompt(chat_id, media_dir));
+    parts.push(base_prompt(chat_id, media_dir, tools_enabled, bash_enabled));
 
     // 2. Per-chat system prompt
     if !chat_system_prompt.is_empty() {
@@ -59,11 +60,11 @@ pub fn assemble(
     if !tools_enabled {
         parts.push(format!(
             "\n## Important: Tool Access Restricted\n\
-You are in a DM without a `dms` config entry. Your tools (bash, memory, skills) are \
-currently DISABLED. You can only respond with text.\n\
+You are in a DM without a `dms` config entry. All your tools (bash, memory, skills, tasks, \
+media, conversation search) are currently DISABLED. You can only respond with text.\n\
 If the user asks you to do something that requires tools, tell them:\n\
-> To enable tools, add a `dms` entry for this chat ID (`{chat_id}`) \
-in `config.yaml` with `commands_enabled: true` and restart me.\n\
+> To enable tools, ask the bot owner to add a `dms` entry for this chat ID (`{chat_id}`) \
+in `config.yaml` and restart me.\n\
 Always include the chat ID (`{chat_id}`) in that message.",
             chat_id = chat_id
         ));
@@ -73,9 +74,17 @@ Always include the chat ID (`{chat_id}`) in that message.",
 }
 
 /// The base system prompt that all messages start with.
-fn base_prompt(chat_id: &str, media_dir: &str) -> String {
-    format!(
-        r#"You are GlowBot, a helpful, friendly Telegram chatbot. You have access to tools for executing bash commands and managing memory.
+fn base_prompt(chat_id: &str, media_dir: &str, tools_enabled: bool, bash_enabled: bool) -> String {
+    let tools_intro = if tools_enabled && bash_enabled {
+        "You have access to tools for executing bash commands, managing memory, creating skills, handling tasks, sending media, and more."
+    } else if tools_enabled {
+        "You have access to tools for managing memory, creating skills, handling tasks, sending media, and more. The bash tool is disabled in this chat."
+    } else {
+        "Your tools are currently restricted."
+    };
+
+    let mut prompt = format!(
+        r#"You are GlowBot, a helpful, friendly Telegram chatbot. {tools_intro}
 
 Your personality:
 - Be concise and helpful.
@@ -83,24 +92,36 @@ Your personality:
 - You may use **bold** and *italic* formatting in your replies (Telegram Markdown).
 - Use `backticks` for code, commands, file paths, and technical terms.
 - Telegram does not support Markdown tables. Wrap tables in triple backticks (```) as code blocks so they render as preformatted text.
-- Use tools freely — bash for files/APIs/skills, memory tools for user and chat context.
 - Before answering a question whose answer depends on the user (timezone, preferences, name, skill level, location, OS, etc.), ALWAYS call read_memory first to check what you know about them. Never guess — look it up.
 - When you learn something worth remembering about a user, use update_memory to save it.
-- When you learn something about the chat/group itself (topics, purpose, participants, dynamics), use update_chat_memory to save it.
-- User memories are included in full in the system prompt above with their logged facts. You can still use read_memory to check the raw file if needed.
+- When you learn something about the chat/group itself (topics, purpose, participants, dynamics), use read_chat_memory to recall and update_chat_memory to save it.
+- User and chat memories are included in the system prompt above with their logged facts. You can still use the read_* tools to check raw files if needed.
+- Memory files live under `chats/{{chat_id}}/`. Always use the memory tools (read_memory, update_memory, read_chat_memory, update_chat_memory) to access them — never raw bash. The structured tools guarantee correct YAML frontmatter format.
 - You can create and update skills with the create_skill and update_skill tools. Skills are Markdown files that extend your capabilities with bash commands or workflows. When a user asks you to build a new capability, create a skill for it.
 - Previous messages are NOT included in this prompt. If you need to recall earlier parts of this conversation, call `get_recent_messages(count)` to retrieve them.
 - When you know you'll need to make several tool calls before answering, use `send_message` to give the user a quick headsup (e.g. "ok, give me a second, taking a look now..."). Use it sparingly — at most once per turn, and never for your final answer (which is sent automatically).
+- In background tasks (heartbeat), use `send_message` once at the end to report completion or deliver results when the user explicitly asked. Do not spam progress updates.
 - The current chat ID is: {chat_id}
-- Memory files live under chats/{chat_id}/ — you can also read them raw with bash if needed.
-- When using the `send_media` tool, tool-returned paths (e.g. `/foo/bar.jpg`) must be passed as `{media_dir}/foo/bar.jpg`. Always prepend `{media_dir}` to the path before calling `send_media`.
-- You may use curl, jq, grep, find, and other standard Unix tools via bash.
-- Never run destructive commands (rm -rf, format, etc.) unless explicitly asked.
-- If a command fails, try to diagnose and fix it.
-
-Current date: "#,
+- Use `send_media` to send files to the chat — it accepts absolute paths, relative paths (from the data directory), or paths inside the media directory at `{media_dir}`. Use `list_media` to browse available media files before sending.
+- You can manage a per-chat task list with `add_task`, `list_tasks`, and `remove_task`. The bot autonomously works on tasks on a heartbeat timer.
+"#,
+        tools_intro = tools_intro,
         chat_id = chat_id,
-    ) + &chrono::Utc::now().format("%Y-%m-%d").to_string()
+        media_dir = media_dir,
+    );
+
+    if tools_enabled && bash_enabled {
+        prompt.push_str(&format!(
+            "- Use bash for files, APIs, and system tasks. Use curl, jq, grep, find, and other standard Unix tools.\n- Never run destructive commands (rm -rf, format, etc.) unless explicitly asked.\n- If a command fails, try to diagnose and fix it.\n"
+        ));
+    }
+
+    prompt.push_str(&format!(
+        "\nCurrent date: {}",
+        chrono::Utc::now().format("%Y-%m-%d")
+    ));
+
+    prompt
 }
 
 #[cfg(test)]
@@ -109,12 +130,61 @@ mod tests {
 
     #[test]
     fn test_assemble_basic() {
-        let prompt = assemble("-123", "", &HashMap::new(), None, &[], true, "456", "/media");
+        let prompt = assemble(
+            "-123",
+            "",
+            &HashMap::new(),
+            None,
+            &[],
+            true,
+            true,
+            "456",
+            "/media",
+        );
         assert!(prompt.contains("GlowBot"));
         assert!(prompt.contains("bash"));
         assert!(prompt.contains("-123"));
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         assert!(prompt.contains(&today));
+    }
+
+    #[test]
+    fn test_assemble_bash_disabled() {
+        let prompt = assemble(
+            "-123",
+            "",
+            &HashMap::new(),
+            None,
+            &[],
+            true,
+            false,
+            "456",
+            "/media",
+        );
+        assert!(prompt.contains("GlowBot"));
+        assert!(prompt.contains("bash tool is disabled"));
+        assert!(!prompt.contains("Never run destructive commands"));
+        assert!(!prompt.contains("curl, jq, grep"));
+    }
+
+    #[test]
+    fn test_assemble_tools_disabled_intro() {
+        let prompt = assemble(
+            "-123",
+            "",
+            &HashMap::new(),
+            None,
+            &[],
+            false,
+            false,
+            "456",
+            "/media",
+        );
+        assert!(prompt.contains("tools are currently restricted"));
+        // DM restriction mentions "bash" in its disabled-tools list,
+        // but the intro should not mention bash as available.
+        assert!(!prompt.contains("executing bash commands"));
+        assert!(prompt.contains("Tool Access Restricted"));
     }
 
     #[test]
@@ -125,6 +195,7 @@ mod tests {
             &HashMap::new(),
             None,
             &[],
+            true,
             true,
             "456",
             "/media",
@@ -148,10 +219,12 @@ mod tests {
                 body: "Use curl to do things.\n".into(),
             },
         );
-        let prompt = assemble("-123", "", &skills, None, &[], true, "456", "/media");
+        let prompt = assemble("-123", "", &skills, None, &[], true, true, "456", "/media");
         assert!(prompt.contains("test-skill"));
         assert!(prompt.contains("A test skill"));
-        assert!(!prompt.contains("Use curl"));
+        // Skill body "Use curl to do things." must NOT be in the prompt —
+        // only the name and description should appear.
+        assert!(!prompt.contains("Use curl to do things"));
         assert!(prompt.contains("read_skill"));
     }
 
@@ -161,7 +234,17 @@ mod tests {
         mem.frontmatter.call_name = "Tester".into();
         mem.frontmatter.description = "Loves testing.".into();
         mem.append_log("wrote 50 tests today.");
-        let prompt = assemble("-123", "", &HashMap::new(), None, &[mem], true, "456", "/media");
+        let prompt = assemble(
+            "-123",
+            "",
+            &HashMap::new(),
+            None,
+            &[mem],
+            true,
+            true,
+            "456",
+            "/media",
+        );
         assert!(prompt.contains("Tester"));
         assert!(prompt.contains("@testuser"));
         assert!(prompt.contains("Known users"));
@@ -193,6 +276,7 @@ mod tests {
             None,
             &[mem],
             true,
+            true,
             "456",
             "/media",
         );
@@ -214,6 +298,7 @@ mod tests {
             Some(&chat_mem),
             &[],
             true,
+            true,
             "456",
             "/media",
         );
@@ -233,6 +318,7 @@ mod tests {
             Some(&chat_mem),
             &[],
             true,
+            true,
             "456",
             "/media",
         );
@@ -241,7 +327,17 @@ mod tests {
 
     #[test]
     fn test_assemble_dm_tools_disabled() {
-        let prompt = assemble("123", "", &HashMap::new(), None, &[], false, "789", "/media");
+        let prompt = assemble(
+            "123",
+            "",
+            &HashMap::new(),
+            None,
+            &[],
+            false,
+            false,
+            "789",
+            "/media",
+        );
         assert!(prompt.contains("Tool Access Restricted"));
         assert!(prompt.contains("123"));
         assert!(prompt.contains("DISABLED"));
@@ -249,14 +345,53 @@ mod tests {
 
     #[test]
     fn test_assemble_dm_tools_enabled() {
-        let prompt = assemble("123", "", &HashMap::new(), None, &[], true, "789", "/media");
+        let prompt = assemble(
+            "123",
+            "",
+            &HashMap::new(),
+            None,
+            &[],
+            true,
+            true,
+            "789",
+            "/media",
+        );
         assert!(!prompt.contains("Tool Access Restricted"));
     }
 
     #[test]
     fn test_assemble_uses_custom_media_dir() {
-        let prompt = assemble("123", "", &HashMap::new(), None, &[], true, "789", "/custom_media");
-        assert!(prompt.contains("/custom_media/foo/bar.jpg"));
-        assert!(!prompt.contains("/media/foo/bar.jpg"));
+        let prompt = assemble(
+            "123",
+            "",
+            &HashMap::new(),
+            None,
+            &[],
+            true,
+            true,
+            "789",
+            "/custom_media",
+        );
+        assert!(prompt.contains("/custom_media"));
+    }
+
+    #[test]
+    fn test_assemble_no_bash_instructions() {
+        let prompt = assemble(
+            "-123",
+            "",
+            &HashMap::new(),
+            None,
+            &[],
+            true,
+            false,
+            "456",
+            "/media",
+        );
+        assert!(prompt.contains("memory tools"));
+        assert!(prompt.contains("list_media"));
+        assert!(prompt.contains("add_task"));
+        assert!(!prompt.contains("curl, jq, grep"));
+        assert!(!prompt.contains("Never run destructive"));
     }
 }

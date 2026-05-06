@@ -1165,14 +1165,7 @@ fn setup_state_with_media_dir(media_dir: &std::path::Path) -> Arc<Mutex<BotState
 async fn test_dispatch_list_media_root_empty() {
     let media_dir = TempDir::new().unwrap();
     let state = setup_state_with_media_dir(media_dir.path());
-    let out = dispatch_tool(
-        &state,
-        "-123",
-        "list_media",
-        &serde_json::json!({}),
-        None,
-    )
-    .await;
+    let out = dispatch_tool(&state, "-123", "list_media", &serde_json::json!({}), None).await;
     assert!(out.starts_with("Media directory listing for"));
     assert!(out.contains("(empty)"));
 }
@@ -1193,14 +1186,7 @@ async fn test_dispatch_list_media_with_files_and_dirs() {
     std::fs::create_dir_all(media_path.join("videos")).unwrap();
 
     let state = setup_state_with_media_dir(media_path);
-    let out = dispatch_tool(
-        &state,
-        "-123",
-        "list_media",
-        &serde_json::json!({}),
-        None,
-    )
-    .await;
+    let out = dispatch_tool(&state, "-123", "list_media", &serde_json::json!({}), None).await;
     assert!(out.starts_with("Media directory listing for"));
     assert!(out.contains("photo.jpg"));
     assert!(out.contains("notes.txt"));
@@ -1233,7 +1219,10 @@ async fn test_dispatch_list_media_subpath() {
     assert!(out.contains("cats/"));
     assert!(out.contains("fluffy.jpg"));
     assert!(out.contains("logo.png"));
-    assert!(!out.contains("root.txt"), "subpath should not show root files");
+    assert!(
+        !out.contains("root.txt"),
+        "subpath should not show root files"
+    );
 }
 
 #[tokio::test]
@@ -1288,14 +1277,7 @@ async fn test_dispatch_list_media_path_traversal_blocked() {
 #[tokio::test]
 async fn test_dispatch_list_media_root_missing() {
     let state = setup_state_with_media_dir(std::path::Path::new("/nonexistent/media/dir"));
-    let out = dispatch_tool(
-        &state,
-        "-123",
-        "list_media",
-        &serde_json::json!({}),
-        None,
-    )
-    .await;
+    let out = dispatch_tool(&state, "-123", "list_media", &serde_json::json!({}), None).await;
     assert!(out.starts_with("Error: directory not found:"));
 }
 
@@ -1968,7 +1950,10 @@ async fn test_conversation_history_respects_cutoff() {
     // Set a cutoff in the future so ALL existing messages are filtered
     {
         let state = bot.state.lock().await;
-        state.db.set_cutoff("-123", chrono::Utc::now().timestamp() + 3600).unwrap();
+        state
+            .db
+            .set_cutoff("-123", chrono::Utc::now().timestamp() + 3600)
+            .unwrap();
     }
 
     // Queue a simple LLM response
@@ -1988,7 +1973,10 @@ async fn test_conversation_history_respects_cutoff() {
     // Save an old message first
     {
         let state = bot.state.lock().await;
-        state.db.save_messages("-123", &[ChatMessage::user("old history")]).unwrap();
+        state
+            .db
+            .save_messages("-123", &[ChatMessage::user("old history")])
+            .unwrap();
     }
 
     let result = bot

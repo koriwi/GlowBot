@@ -153,7 +153,7 @@ impl Database {
             CREATE TABLE IF NOT EXISTS chat_cutoffs (
                 chat_id  TEXT    PRIMARY KEY,
                 cutoff_at INTEGER NOT NULL
-            );" ,
+            );",
         )
         .context("Failed to initialize database schema")?;
 
@@ -166,7 +166,12 @@ impl Database {
 
     /// Load the most recent `limit` messages for a chat, ordered from oldest to newest.
     /// If `since` is provided, only messages with `created_at > since` are returned.
-    pub fn load_messages(&self, chat_id: &str, limit: usize, since: Option<i64>) -> anyhow::Result<Vec<ChatMessage>> {
+    pub fn load_messages(
+        &self,
+        chat_id: &str,
+        limit: usize,
+        since: Option<i64>,
+    ) -> anyhow::Result<Vec<ChatMessage>> {
         let conn = self.conn.lock().unwrap();
 
         let sql = if since.is_some() {
@@ -295,10 +300,10 @@ impl Database {
     /// Get the cutoff timestamp for a chat, if set.
     pub fn get_cutoff(&self, chat_id: &str) -> anyhow::Result<Option<i64>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT cutoff_at FROM chat_cutoffs WHERE chat_id = ?1",
-        )?;
-        let result = stmt.query_row(params![chat_id], |row| row.get(0)).optional();
+        let mut stmt = conn.prepare("SELECT cutoff_at FROM chat_cutoffs WHERE chat_id = ?1")?;
+        let result = stmt
+            .query_row(params![chat_id], |row| row.get(0))
+            .optional();
         match result {
             Ok(val) => Ok(val),
             Err(e) => Err(anyhow::anyhow!("Failed to get cutoff: {}", e)),

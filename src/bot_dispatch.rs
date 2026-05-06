@@ -104,10 +104,7 @@ pub(crate) async fn dispatch_tool(
                 let normalized = subpath.trim_start_matches('/').trim_end_matches('/');
                 let resolved = base.join(normalized);
                 if !resolved.exists() {
-                    return format!(
-                        "Error: directory not found: {}",
-                        resolved.display()
-                    );
+                    return format!("Error: directory not found: {}", resolved.display());
                 }
                 match resolved.canonicalize() {
                     Ok(p) if p.starts_with(&base) => p,
@@ -120,10 +117,7 @@ pub(crate) async fn dispatch_tool(
                 }
             };
             if !target.exists() {
-                return format!(
-                    "Error: directory not found: {}",
-                    target.display()
-                );
+                return format!("Error: directory not found: {}", target.display());
             }
             if !target.is_dir() {
                 return format!(
@@ -159,26 +153,27 @@ pub(crate) async fn dispatch_tool(
                         return;
                     }
                     let rel = path.strip_prefix(base).unwrap_or(&path);
-                    let name = path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("???");
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("???");
                     if path.is_dir() {
                         if entries.len() >= max {
                             *overflow = true;
                             return;
                         }
                         entries.push(format!("{}📁 {}/", prefix, name));
-                        walk(&path, base, &format!("{}  ", prefix), entries, max, overflow);
+                        walk(
+                            &path,
+                            base,
+                            &format!("{}  ", prefix),
+                            entries,
+                            max,
+                            overflow,
+                        );
                     } else {
                         if entries.len() >= max {
                             *overflow = true;
                             return;
                         }
-                        let size = std::fs::metadata(&path)
-                            .ok()
-                            .map(|m| m.len())
-                            .unwrap_or(0);
+                        let size = std::fs::metadata(&path).ok().map(|m| m.len()).unwrap_or(0);
                         entries.push(format!(
                             "{}📄 {} ({})",
                             prefix,
@@ -234,30 +229,26 @@ pub(crate) async fn dispatch_tool(
                         .map(|_| ())
                 } else {
                     match ext.as_str() {
-                        "jpg" | "jpeg" | "png" | "gif" | "webp" => {
-                            bot.send_photo(chat, input)
-                                .caption(caption)
-                                .await
-                                .map(|_| ())
-                        }
-                        "mp4" | "mov" | "avi" | "webm" => {
-                            bot.send_video(chat, input)
-                                .caption(caption)
-                                .await
-                                .map(|_| ())
-                        }
-                        "mp3" | "ogg" | "wav" | "flac" => {
-                            bot.send_audio(chat, input)
-                                .caption(caption)
-                                .await
-                                .map(|_| ())
-                        }
-                        _ => {
-                            bot.send_document(chat, input)
-                                .caption(caption)
-                                .await
-                                .map(|_| ())
-                        }
+                        "jpg" | "jpeg" | "png" | "gif" | "webp" => bot
+                            .send_photo(chat, input)
+                            .caption(caption)
+                            .await
+                            .map(|_| ()),
+                        "mp4" | "mov" | "avi" | "webm" => bot
+                            .send_video(chat, input)
+                            .caption(caption)
+                            .await
+                            .map(|_| ()),
+                        "mp3" | "ogg" | "wav" | "flac" => bot
+                            .send_audio(chat, input)
+                            .caption(caption)
+                            .await
+                            .map(|_| ()),
+                        _ => bot
+                            .send_document(chat, input)
+                            .caption(caption)
+                            .await
+                            .map(|_| ()),
                     }
                 };
                 match result {

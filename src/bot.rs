@@ -64,6 +64,11 @@ impl BotState {
             crate::memory::load_chat_memories(&self.chats_dir(), chat_id).unwrap_or_default();
         let chat_memory = crate::memory::load_chat_memory(&self.chats_dir(), chat_id);
         let chat_config = self.config.chat_config(chat_id);
+        let bash_enabled = if tools_enabled {
+            self.config.is_bash_enabled(chat_id)
+        } else {
+            false
+        };
         let system_prompt = if !chat_id.starts_with('-') {
             self.config
                 .dm_config(chat_id)
@@ -79,6 +84,7 @@ impl BotState {
             chat_memory.as_ref(),
             &memories,
             tools_enabled,
+            bash_enabled,
             user_id,
             &self.config.media_dir,
         )
@@ -371,7 +377,10 @@ pub async fn process_message_impl(
 
     // Check if it's a bot command
     if let Some(command) = parse_command(text) {
-        log::info!("bot: parsed command {:?}, dispatching to command handler", command);
+        log::info!(
+            "bot: parsed command {:?}, dispatching to command handler",
+            command
+        );
         return handle_bot_command_impl(
             state,
             stop_signals,
@@ -422,9 +431,7 @@ pub async fn process_message_impl(
     }
 
     if is_command && !is_mention {
-        log::info!(
-            "bot: message looks like a command but no mention, ignoring"
-        );
+        log::info!("bot: message looks like a command but no mention, ignoring");
         return Ok(None);
     }
 
@@ -454,7 +461,10 @@ pub async fn process_message_impl(
 
     log::info!(
         "bot: routing to LLM pipeline (chat={}, user={}, tools_enabled={}, is_dm={})",
-        chat_id, user_id, tools_enabled, is_dm
+        chat_id,
+        user_id,
+        tools_enabled,
+        is_dm
     );
 
     self::bot_pipeline::process_with_llm_impl(

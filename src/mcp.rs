@@ -187,10 +187,7 @@ impl McpClient {
 
     /// Discover tools from the server.
     /// Parse tool entries from a `tools/list` response result into McpTool structs.
-    fn parse_tools_from_result(
-        &self,
-        result: &serde_json::Value,
-    ) -> Vec<McpTool> {
+    fn parse_tools_from_result(&self, result: &serde_json::Value) -> Vec<McpTool> {
         let tools_array = result
             .get("tools")
             .and_then(|t| t.as_array())
@@ -236,9 +233,7 @@ impl McpClient {
         let mut cursor: Option<String> = None;
 
         loop {
-            let params = cursor.as_ref().map(|c| {
-                serde_json::json!({"cursor": c})
-            });
+            let params = cursor.as_ref().map(|c| serde_json::json!({"cursor": c}));
 
             let result = self.rpc_call("tools/list", params).await?;
 
@@ -391,8 +386,8 @@ pub async fn invoke_tool(tool: &mut McpTool, arguments: &serde_json::Value) -> S
     let result = invoke_tool_once(tool, arguments).await;
 
     // Detect stale session: HTTP 500 with "Session not found" (session expired server-side)
-    let is_session_lost = result.contains("HTTP 500")
-        && result.to_lowercase().contains("session not found");
+    let is_session_lost =
+        result.contains("HTTP 500") && result.to_lowercase().contains("session not found");
 
     if is_session_lost {
         log::info!(

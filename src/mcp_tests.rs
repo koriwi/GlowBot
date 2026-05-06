@@ -294,10 +294,10 @@ async fn test_invoke_tool_session_expired_and_reinitialized() {
     Mock::given(matchers::method("POST"))
         .and(matchers::body_string_contains("tools/call"))
         .and(matchers::header("mcp-session-id", "newsess456"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(jsonrpc_ok(3, serde_json::json!({"result": "ok after reinit"}))),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(jsonrpc_ok(
+            3,
+            serde_json::json!({"result": "ok after reinit"}),
+        )))
         .mount(&mock)
         .await;
 
@@ -393,7 +393,7 @@ async fn test_invoke_tool_no_session_id_still_retries_on_session_not_found() {
     let mock = MockServer::start().await;
 
     // Mount retry mock FIRST (more specific), then fallback mock (less specific).
-    // Wiremock matches the first mounted mock, so the retry must be 
+    // Wiremock matches the first mounted mock, so the retry must be
     // mounted before the catch-all fallback.
 
     // Retry: tools/call with fresh session → success (mounted first, highest priority)
@@ -449,7 +449,11 @@ async fn test_invoke_tool_no_session_id_still_retries_on_session_not_found() {
     };
 
     let result = invoke_tool(&mut tool, &serde_json::json!({"query": "hello"})).await;
-    assert!(result.contains("ok"), "Expected retry success, got: {}", result);
+    assert!(
+        result.contains("ok"),
+        "Expected retry success, got: {}",
+        result
+    );
 }
 
 #[tokio::test]

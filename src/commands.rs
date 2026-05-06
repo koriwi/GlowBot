@@ -91,7 +91,7 @@ pub fn handle_command(
         Command::Stop => "Stop command received.".to_string(),
         Command::Tasks => String::new(), // handled in handle_bot_command
         Command::Run => String::new(),   // handled in handle_bot_command
-        Command::New => String::new(),    // handled in handle_bot_command
+        Command::New => String::new(),   // handled in handle_bot_command
         Command::Prompt => String::new(), // handled in handle_bot_command
     }
 }

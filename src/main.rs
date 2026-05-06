@@ -42,9 +42,13 @@ async fn run_bot() -> anyhow::Result<()> {
                 Ok(models) => {
                     let mut s = state.lock().await;
                     for m in &models {
-                        s.model_context_lengths.insert(m.id.clone(), m.context_length);
+                        s.model_context_lengths
+                            .insert(m.id.clone(), m.context_length);
                     }
-                    log::info!("Cached {} model context lengths from OpenRouter", models.len());
+                    log::info!(
+                        "Cached {} model context lengths from OpenRouter",
+                        models.len()
+                    );
                 }
                 Err(e) => {
                     log::warn!("Failed to fetch model context lengths: {}", e);
