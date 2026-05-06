@@ -357,6 +357,10 @@ pub(crate) fn send_media_tool_definition(media_dir: &str) -> ToolDefinition {
                     "caption": {
                         "type": "string",
                         "description": "Optional caption to send with the media."
+                    },
+                    "original_quality": {
+                        "type": "boolean",
+                        "description": "If true, send the file as a document to preserve original quality without compression or resize. Default: false."
                     }
                 },
                 "required": ["file_path"]

@@ -118,6 +118,20 @@ fn test_update_memory_tool_definition() {
 }
 
 #[test]
+fn test_send_media_tool_definition() {
+    let def = send_media_tool_definition("/media");
+    assert_eq!(def.function.name, "send_media");
+    assert!(!def.function.description.is_empty());
+    assert!(def.function.description.contains("/media"));
+    let params = &def.function.parameters;
+    assert_eq!(params["required"][0], "file_path");
+    assert!(params["properties"]["file_path"].is_object());
+    assert!(params["properties"]["caption"].is_object());
+    assert!(params["properties"]["original_quality"].is_object());
+    assert_eq!(params["properties"]["original_quality"]["type"], "boolean");
+}
+
+#[test]
 fn test_chat_message_assistant_empty_text() {
     let msg = ChatMessage::assistant("");
     assert_eq!(msg.role, "assistant");

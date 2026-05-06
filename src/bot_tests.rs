@@ -1095,6 +1095,36 @@ async fn test_dispatch_send_media_no_tg_bot() {
 }
 
 #[tokio::test]
+async fn test_dispatch_send_media_original_quality() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    std::fs::write(data_dir.join("test.png"), b"fake png").unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_context_lengths: HashMap::new(),
+        last_usage: HashMap::new(),
+    }));
+    let out = dispatch_tool(
+        &state,
+        "-123",
+        "send_media",
+        &serde_json::json!({"file_path":"test.png", "original_quality": true}),
+        None,
+    )
+    .await;
+    // Without a tg_bot, still returns not available, but param is parsed correctly
+    assert_eq!(out, "Error: send_media not available in this context.");
+}
+
+#[tokio::test]
 async fn test_dispatch_bash_empty_command() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("data");

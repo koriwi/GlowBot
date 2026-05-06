@@ -101,6 +101,7 @@ pub(crate) async fn dispatch_tool(
                 return "Error: file_path required".into();
             }
             let caption = args["caption"].as_str().unwrap_or("");
+            let original_quality = args["original_quality"].as_bool().unwrap_or(false);
             let data_dir = { state.lock().await.data_dir.clone() };
             let full_path = if std::path::Path::new(file_path).is_absolute() {
                 std::path::PathBuf::from(file_path)
@@ -118,30 +119,37 @@ pub(crate) async fn dispatch_tool(
                     .and_then(|e| e.to_str())
                     .unwrap_or("")
                     .to_lowercase();
-                let result = match ext.as_str() {
-                    "jpg" | "jpeg" | "png" | "gif" | "webp" => {
-                        bot.send_photo(chat, input)
-                            .caption(caption)
-                            .await
-                            .map(|_| ())
-                    }
-                    "mp4" | "mov" | "avi" | "webm" => {
-                        bot.send_video(chat, input)
-                            .caption(caption)
-                            .await
-                            .map(|_| ())
-                    }
-                    "mp3" | "ogg" | "wav" | "flac" => {
-                        bot.send_audio(chat, input)
-                            .caption(caption)
-                            .await
-                            .map(|_| ())
-                    }
-                    _ => {
-                        bot.send_document(chat, input)
-                            .caption(caption)
-                            .await
-                            .map(|_| ())
+                let result = if original_quality {
+                    bot.send_document(chat, input)
+                        .caption(caption)
+                        .await
+                        .map(|_| ())
+                } else {
+                    match ext.as_str() {
+                        "jpg" | "jpeg" | "png" | "gif" | "webp" => {
+                            bot.send_photo(chat, input)
+                                .caption(caption)
+                                .await
+                                .map(|_| ())
+                        }
+                        "mp4" | "mov" | "avi" | "webm" => {
+                            bot.send_video(chat, input)
+                                .caption(caption)
+                                .await
+                                .map(|_| ())
+                        }
+                        "mp3" | "ogg" | "wav" | "flac" => {
+                            bot.send_audio(chat, input)
+                                .caption(caption)
+                                .await
+                                .map(|_| ())
+                        }
+                        _ => {
+                            bot.send_document(chat, input)
+                                .caption(caption)
+                                .await
+                                .map(|_| ())
+                        }
                     }
                 };
                 match result {
