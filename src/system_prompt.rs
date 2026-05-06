@@ -113,7 +113,8 @@ Your personality:
 
     if tools_enabled && bash_enabled {
         prompt.push_str(&format!(
-            "- Use bash for files, APIs, and system tasks. Use curl, jq, grep, find, and other standard Unix tools.\n- Never run destructive commands (rm -rf, format, etc.) unless explicitly asked.\n- If a command fails, try to diagnose and fix it.\n"
+            "- Use bash for files, APIs, and system tasks. Use curl, jq, grep, find, and other standard Unix tools.\n- When using `curl` to download files, always save them directly to `{media_dir}` (e.g. `curl -o {media_dir}/file.jpg URL`). This ensures they are accessible via `send_media` and `list_media`.\n- Never run destructive commands (rm -rf, format, etc.) unless explicitly asked.\n- If a command fails, try to diagnose and fix it.\n",
+            media_dir = media_dir
         ));
     }
 
@@ -147,6 +148,8 @@ mod tests {
         assert!(prompt.contains("-123"));
         assert!(prompt.contains("pw-media"));
         assert!(prompt.contains("/media/pw-media"));
+        assert!(prompt.contains("When using `curl` to download files"));
+        assert!(prompt.contains("curl -o /media/file.jpg URL"));
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         assert!(prompt.contains(&today));
     }
@@ -168,6 +171,7 @@ mod tests {
         assert!(prompt.contains("bash tool is disabled"));
         assert!(!prompt.contains("Never run destructive commands"));
         assert!(!prompt.contains("curl, jq, grep"));
+        assert!(!prompt.contains("When using `curl` to download files"));
     }
 
     #[test]
@@ -377,6 +381,7 @@ mod tests {
         );
         assert!(prompt.contains("/custom_media"));
         assert!(prompt.contains("/custom_media/pw-media"));
+        assert!(prompt.contains("curl -o /custom_media/file.jpg URL"));
     }
 
     #[test]
@@ -397,5 +402,6 @@ mod tests {
         assert!(prompt.contains("add_task"));
         assert!(!prompt.contains("curl, jq, grep"));
         assert!(!prompt.contains("Never run destructive"));
+        assert!(!prompt.contains("When using `curl` to download files"));
     }
 }
