@@ -29,7 +29,7 @@ bash_enabled: true                   # (default: true)
 
 # Directory where media files (images, videos, etc.) are stored,
 # typically populated by MCP tools or bash downloads.
-# The send_media tool references this path for finding files.
+# The send_media and list_media tools reference this path.
 media_dir: "/media"                  # (default: /media)
 
 # MCP servers for additional tools (Model Context Protocol)

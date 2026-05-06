@@ -104,6 +104,7 @@ pub fn all_tool_definitions(
     if embedding_model.is_some() {
         tools.push(search_conversations_tool_definition());
     }
+    tools.push(list_media_tool_definition(media_dir));
     tools.push(send_media_tool_definition(media_dir));
     if include_bash {
         tools.insert(0, bash_tool_definition());
@@ -364,6 +365,34 @@ pub(crate) fn send_media_tool_definition(media_dir: &str) -> ToolDefinition {
                     }
                 },
                 "required": ["file_path"]
+            }),
+        },
+    }
+}
+
+/// The list_media tool definition.
+pub(crate) fn list_media_tool_definition(media_dir: &str) -> ToolDefinition {
+    let desc = format!(
+        "List the contents of the media directory at '{}' and its subdirectories recursively. \
+         Returns a tree of files and directories with relative paths. \
+         Use this to browse available media files before deciding which to send with send_media. \
+         Results are truncated at 500 entries to avoid overwhelming output.",
+        media_dir
+    );
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "list_media".into(),
+            description: desc,
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "subpath": {
+                        "type": "string",
+                        "description": "Optional: a subdirectory path relative to the media directory to list (e.g. 'images/cats'). If omitted, lists the root media directory."
+                    }
+                },
+                "required": []
             }),
         },
     }
