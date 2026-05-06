@@ -248,11 +248,9 @@ async fn test_process_message_command_prompt() {
         .await
         .unwrap();
     let resp = result.unwrap();
-    // Should contain the system prompt and conversation history sections
-    assert!(resp.contains("=== SYSTEM PROMPT ==="));
+    // Should contain the system prompt
     assert!(resp.contains("GlowBot"));
-    assert!(resp.contains("=== CONVERSATION HISTORY ==="));
-    assert!(resp.contains("(no history)"));
+    assert!(!resp.contains("CONVERSATION HISTORY"));
 }
 
 #[tokio::test]

@@ -76,7 +76,7 @@ pub(crate) async fn handle_bot_command_impl(
         )));
     }
 
-    // /prompt shows the full prompt that would be sent to the LLM
+    // /prompt shows the system prompt that would be sent to the LLM
     if matches!(command, crate::commands::Command::Prompt) {
         let prompt_text = {
             let s = state.lock().await;
@@ -86,30 +86,7 @@ pub(crate) async fn handle_bot_command_impl(
             } else {
                 true
             };
-            let system_prompt =
-                s.assemble_system_prompt(chat_id, tools_enabled, _user_id);
-            let history = match s.db.load_messages(
-                chat_id,
-                s.config.conversation.recent_messages_window_size,
-                s.db.get_cutoff(chat_id).unwrap_or(None),
-            ) {
-                Ok(msgs) => msgs,
-                Err(_) => Vec::new(),
-            };
-            let mut full = String::new();
-            full.push_str("=== SYSTEM PROMPT ===\n\n");
-            full.push_str(&system_prompt);
-            full.push_str("\n\n=== CONVERSATION HISTORY ===\n\n");
-            if history.is_empty() {
-                full.push_str("(no history)\n");
-            } else {
-                for (i, msg) in history.iter().enumerate() {
-                    let role = &msg.role;
-                    let text = msg.text_content();
-                    full.push_str(&format!("[{}] {}: {}\n", i, role, text));
-                }
-            }
-            full
+            s.assemble_system_prompt(chat_id, tools_enabled, _user_id)
         };
 
         return Ok(Some(prompt_text));

@@ -68,7 +68,7 @@ async fn run_bot() -> anyhow::Result<()> {
     let commands = vec![
         BotCommand::new("status", "Show current config for this chat"),
         BotCommand::new("tasks", "Show pending tasks for this chat"),
-        BotCommand::new("prompt", "Show the full prompt that would be sent to the LLM"),
+        BotCommand::new("prompt", "Show the system prompt sent to the LLM"),
         BotCommand::new("run", "Run task agent immediately for this chat"),
         BotCommand::new("stop", "Stop the bot"),
     ];
