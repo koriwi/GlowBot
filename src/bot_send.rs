@@ -35,22 +35,34 @@ pub async fn send_message(bot: &teloxide::Bot, chat_id: ChatId, text: &str) {
     }
 }
 
-/// Split text into chunks of at most `max_len` characters, preferring
+/// Split text into chunks of at most `max_chars` characters, preferring
 /// newline boundaries so we don't break mid-word or mid-sentence.
-fn split_for_telegram(text: &str, max_len: usize) -> Vec<String> {
+///
+/// Works on Unicode character count (not byte count), so multi-byte
+/// characters like `ü`, `é`, or emoji are counted as single characters.
+fn split_for_telegram(text: &str, max_chars: usize) -> Vec<String> {
     let mut chunks = Vec::new();
     let mut remaining = text;
 
     while !remaining.is_empty() {
-        if remaining.len() <= max_len {
+        let char_count = remaining.chars().count();
+        if char_count <= max_chars {
             chunks.push(remaining.to_string());
             break;
         }
-        // Prefer splitting at a newline within the chunk window
-        let split_at = if let Some(pos) = remaining[..max_len].rfind('\n') {
+        // Find the byte offset of the character at position max_chars.
+        // char_indices() yields (byte_offset, char), so .nth(max_chars)
+        // gives the byte offset where the (max_chars+1)-th char starts.
+        let byte_at = remaining
+            .char_indices()
+            .nth(max_chars)
+            .map(|(i, _)| i)
+            .unwrap_or(remaining.len());
+        // Prefer splitting at a newline before this position (if any)
+        let split_at = if let Some(pos) = remaining[..byte_at].rfind('\n') {
             pos + 1 // include the newline in the current chunk
         } else {
-            max_len
+            byte_at
         };
         chunks.push(remaining[..split_at].to_string());
         remaining = &remaining[split_at..];
@@ -109,9 +121,31 @@ mod tests {
     fn test_split_multiple_newlines() {
         let text = "a\n\nb\n\nc"; // 7 chars
         let result = split_for_telegram(text, 3);
-        // rfind('\n') in "a\n\n"[..3] finds pos 2, splits at 3 → "a\n\n"
-        // then "b\n\n" (rfind finds pos 2 again) → "b\n\n"
-        // then "c" fits.
+        // rfind('\n') in first 3 chars finds pos 3 → "a\n\n"
+        // then "b\n\n", then "c" fits.
         assert_eq!(result, vec!["a\n\n", "b\n\n", "c"]);
+    }
+
+    #[test]
+    fn test_split_multibyte_utf8() {
+        // ü is 2 bytes but 1 char. 4 lines of 3–4 chars each = 15 chars total.
+        // max_chars=6 → splits as: "abü\n" (4), "cdü\n" (4), "efü\n" (4), "ghü" (3).
+        let text = "abü\ncdü\nefü\nghü";
+        let result = split_for_telegram(text, 6);
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0], "abü\n");
+        assert_eq!(result[1], "cdü\n");
+        assert_eq!(result[2], "efü\n");
+        assert_eq!(result[3], "ghü");
+    }
+
+    #[test]
+    fn test_split_emoji() {
+        // 😀 is 4 bytes but 1 char
+        let text = "😀😀😀😀😀"; // 5 chars
+        let result = split_for_telegram(text, 3);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], "😀😀😀");
+        assert_eq!(result[1], "😀😀");
     }
 }
