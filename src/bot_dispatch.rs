@@ -483,19 +483,33 @@ pub(crate) async fn dispatch_tool(
             }
         }
         name if name.starts_with("mcp_") => {
-            let s = state.lock().await;
-            match s
-                .mcp_tools
-                .iter()
-                .find(|t| format!("mcp_{}_{}", t.server_name, t.name) == name)
-            {
-                Some(t) => {
-                    let tc = t.clone();
-                    drop(s);
-                    crate::mcp::invoke_tool(&tc, args).await
+            let tool_name = name.to_string();
+            let args_clone = args.clone();
+            let result = {
+                let s = state.lock().await;
+                match s
+                    .mcp_tools
+                    .iter()
+                    .position(|t| format!("mcp_{}_{}", t.server_name, t.name) == tool_name)
+                {
+                    Some(idx) => {
+                        let mut tc = s.mcp_tools[idx].clone();
+                        drop(s);
+                        let result = crate::mcp::invoke_tool(&mut tc, &args_clone).await;
+                        // After invoke_tool may have updated session_id via re-init,
+                        // propagate back to state.mcp_tools so future calls use the new session.
+                        let mut s = state.lock().await;
+                        if let Some(orig) = s.mcp_tools.get_mut(idx) {
+                            orig.session_id = tc.session_id.clone();
+                        }
+                        result
+                    }
+                    None => {
+                        format!("MCP tool not found: {}", tool_name)
+                    }
                 }
-                None => format!("MCP tool not found: {}", name),
-            }
+            };
+            result
         }
         "get_recent_messages" => {
             let count = args["count"].as_i64().unwrap_or(10) as usize;

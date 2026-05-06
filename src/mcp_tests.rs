@@ -189,7 +189,7 @@ async fn test_invoke_tool_success() {
         .mount(&mock)
         .await;
 
-    let tool = McpTool {
+    let mut tool = McpTool {
         server_name: "s".into(),
         name: "search".into(),
         description: "d".into(),
@@ -200,7 +200,7 @@ async fn test_invoke_tool_success() {
         transport: "streamable".into(),
     };
 
-    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    let result = invoke_tool(&mut tool, &serde_json::json!({"query": "hello"})).await;
     assert!(result.contains("found it"));
 }
 
@@ -212,7 +212,7 @@ async fn test_invoke_tool_error_response() {
         .mount(&mock)
         .await;
 
-    let tool = McpTool {
+    let mut tool = McpTool {
         server_name: "s".into(),
         name: "bad".into(),
         description: "d".into(),
@@ -223,7 +223,7 @@ async fn test_invoke_tool_error_response() {
         transport: "streamable".into(),
     };
 
-    let result = invoke_tool(&tool, &serde_json::json!({})).await;
+    let result = invoke_tool(&mut tool, &serde_json::json!({})).await;
     assert!(result.contains("tool exploded"));
 }
 
@@ -235,7 +235,7 @@ async fn test_invoke_tool_parse_error() {
         .mount(&mock)
         .await;
 
-    let tool = McpTool {
+    let mut tool = McpTool {
         server_name: "s".into(),
         name: "bad".into(),
         description: "d".into(),
@@ -246,7 +246,7 @@ async fn test_invoke_tool_parse_error() {
         transport: "streamable".into(),
     };
 
-    let result = invoke_tool(&tool, &serde_json::json!({})).await;
+    let result = invoke_tool(&mut tool, &serde_json::json!({})).await;
     assert!(result.contains("parse error"), "result: {}", result);
     assert!(
         result.contains("not json"),
@@ -301,7 +301,7 @@ async fn test_invoke_tool_session_expired_and_reinitialized() {
         .mount(&mock)
         .await;
 
-    let tool = McpTool {
+    let mut tool = McpTool {
         server_name: "s".into(),
         name: "search".into(),
         description: "d".into(),
@@ -312,12 +312,14 @@ async fn test_invoke_tool_session_expired_and_reinitialized() {
         transport: "streamable".into(),
     };
 
-    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    let result = invoke_tool(&mut tool, &serde_json::json!({"query": "hello"})).await;
     assert!(
         result.contains("ok after reinit"),
         "Expected 'ok after reinit' in: {}",
         result
     );
+    // Verify the tool's session_id was updated in place
+    assert_eq!(tool.session_id.as_deref(), Some("newsess456"));
 }
 
 #[tokio::test]
@@ -338,7 +340,7 @@ async fn test_invoke_tool_session_expired_reinit_fails_returns_original_error() 
         .mount(&mock)
         .await;
 
-    let tool = McpTool {
+    let mut tool = McpTool {
         server_name: "s".into(),
         name: "search".into(),
         description: "d".into(),
@@ -349,7 +351,7 @@ async fn test_invoke_tool_session_expired_reinit_fails_returns_original_error() 
         transport: "streamable".into(),
     };
 
-    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    let result = invoke_tool(&mut tool, &serde_json::json!({"query": "hello"})).await;
     assert!(
         result.contains("Session not found"),
         "Expected original error preserved, got: {}",
@@ -367,7 +369,7 @@ async fn test_invoke_tool_http_500_other_error_no_retry() {
         .mount(&mock)
         .await;
 
-    let tool = McpTool {
+    let mut tool = McpTool {
         server_name: "s".into(),
         name: "search".into(),
         description: "d".into(),
@@ -378,7 +380,7 @@ async fn test_invoke_tool_http_500_other_error_no_retry() {
         transport: "streamable".into(),
     };
 
-    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    let result = invoke_tool(&mut tool, &serde_json::json!({"query": "hello"})).await;
     assert!(
         result.contains("Internal server error"),
         "Expected error returned without retry, got: {}",
@@ -435,7 +437,7 @@ async fn test_invoke_tool_no_session_id_still_retries_on_session_not_found() {
         .mount(&mock)
         .await;
 
-    let tool = McpTool {
+    let mut tool = McpTool {
         server_name: "s".into(),
         name: "search".into(),
         description: "d".into(),
@@ -446,7 +448,7 @@ async fn test_invoke_tool_no_session_id_still_retries_on_session_not_found() {
         transport: "streamable".into(),
     };
 
-    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    let result = invoke_tool(&mut tool, &serde_json::json!({"query": "hello"})).await;
     assert!(result.contains("ok"), "Expected retry success, got: {}", result);
 }
 
@@ -460,7 +462,7 @@ async fn test_invoke_tool_stateless_transport_no_retry() {
         .mount(&mock)
         .await;
 
-    let tool = McpTool {
+    let mut tool = McpTool {
         server_name: "s".into(),
         name: "search".into(),
         description: "d".into(),
@@ -471,7 +473,7 @@ async fn test_invoke_tool_stateless_transport_no_retry() {
         transport: "http".into(),
     };
 
-    let result = invoke_tool(&tool, &serde_json::json!({"query": "hello"})).await;
+    let result = invoke_tool(&mut tool, &serde_json::json!({"query": "hello"})).await;
     // Should return the error without attempting re-init (no initialize mock mounted)
     assert!(result.contains("Session not found"));
 }
@@ -479,7 +481,7 @@ async fn test_invoke_tool_stateless_transport_no_retry() {
 #[tokio::test]
 async fn test_invoke_tool_network_error() {
     // Use a URL that's guaranteed to fail
-    let tool = McpTool {
+    let mut tool = McpTool {
         server_name: "s".into(),
         name: "bad".into(),
         description: "d".into(),
@@ -490,7 +492,7 @@ async fn test_invoke_tool_network_error() {
         transport: "streamable".into(),
     };
 
-    let result = invoke_tool(&tool, &serde_json::json!({})).await;
+    let result = invoke_tool(&mut tool, &serde_json::json!({})).await;
     assert!(result.contains("request failed"), "result: {}", result);
 }
 

@@ -385,8 +385,9 @@ async fn reinitialize_mcp_session(tool: &McpTool) -> Option<String> {
 }
 
 /// Invoke an MCP tool and return the result.
-/// On HTTP 500 "Session not found", automatically re-initializes the session and retries once.
-pub async fn invoke_tool(tool: &McpTool, arguments: &serde_json::Value) -> String {
+/// On HTTP 500 "Session not found", automatically re-initializes the session,
+/// updates `tool.session_id` in place, and retries once.
+pub async fn invoke_tool(tool: &mut McpTool, arguments: &serde_json::Value) -> String {
     let result = invoke_tool_once(tool, arguments).await;
 
     // Detect stale session: HTTP 500 with "Session not found" (session expired server-side)
@@ -400,14 +401,14 @@ pub async fn invoke_tool(tool: &McpTool, arguments: &serde_json::Value) -> Strin
             tool.name
         );
 
-        if let Some(new_session_id) = reinitialize_mcp_session(tool).await {
-            let mut new_tool = tool.clone();
-            new_tool.session_id = Some(new_session_id);
+        // Reborrow as immutable for the reinit call
+        if let Some(new_session_id) = reinitialize_mcp_session(&*tool).await {
+            tool.session_id = Some(new_session_id);
             log::info!(
                 "MCP session re-initialized for {}, retrying tool call",
                 tool.server_name
             );
-            return invoke_tool_once(&new_tool, arguments).await;
+            return invoke_tool_once(tool, arguments).await;
         }
 
         log::warn!(
