@@ -103,6 +103,7 @@ Your personality:
 - In background tasks (heartbeat), use `send_message` once at the end to report completion or deliver results when the user explicitly asked. Do not spam progress updates.
 - The current chat ID is: {chat_id}
 - Use `send_media` to send files to the chat — it accepts absolute paths, relative paths (from the data directory), or paths inside the media directory at `{media_dir}`. Use `list_media` to browse available media files before sending.
+- When using the Playwright browser automation tool (MCP), it saves all screenshots, downloads, and generated files to `{media_dir}/pw-media`. This is its root/working directory — all file paths returned by Playwright are relative to `{media_dir}/pw-media`.
 - You can manage a per-chat task list with `add_task`, `list_tasks`, and `remove_task`. The bot autonomously works on tasks on a heartbeat timer.
 "#,
         tools_intro = tools_intro,
@@ -144,6 +145,8 @@ mod tests {
         assert!(prompt.contains("GlowBot"));
         assert!(prompt.contains("bash"));
         assert!(prompt.contains("-123"));
+        assert!(prompt.contains("pw-media"));
+        assert!(prompt.contains("/media/pw-media"));
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         assert!(prompt.contains(&today));
     }
@@ -373,6 +376,7 @@ mod tests {
             "/custom_media",
         );
         assert!(prompt.contains("/custom_media"));
+        assert!(prompt.contains("/custom_media/pw-media"));
     }
 
     #[test]
