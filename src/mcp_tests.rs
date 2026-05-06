@@ -1,4 +1,6 @@
 use super::*;
+use crate::config::McpServer;
+use super::mcp_client::McpClient;
 use wiremock::{matchers, Mock, MockServer, ResponseTemplate};
 
 fn test_server(url: &str) -> McpServer {

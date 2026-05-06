@@ -4,6 +4,13 @@ use std::sync::Arc;
 use teloxide::prelude::*;
 use tokio::sync::Mutex;
 
+#[path = "bot_dispatch_media.rs"]
+mod bot_dispatch_media;
+#[path = "bot_dispatch_memory.rs"]
+mod bot_dispatch_memory;
+#[path = "bot_dispatch_skills.rs"]
+mod bot_dispatch_skills;
+
 /// Log a tool call to `tool_calls.log` in the given data directory.
 pub(crate) fn log_tool_call_to(
     data_dir: &std::path::Path,
@@ -94,170 +101,10 @@ pub(crate) async fn dispatch_tool(
             }
         }
         "list_media" => {
-            let subpath = args["subpath"].as_str().unwrap_or("");
-            let media_dir = { state.lock().await.config.media_dir.clone() };
-            let base = std::path::PathBuf::from(&media_dir);
-            let target = if subpath.is_empty() {
-                base.clone()
-            } else {
-                // Prevent path traversal: only allow relative paths that stay inside media_dir
-                let normalized = subpath.trim_start_matches('/').trim_end_matches('/');
-                let resolved = base.join(normalized);
-                if !resolved.exists() {
-                    return format!("Error: directory not found: {}", resolved.display());
-                }
-                match resolved.canonicalize() {
-                    Ok(p) if p.starts_with(&base) => p,
-                    _ => {
-                        return format!(
-                            "Error: invalid subpath '{}' — must be inside the media directory '{}'",
-                            subpath, media_dir
-                        );
-                    }
-                }
-            };
-            if !target.exists() {
-                return format!("Error: directory not found: {}", target.display());
-            }
-            if !target.is_dir() {
-                return format!(
-                    "Error: '{}' is a file, not a directory. Use send_media to send it.",
-                    target.display()
-                );
-            }
-            let max_entries = 500usize;
-            let mut entries: Vec<String> = Vec::new();
-            let mut overflow = false;
-            fn walk(
-                dir: &std::path::Path,
-                base: &std::path::Path,
-                prefix: &str,
-                entries: &mut Vec<String>,
-                max: usize,
-                overflow: &mut bool,
-            ) {
-                if *overflow {
-                    return;
-                }
-                let read_dir = match std::fs::read_dir(dir) {
-                    Ok(rd) => rd,
-                    Err(_) => return,
-                };
-                let mut items: Vec<std::path::PathBuf> = Vec::new();
-                for entry in read_dir.flatten() {
-                    items.push(entry.path());
-                }
-                items.sort();
-                for path in items {
-                    if *overflow {
-                        return;
-                    }
-                    let rel = path.strip_prefix(base).unwrap_or(&path);
-                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("???");
-                    if path.is_dir() {
-                        if entries.len() >= max {
-                            *overflow = true;
-                            return;
-                        }
-                        entries.push(format!("{}📁 {}/", prefix, name));
-                        walk(
-                            &path,
-                            base,
-                            &format!("{}  ", prefix),
-                            entries,
-                            max,
-                            overflow,
-                        );
-                    } else {
-                        if entries.len() >= max {
-                            *overflow = true;
-                            return;
-                        }
-                        let size = std::fs::metadata(&path).ok().map(|m| m.len()).unwrap_or(0);
-                        entries.push(format!(
-                            "{}📄 {} ({})",
-                            prefix,
-                            rel.display(),
-                            human_size(size)
-                        ));
-                    }
-                }
-            }
-            walk(&target, &base, "", &mut entries, max_entries, &mut overflow);
-            let mut out = format!("Media directory listing for '{}':\n", media_dir);
-            if entries.is_empty() {
-                out.push_str("(empty)");
-            } else {
-                for e in &entries {
-                    out.push_str(e);
-                    out.push('\n');
-                }
-                if overflow {
-                    out.push_str("... (truncated at 500 entries)\n");
-                }
-            }
-            out
+            bot_dispatch_media::tool_list_media(state, args).await
         }
         "send_media" => {
-            let file_path = args["file_path"].as_str().unwrap_or("");
-            if file_path.is_empty() {
-                return "Error: file_path required".into();
-            }
-            let caption = args["caption"].as_str().unwrap_or("");
-            let original_quality = args["original_quality"].as_bool().unwrap_or(false);
-            let data_dir = { state.lock().await.data_dir.clone() };
-            let full_path = if std::path::Path::new(file_path).is_absolute() {
-                std::path::PathBuf::from(file_path)
-            } else {
-                data_dir.join(file_path)
-            };
-            if !full_path.exists() {
-                return format!("Error: file not found: {}", full_path.display());
-            }
-            if let Some(bot) = tg_bot {
-                let chat = ChatId(cid.parse().unwrap_or_default());
-                let input = teloxide::types::InputFile::file(&full_path);
-                let ext = full_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                let result = if original_quality {
-                    bot.send_document(chat, input)
-                        .caption(caption)
-                        .await
-                        .map(|_| ())
-                } else {
-                    match ext.as_str() {
-                        "jpg" | "jpeg" | "png" | "gif" | "webp" => bot
-                            .send_photo(chat, input)
-                            .caption(caption)
-                            .await
-                            .map(|_| ()),
-                        "mp4" | "mov" | "avi" | "webm" => bot
-                            .send_video(chat, input)
-                            .caption(caption)
-                            .await
-                            .map(|_| ()),
-                        "mp3" | "ogg" | "wav" | "flac" => bot
-                            .send_audio(chat, input)
-                            .caption(caption)
-                            .await
-                            .map(|_| ()),
-                        _ => bot
-                            .send_document(chat, input)
-                            .caption(caption)
-                            .await
-                            .map(|_| ()),
-                    }
-                };
-                match result {
-                    Ok(()) => format!("Media sent: {}", full_path.display()),
-                    Err(e) => format!("Failed to send media: {}", e),
-                }
-            } else {
-                "Error: send_media not available in this context.".into()
-            }
+            bot_dispatch_media::tool_send_media(state, &cid, args, tg_bot).await
         }
         "bash" => {
             if !state.lock().await.config.is_bash_enabled(&cid) {
@@ -285,93 +132,16 @@ pub(crate) async fn dispatch_tool(
             }
         }
         "read_memory" => {
-            let uid = args["user_id"].as_str().unwrap_or("");
-            let s = state.lock().await;
-            match crate::memory::load_memory(&s.chats_dir(), &cid, uid) {
-                Some(m) => serde_json::json!({
-                    "user_id": m.frontmatter.user_id,
-                    "username": m.frontmatter.username,
-                    "call_name": m.frontmatter.call_name,
-                    "description": m.frontmatter.description,
-                    "body": m.body,
-                })
-                .to_string(),
-                None => format!("No memory file found for user_id={} in chat {}", uid, cid),
-            }
+            bot_dispatch_memory::tool_read_memory(state, &cid, args).await
         }
         "update_memory" => {
-            let uid = args["user_id"].as_str().unwrap_or("");
-            if uid.is_empty() {
-                return "Error: user_id is required".into();
-            }
-            let s = state.lock().await;
-            let chats_dir = s.chats_dir();
-            let mut mem = crate::memory::load_memory(&chats_dir, &cid, uid)
-                .unwrap_or_else(|| crate::memory::Memory::new(uid, ""));
-            let mut changed = false;
-            if let Some(v) = args["username"].as_str() {
-                mem.frontmatter.username = v.into();
-                changed = true;
-            }
-            if let Some(v) = args["call_name"].as_str() {
-                mem.frontmatter.call_name = v.into();
-                changed = true;
-            }
-            if let Some(v) = args["description"].as_str() {
-                mem.frontmatter.description = v.into();
-                changed = true;
-            }
-            if let Some(v) = args["log_entry"].as_str() {
-                mem.append_log(v);
-                changed = true;
-            }
-            if changed {
-                match crate::memory::save_memory(&chats_dir, &cid, uid, &mem) {
-                    Ok(()) => format!("Memory updated for {}", uid),
-                    Err(e) => format!("Error: {}", e),
-                }
-            } else {
-                "No fields to update.".into()
-            }
+            bot_dispatch_memory::tool_update_memory(state, &cid, args).await
         }
         "read_chat_memory" => {
-            let s = state.lock().await;
-            match crate::memory::load_chat_memory(&s.chats_dir(), &cid) {
-                Some(m) => serde_json::json!({
-                    "call_name": m.frontmatter.call_name,
-                    "description": m.frontmatter.description,
-                    "body": m.body,
-                })
-                .to_string(),
-                None => format!("No chat memory for {}", cid),
-            }
+            bot_dispatch_memory::tool_read_chat_memory(state, &cid).await
         }
         "update_chat_memory" => {
-            let s = state.lock().await;
-            let chats_dir = s.chats_dir();
-            let mut mem = crate::memory::load_chat_memory(&chats_dir, &cid)
-                .unwrap_or_else(crate::memory::Memory::new_chat);
-            let mut changed = false;
-            if let Some(v) = args["call_name"].as_str() {
-                mem.frontmatter.call_name = v.into();
-                changed = true;
-            }
-            if let Some(v) = args["description"].as_str() {
-                mem.frontmatter.description = v.into();
-                changed = true;
-            }
-            if let Some(v) = args["log_entry"].as_str() {
-                mem.append_log(v);
-                changed = true;
-            }
-            if changed {
-                match crate::memory::save_chat_memory(&chats_dir, &cid, &mem) {
-                    Ok(()) => "Chat memory updated".into(),
-                    Err(e) => format!("Error: {}", e),
-                }
-            } else {
-                "No fields to update.".into()
-            }
+            bot_dispatch_memory::tool_update_chat_memory(state, &cid, args).await
         }
         "add_task" => {
             let d = args["description"].as_str().unwrap_or("");
@@ -379,7 +149,8 @@ pub(crate) async fn dispatch_tool(
                 return "Error: description required".into();
             }
             let s = state.lock().await;
-            let mut list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            let mut list =
+                crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
             let id = list.add(d);
             let _ = list.save(&s.chats_dir(), &cid);
             format!("Task '{}' added: {}", id, d)
@@ -399,7 +170,8 @@ pub(crate) async fn dispatch_tool(
                 return "Error: id required".into();
             }
             let s = state.lock().await;
-            let mut list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            let mut list =
+                crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
             if list.remove(id) {
                 let _ = list.save(&s.chats_dir(), &cid);
                 format!("Task '{}' removed. {} remaining.", id, list.tasks.len())
@@ -408,68 +180,13 @@ pub(crate) async fn dispatch_tool(
             }
         }
         "create_skill" => {
-            let name = args["name"].as_str().unwrap_or("");
-            let desc = args["description"].as_str().unwrap_or("");
-            let body = args["body"].as_str().unwrap_or("");
-            if name.is_empty() || desc.is_empty() || body.is_empty() {
-                return "Error: name, description, body required".into();
-            }
-            let s = state.lock().await;
-            let fm = crate::skills::SkillFrontmatter {
-                name: name.into(),
-                description: desc.into(),
-            };
-            match crate::skills::write_skill(&s.skills_dir(), name, &fm, body) {
-                Ok(_) => format!("Skill '{}' created", name),
-                Err(e) => format!("Error: {}", e),
-            }
+            bot_dispatch_skills::tool_create_skill(state, args).await
         }
         "read_skill" => {
-            let name = args["name"].as_str().unwrap_or("");
-            if name.is_empty() {
-                return "Error: name required".into();
-            }
-            let s = state.lock().await;
-            let path = s.skills_dir().join(name).join("skill.md");
-            match crate::skills::load_skill(&path) {
-                Ok(skill) => serde_json::json!({
-                    "name": skill.frontmatter.name,
-                    "description": skill.frontmatter.description,
-                    "body": skill.body,
-                })
-                .to_string(),
-                Err(_) => format!("Skill '{}' not found", name),
-            }
+            bot_dispatch_skills::tool_read_skill(state, args).await
         }
         "update_skill" => {
-            let name = args["name"].as_str().unwrap_or("");
-            if name.is_empty() {
-                return "Error: name required".into();
-            }
-            let s = state.lock().await;
-            let path = s.skills_dir().join(name).join("skill.md");
-            let mut skill = match crate::skills::load_skill(&path) {
-                Ok(s) => s,
-                Err(_) => return format!("Skill '{}' not found", name),
-            };
-            let mut changed = false;
-            if let Some(v) = args["description"].as_str() {
-                skill.frontmatter.description = v.into();
-                changed = true;
-            }
-            if let Some(v) = args["body"].as_str() {
-                skill.body = v.into();
-                changed = true;
-            }
-            if !changed {
-                return "No fields to update.".into();
-            }
-            let yaml = serde_yaml::to_string(&skill.frontmatter).unwrap_or_default();
-            let content = format!("---\n{}---\n{}", yaml, skill.body);
-            match std::fs::write(&path, &content) {
-                Ok(()) => format!("Skill '{}' updated", name),
-                Err(e) => format!("Error: {}", e),
-            }
+            bot_dispatch_skills::tool_update_skill(state, args).await
         }
         name if name.starts_with("mcp_") => {
             let tool_name = name.to_string();
@@ -563,7 +280,8 @@ pub(crate) async fn dispatch_tool(
 
             let results = {
                 let s = state.lock().await;
-                s.db.search_embeddings(&cid, &query_embedding, &embedding_model, search_limit)
+                s.db
+                    .search_embeddings(&cid, &query_embedding, &embedding_model, search_limit)
                     .unwrap_or_default()
             };
 
@@ -585,21 +303,5 @@ pub(crate) async fn dispatch_tool(
             }
         }
         _ => format!("Unknown tool: {}", tool_name),
-    }
-}
-
-/// Format a byte count into a human-readable size string.
-fn human_size(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit_idx = 0;
-    while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_idx += 1;
-    }
-    if unit_idx == 0 {
-        format!("{} B", bytes)
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_idx])
     }
 }
