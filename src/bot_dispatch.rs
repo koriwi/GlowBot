@@ -483,13 +483,19 @@ pub(crate) async fn dispatch_tool(
                 {
                     Some(idx) => {
                         let mut tc = s.mcp_tools[idx].clone();
+                        let server = tc.server_name.clone();
                         drop(s);
                         let result = crate::mcp::invoke_tool(&mut tc, &args_clone).await;
-                        // After invoke_tool may have updated session_id via re-init,
-                        // propagate back to state.mcp_tools so future calls use the new session.
+                        // After invoke_tool may have updated session_id via re-init.
+                        // Propagate to ALL tools from the same server so subsequent
+                        // calls don't each need their own re-initialization.
                         let mut s = state.lock().await;
-                        if let Some(orig) = s.mcp_tools.get_mut(idx) {
-                            orig.session_id = tc.session_id.clone();
+                        if tc.session_id.is_some() {
+                            for t in &mut s.mcp_tools {
+                                if t.server_name == server {
+                                    t.session_id = tc.session_id.clone();
+                                }
+                            }
                         }
                         result
                     }
