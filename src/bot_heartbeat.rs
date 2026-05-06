@@ -2,7 +2,6 @@ use super::bot_dispatch::dispatch_tool_calls;
 use super::BotState;
 use crate::openrouter::{ChatCompletionRequest, ChatMessage};
 use std::sync::Arc;
-use teloxide::prelude::*;
 use tokio::sync::Mutex;
 
 /// Run a heartbeat background task for a chat. Uses the state directly.
@@ -121,12 +120,12 @@ pub async fn run_heartbeat_task(
                     Err(e) => {
                         log::error!("Heartbeat LLM error: {}", e);
                         let msg = format!("⚠️ Task '{}' failed: LLM error — {}", task_id, e);
-                        let _ = tg_bot
-                            .send_message(
-                                teloxide::types::ChatId(cid.parse().unwrap_or_default()),
-                                &msg,
-                            )
-                            .await;
+                        crate::bot_send::send_message(
+                            &tg_bot,
+                            teloxide::types::ChatId(cid.parse().unwrap_or_default()),
+                            &msg,
+                        )
+                        .await;
                         break;
                     }
                 }

@@ -87,10 +87,8 @@ pub(crate) async fn dispatch_tool(
             }
             if let Some(bot) = tg_bot {
                 let chat = ChatId(cid.parse().unwrap_or_default());
-                match bot.send_message(chat, text).await {
-                    Ok(_) => "Message sent.".into(),
-                    Err(e) => format!("Failed to send message: {}", e),
-                }
+                crate::bot_send::send_message(bot, chat, text).await;
+                "Message sent.".into()
             } else {
                 "Error: send_message not available in this context.".into()
             }
@@ -147,7 +145,7 @@ pub(crate) async fn dispatch_tool(
                 if *overflow {
                     return;
                 }
-                let mut read_dir = match std::fs::read_dir(dir) {
+                let read_dir = match std::fs::read_dir(dir) {
                     Ok(rd) => rd,
                     Err(_) => return,
                 };

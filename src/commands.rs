@@ -13,6 +13,8 @@ pub enum Command {
     Run,
     /// /new — set a "forget" cutoff; only messages after this point are included in context
     New,
+    /// /prompt — show the full system prompt and conversation history that would be sent to the LLM
+    Prompt,
 }
 
 /// Parse a Telegram message to see if it's a bot command.
@@ -37,6 +39,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "/tasks" => Some(Command::Tasks),
         "/run" => Some(Command::Run),
         "/new" => Some(Command::New),
+        "/prompt" => Some(Command::Prompt),
         _ => None,
     }
 }
@@ -89,6 +92,7 @@ pub fn handle_command(
         Command::Tasks => String::new(), // handled in handle_bot_command
         Command::Run => String::new(),   // handled in handle_bot_command
         Command::New => String::new(),    // handled in handle_bot_command
+        Command::Prompt => String::new(), // handled in handle_bot_command
     }
 }
 
@@ -128,6 +132,12 @@ mod tests {
     fn test_parse_command_new() {
         assert_eq!(parse_command("/new"), Some(Command::New));
         assert_eq!(parse_command("/new@glowythebot"), Some(Command::New));
+    }
+
+    #[test]
+    fn test_parse_command_prompt() {
+        assert_eq!(parse_command("/prompt"), Some(Command::Prompt));
+        assert_eq!(parse_command("/prompt@glowythebot"), Some(Command::Prompt));
     }
 
     #[test]

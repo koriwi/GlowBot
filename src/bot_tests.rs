@@ -241,6 +241,21 @@ async fn test_process_message_command_tasks_with_tasks() {
 }
 
 #[tokio::test]
+async fn test_process_message_command_prompt() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/prompt", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    // Should contain the system prompt and conversation history sections
+    assert!(resp.contains("=== SYSTEM PROMPT ==="));
+    assert!(resp.contains("GlowBot"));
+    assert!(resp.contains("=== CONVERSATION HISTORY ==="));
+    assert!(resp.contains("(no history)"));
+}
+
+#[tokio::test]
 async fn test_process_message_with_tool_call() {
     let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 

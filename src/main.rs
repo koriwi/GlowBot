@@ -68,6 +68,7 @@ async fn run_bot() -> anyhow::Result<()> {
     let commands = vec![
         BotCommand::new("status", "Show current config for this chat"),
         BotCommand::new("tasks", "Show pending tasks for this chat"),
+        BotCommand::new("prompt", "Show the full prompt that would be sent to the LLM"),
         BotCommand::new("run", "Run task agent immediately for this chat"),
         BotCommand::new("stop", "Stop the bot"),
     ];
@@ -188,12 +189,12 @@ async fn handle_message(
                 signal.store(true, std::sync::atomic::Ordering::SeqCst);
             }
         }
-        let _ = tg_bot
-            .send_message(
-                chat,
-                "⏹ Stop signal sent. Current operations will be cancelled.",
-            )
-            .await;
+        glowbot::bot_send::send_message(
+            &tg_bot,
+            chat,
+            "⏹ Stop signal sent. Current operations will be cancelled.",
+        )
+        .await;
         return;
     }
 
@@ -247,19 +248,7 @@ async fn handle_message(
                 chat_id,
                 response.len()
             );
-            // MarkdownV2: escape reserved chars that LLMs output in natural text,
-            // but preserve formatting markers: * _ ` ~
-            let escaped = glowbot::escape_v2_safe(&response);
-            let result = tg_bot
-                .send_message(chat, &escaped)
-                .parse_mode(teloxide::types::ParseMode::MarkdownV2)
-                .await;
-            if let Err(e) = result {
-                log::warn!("MarkdownV2 parse failed, sending as plain text: {}", e);
-                if let Err(e2) = tg_bot.send_message(chat, &response).await {
-                    log::error!("Failed to send message: {}", e2);
-                }
-            }
+            glowbot::bot_send::send_message(&tg_bot, chat, &response).await;
         }
         Ok(None) => {
             log::info!("main: no response for chat {}", chat_id);
