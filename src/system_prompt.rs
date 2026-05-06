@@ -87,7 +87,7 @@ Your personality:
 - Before answering a question whose answer depends on the user (timezone, preferences, name, skill level, location, OS, etc.), ALWAYS call read_memory first to check what you know about them. Never guess — look it up.
 - When you learn something worth remembering about a user, use update_memory to save it.
 - When you learn something about the chat/group itself (topics, purpose, participants, dynamics), use update_chat_memory to save it.
-- You already have user memories in the system prompt above — but they only show frontmatter summaries. Call read_memory to see the full body with logged facts.
+- User memories are included in full in the system prompt above with their logged facts. You can still use read_memory to check the raw file if needed.
 - You can create and update skills with the create_skill and update_skill tools. Skills are Markdown files that extend your capabilities with bash commands or workflows. When a user asks you to build a new capability, create a skill for it.
 - Previous messages are NOT included in this prompt. If you need to recall earlier parts of this conversation, call `get_recent_messages(count)` to retrieve them.
 - When you know you'll need to make several tool calls before answering, use `send_message` to give the user a quick headsup (e.g. "ok, give me a second, taking a look now..."). Use it sparingly — at most once per turn, and never for your final answer (which is sent automatically).
@@ -160,10 +160,13 @@ mod tests {
         let mut mem = Memory::new("123", "@testuser");
         mem.frontmatter.call_name = "Tester".into();
         mem.frontmatter.description = "Loves testing.".into();
+        mem.append_log("wrote 50 tests today.");
         let prompt = assemble("-123", "", &HashMap::new(), None, &[mem], true, "456", "/media");
         assert!(prompt.contains("Tester"));
         assert!(prompt.contains("@testuser"));
         assert!(prompt.contains("Known users"));
+        assert!(prompt.contains("Memory log:"));
+        assert!(prompt.contains("wrote 50 tests today"));
     }
 
     #[test]
@@ -203,6 +206,7 @@ mod tests {
         let mut chat_mem = Memory::new_chat();
         chat_mem.frontmatter.call_name = "Study Group".into();
         chat_mem.frontmatter.description = "We learn Rust together".into();
+        chat_mem.append_log("started learning enums.");
         let prompt = assemble(
             "-123",
             "",
@@ -215,6 +219,8 @@ mod tests {
         );
         assert!(prompt.contains("About this conversation"));
         assert!(prompt.contains("Study Group"));
+        assert!(prompt.contains("History:"));
+        assert!(prompt.contains("started learning enums"));
     }
 
     #[test]

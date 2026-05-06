@@ -72,7 +72,7 @@ impl Memory {
     }
 
     /// Generate the system prompt fragment injected into context.
-    /// Only includes frontmatter fields.
+    /// Includes frontmatter fields and full body (log entries).
     pub fn to_system_prompt(&self) -> String {
         let fm = &self.frontmatter;
         let mut parts = vec![format!("User ID: {}", fm.user_id)];
@@ -85,10 +85,14 @@ impl Memory {
         if !fm.description.is_empty() {
             parts.push(format!("About them: {}", fm.description));
         }
+        if !self.body.is_empty() {
+            parts.push(format!("Memory log:\n{}", self.body));
+        }
         parts.join("\n")
     }
 
     /// Generate the system prompt fragment for a chat-level memory.
+    /// Includes frontmatter fields and full body (log entries).
     pub fn to_chat_system_prompt(&self) -> String {
         let fm = &self.frontmatter;
         let mut parts = vec!["This chat:".to_string()];
@@ -97,6 +101,9 @@ impl Memory {
         }
         if !fm.description.is_empty() {
             parts.push(format!("- About: {}", fm.description));
+        }
+        if !self.body.is_empty() {
+            parts.push(format!("- History:\n{}", self.body));
         }
         if parts.len() == 1 {
             String::new()
@@ -397,6 +404,26 @@ mod tests {
         let prompt = mem.to_chat_system_prompt();
         assert!(prompt.contains("My Chat"));
         assert!(prompt.contains("Testing stuff"));
+    }
+
+    #[test]
+    fn test_to_system_prompt_with_body() {
+        let mut mem = Memory::new("123", "@test");
+        mem.append_log("likes Rust.");
+        mem.append_log("uses NixOS.");
+        let prompt = mem.to_system_prompt();
+        assert!(prompt.contains("Memory log:"));
+        assert!(prompt.contains("likes Rust"));
+        assert!(prompt.contains("uses NixOS"));
+    }
+
+    #[test]
+    fn test_to_chat_system_prompt_with_body() {
+        let mut mem = Memory::new_chat();
+        mem.append_log("group topic decided.");
+        let prompt = mem.to_chat_system_prompt();
+        assert!(prompt.contains("History:"));
+        assert!(prompt.contains("group topic decided"));
     }
 
     #[test]
