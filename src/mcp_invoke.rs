@@ -5,6 +5,16 @@ use super::mcp_client::{JsonRpcRequest, JsonRpcResponse, McpClient};
 /// Invoke an MCP tool over HTTP once (no session recovery).
 pub(crate) async fn invoke_tool_once(tool: &McpTool, arguments: &serde_json::Value) -> String {
     let tool_label = format!("mcp_{}_{}", tool.server_name, tool.name);
+    log::debug!(
+        "{}: calling {} at {} (transport={}, session={}, auth={})",
+        tool_label,
+        tool.name,
+        tool.server_url,
+        tool.transport,
+        tool.session_id.is_some(),
+        tool.api_key.is_some()
+    );
+
     let client = reqwest::Client::new();
     let request = JsonRpcRequest {
         jsonrpc: "2.0".into(),
@@ -90,8 +100,19 @@ pub(crate) async fn invoke_tool_once(tool: &McpTool, arguments: &serde_json::Val
 pub(crate) async fn reinitialize_mcp_session(tool: &McpTool) -> Option<String> {
     // Only session-based transports can be re-initialized
     if tool.transport != "streamable" {
+        log::debug!(
+            "MCP reinit: skipping non-streamable transport '{}' for {}",
+            tool.transport,
+            tool.server_name
+        );
         return None;
     }
+
+    log::info!(
+        "MCP reinit: re-initializing session for {} at {}",
+        tool.server_name,
+        tool.server_url
+    );
 
     let server = McpServer {
         name: tool.server_name.clone(),
@@ -164,21 +185,37 @@ pub async fn invoke_tool(tool: &mut McpTool, arguments: &serde_json::Value) -> S
 
 /// Connect to all configured MCP servers and return discovered tools.
 pub async fn discover_all(servers: &[McpServer]) -> anyhow::Result<Vec<McpTool>> {
+    log::info!("MCP discover_all: {} server(s) configured", servers.len());
     let mut all_tools = Vec::new();
 
     for server in servers {
+        log::info!(
+            "MCP discover_all: connecting to '{}' at {} (transport={}, auth={})",
+            server.name,
+            server.url,
+            server.transport,
+            server.api_key.is_some()
+        );
+
         let client = McpClient::new(server.clone());
 
         // Initialize (with protocol negotiation + session capture)
+        let start = std::time::Instant::now();
         if let Err(e) = client.initialize().await {
             log::warn!(
-                "Failed to initialize MCP server '{}' ({}): {}",
+                "MCP discover_all: failed to initialize '{}' ({}) after {:?}: {}",
                 server.name,
                 server.url,
+                start.elapsed(),
                 e
             );
             continue;
         }
+        log::debug!(
+            "MCP discover_all: '{}' initialized in {:?}",
+            server.name,
+            start.elapsed()
+        );
 
         // Discover tools
         match client.discover_tools().await {
@@ -192,7 +229,7 @@ pub async fn discover_all(servers: &[McpServer]) -> anyhow::Result<Vec<McpTool>>
             }
             Err(e) => {
                 log::warn!(
-                    "Failed to discover tools from MCP server '{}' ({}): {}",
+                    "MCP discover_all: failed to discover tools from '{}' ({}): {}",
                     server.name,
                     server.url,
                     e
@@ -201,5 +238,10 @@ pub async fn discover_all(servers: &[McpServer]) -> anyhow::Result<Vec<McpTool>>
         }
     }
 
+    log::info!(
+        "MCP discover_all: done, {} total tools from {} server(s)",
+        all_tools.len(),
+        servers.len()
+    );
     Ok(all_tools)
 }

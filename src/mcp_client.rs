@@ -63,6 +63,15 @@ impl McpClient {
             params,
         };
 
+        log::debug!(
+            "MCP '{}' → {} {} (transport={}, auth={})",
+            self.server.name,
+            self.server.url,
+            method,
+            self.server.transport,
+            self.server.api_key.is_some()
+        );
+
         let mut req = self
             .http
             .post(&self.server.url)
@@ -70,22 +79,46 @@ impl McpClient {
             .header("Accept", "application/json");
 
         if let Some(ref key) = self.server.api_key {
+            let masked = if key.len() > 8 {
+                format!("{}...{}", &key[..4], &key[key.len()-4..])
+            } else {
+                "****".to_string()
+            };
+            log::debug!("MCP '{}': using Bearer auth (key={})", self.server.name, masked);
             req = req.header("Authorization", format!("Bearer {}", key));
         }
 
         // Include session ID for streamable transport
         if self.server.transport == "streamable" {
             if let Some(ref sid) = *self.session_id.lock().unwrap() {
+                log::debug!("MCP '{}': using session id {}", self.server.name, sid);
                 req = req.header("Mcp-Session-Id", sid);
             }
         }
 
-        let response = req.json(&request).send().await?;
+        let response = req.json(&request).send().await.map_err(|e| {
+            log::warn!(
+                "MCP '{}': network error reaching {} for {}: {}",
+                self.server.name,
+                self.server.url,
+                method,
+                e
+            );
+            e
+        })?;
         let status = response.status();
         let headers = response.headers().clone();
 
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
+            log::warn!(
+                "MCP '{}' HTTP {} from {} (method={}): {}",
+                self.server.name,
+                status.as_u16(),
+                self.server.url,
+                method,
+                body.chars().take(500).collect::<String>()
+            );
             anyhow::bail!(
                 "MCP server {} error ({}): {}",
                 self.server.url,
@@ -94,9 +127,25 @@ impl McpClient {
             );
         }
 
-        let rpc_response: JsonRpcResponse = response.json().await?;
+        let rpc_response: JsonRpcResponse = response.json().await.map_err(|e| {
+            log::warn!(
+                "MCP '{}': failed to parse JSON-RPC response from {} (method={}): {}",
+                self.server.name,
+                self.server.url,
+                method,
+                e
+            );
+            e
+        })?;
 
         if let Some(err) = rpc_response.error {
+            log::warn!(
+                "MCP '{}': RPC error from {} (method={}): {}",
+                self.server.name,
+                self.server.url,
+                method,
+                err.message
+            );
             anyhow::bail!("MCP RPC error from {}: {}", self.server.url, err.message);
         }
 
@@ -119,6 +168,14 @@ impl McpClient {
 
     /// Initialize the MCP connection, trying protocol versions in order.
     pub(crate) async fn initialize(&self) -> anyhow::Result<()> {
+        log::info!(
+            "MCP '{}': connecting to {} (transport={}, auth={})",
+            self.server.name,
+            self.server.url,
+            self.server.transport,
+            self.server.api_key.is_some()
+        );
+
         let versions = ["2025-11-25", "2025-06-18", "2024-11-05"];
 
         for version in versions {
@@ -143,7 +200,14 @@ impl McpClient {
                         {
                             *self.session_id.lock().unwrap() = Some(sid.to_string());
                             log::info!(
-                                "MCP '{}': session established (protocol {})",
+                                "MCP '{}': session established (protocol {}, session={})",
+                                self.server.name,
+                                version,
+                                sid
+                            );
+                        } else {
+                            log::info!(
+                                "MCP '{}': initialized (protocol {}, no session header)",
                                 self.server.name,
                                 version
                             );
@@ -152,7 +216,7 @@ impl McpClient {
                     return Ok(());
                 }
                 Err(e) => {
-                    log::debug!(
+                    log::warn!(
                         "MCP '{}': protocol {} failed: {}",
                         self.server.name,
                         version,
@@ -162,6 +226,11 @@ impl McpClient {
             }
         }
 
+        log::error!(
+            "MCP '{}': all protocol versions failed for {}",
+            self.server.name,
+            self.server.url
+        );
         anyhow::bail!("All protocol versions failed for {}", self.server.url)
     }
 
@@ -207,17 +276,34 @@ pub(super) fn parse_tools_from_result(&self, result: &serde_json::Value) -> Vec<
     /// Discover tools from the server, following pagination cursors.
     pub(crate) async fn discover_tools(&self) -> anyhow::Result<Vec<McpTool>> {
         // Send initialized notification
+        log::debug!(
+            "MCP '{}': sending notifications/initialized",
+            self.server.name
+        );
         let _ = self.rpc_call("notifications/initialized", None).await;
 
         let mut all_tools = Vec::new();
         let mut cursor: Option<String> = None;
+        let mut page = 0u32;
 
         loop {
+            page += 1;
             let params = cursor.as_ref().map(|c| serde_json::json!({"cursor": c}));
 
+            log::debug!(
+                "MCP '{}': fetching tools/list page {}",
+                self.server.name,
+                page
+            );
             let result = self.rpc_call("tools/list", params).await?;
 
             let page_tools = self.parse_tools_from_result(&result);
+            log::debug!(
+                "MCP '{}': page {} returned {} tools",
+                self.server.name,
+                page,
+                page_tools.len()
+            );
             all_tools.extend(page_tools);
 
             // Check for next cursor (pagination support)
@@ -230,6 +316,13 @@ pub(super) fn parse_tools_from_result(&self, result: &serde_json::Value) -> Vec<
                 break;
             }
         }
+
+        log::info!(
+            "MCP '{}': discovered {} tools across {} pages",
+            self.server.name,
+            all_tools.len(),
+            page
+        );
 
         Ok(all_tools)
     }
