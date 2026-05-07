@@ -39,11 +39,6 @@ media_dir: "/media"                  # (default: /media)
 #     url: "https://mcp.example.com/mcp"
 #     api_key: "optional-bearer-token"
 
-# DM access control
-# dm_enabled: true   # unset (None): defaults to true if dms is empty, false if dms has entries
-#                    # Some(true): respond to unknown DMs text-only
-#                    # Some(false): block unknown DMs with "I don't know you" message
-
 # Per-DM configuration overrides (keyed by user/chat ID, positive)
 dms:
   # "123456789":

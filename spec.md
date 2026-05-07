@@ -57,11 +57,6 @@ conversation:
 db:
   store_reasoning: false    # persist reasoning content in SQLite
 
-# DM access control
-# dm_enabled: true   # unset (None): defaults to true if dms is empty, false if dms has entries
-                     # Some(true): respond to unknown DMs text-only
-                     # Some(false): block unknown DMs with "I don't know you" message
-
 # MCP servers for additional tools
 # mcp_servers:
 #   - name: "my-server"
@@ -125,18 +120,7 @@ The data directory is a standalone git repository, not nested inside the applica
 
 #### DM access control
 
-DMs are configured via the `dms` map (keyed by user/chat ID) and the `dm_enabled` flag:
-
-| `dms` entry | `dm_enabled` | Unknown DM behavior |
-|-------------|-------------|---------------------|
-| No entry | `None` (unset) | Text-only respond (backward compat) |
-| No entry | `Some(true)` | Text-only respond |
-| No entry | `Some(false)` | Block with "I don't know you" message (includes user's ID) |
-| Entry exists | n/a | Full tool access for that DM |
-
-When `dms` has any entries and `dm_enabled` is unset, unknown DMs are blocked — the presence of configured DMs implies control. You can override this with `dm_enabled: true`.
-
-This prevents random strangers from running arbitrary bash commands while keeping DMs open for conversation.
+DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitly listed in `dms` can interact with the bot. Unknown DMs receive a "I don't know you" message (includes the user's ID so the owner can add them).
 
 `/commands` are always recognised regardless of interaction mode.
 

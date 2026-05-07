@@ -199,41 +199,6 @@ fn test_dm_config_serialization() {
 }
 
 #[test]
-fn test_dm_enabled_effective_none_empty_dms() {
-    let config = basic_config(); // dm_enabled=None, dms=empty
-    assert!(config.dm_enabled_effective());
-}
-
-#[test]
-fn test_dm_enabled_effective_none_nonempty_dms() {
-    let mut config = basic_config();
-    config.dms.insert("123".into(), DmConfig::default());
-    assert!(!config.dm_enabled_effective());
-}
-
-#[test]
-fn test_dm_enabled_effective_some_true() {
-    let mut config = basic_config();
-    config.dm_enabled = Some(true);
-    assert!(config.dm_enabled_effective());
-}
-
-#[test]
-fn test_dm_enabled_effective_some_false() {
-    let mut config = basic_config();
-    config.dm_enabled = Some(false);
-    assert!(!config.dm_enabled_effective());
-}
-
-#[test]
-fn test_dm_enabled_effective_some_true_ignores_dms_nonempty() {
-    let mut config = basic_config();
-    config.dm_enabled = Some(true);
-    config.dms.insert("123".into(), DmConfig::default());
-    assert!(config.dm_enabled_effective());
-}
-
-#[test]
 fn test_model_for_dm() {
     let mut config = basic_config();
     // DM without entry uses global default
@@ -299,10 +264,8 @@ fn test_config_load_save_with_dms() {
             ..Default::default()
         },
     );
-    config.dm_enabled = Some(false);
     config.save(&path).unwrap();
     let loaded = Config::load(&path).unwrap();
-    assert_eq!(loaded.dm_enabled, Some(false));
     assert!(loaded.dms.contains_key("42"));
     assert!(loaded.dms.get("42").unwrap().commands_enabled);
 }

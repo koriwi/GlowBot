@@ -30,13 +30,6 @@ impl Config {
         self.dms.get(chat_id)
     }
 
-    /// Resolve the effective `dm_enabled` with the implicit default:
-    /// `None` + `dms` is empty → true (backward-compatible).
-    /// `None` + `dms` is non-empty → false (presence of entries implies control).
-    pub fn dm_enabled_effective(&self) -> bool {
-        self.dm_enabled.unwrap_or(self.dms.is_empty())
-    }
-
     /// Get the effective model for a given chat ID.
     /// For DMs, checks the `dms` entry first.
     pub fn model_for_chat(&self, chat_id: &str) -> &str {
@@ -116,7 +109,6 @@ pub(crate) fn basic_config() -> Config {
         embedding: EmbeddingConfig::default(),
         chats: HashMap::new(),
         dms: HashMap::new(),
-        dm_enabled: None,
         media_dir: default_media_dir(),
     }
 }

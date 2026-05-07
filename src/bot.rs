@@ -319,8 +319,6 @@ pub async fn process_message_impl(
         let s = state.lock().await;
         if s.config.dm_config(chat_id).is_some() {
             (true, false)
-        } else if s.config.dm_enabled_effective() {
-            (false, false) // unknown DM, text-only respond
         } else {
             (false, true) // blocked
         }

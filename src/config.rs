@@ -168,13 +168,7 @@ pub struct Config {
     /// Per-DM configuration overrides, keyed by user/chat ID string (positive).
     #[serde(default)]
     pub dms: HashMap<String, DmConfig>,
-    /// Control whether unknown DMs (not in `dms`) get a response.
-    /// - `None` + `dms` is empty → text-only respond (backward-compatible).
-    /// - `None` + `dms` is non-empty → block with "I don't know you" message.
-    /// - `Some(true)` → text-only respond to unknown DMs.
-    /// - `Some(false)` → block with "I don't know you" message.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dm_enabled: Option<bool>,
+
     /// MCP servers to connect to for additional tools.
     #[serde(default)]
     pub mcp_servers: Vec<McpServer>,
