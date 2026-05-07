@@ -190,9 +190,21 @@ pub(crate) async fn dispatch_tool(
         }
         name if name.starts_with("mcp_") => {
             let tool_name = name.to_string();
-            let args_clone = args.clone();
+            let mut args_clone = args.clone();
             let result = {
                 let s = state.lock().await;
+                // Workaround for Playwright MCP server bug: the server
+                // doesn't respect the output dir for named fullpage
+                // screenshots, so we prepend the pw-media path here.
+                if tool_name.contains("screenshot") {
+                    if let Some(name_val) = args_clone.get("name").and_then(|v| v.as_str()) {
+                        if !name_val.is_empty() && !name_val.starts_with('/') && !name_val.contains('/') {
+                            let media_dir = &s.config.media_dir;
+                            args_clone["name"] =
+                                serde_json::json!(format!("{}/pw-media/{}", media_dir, name_val));
+                        }
+                    }
+                }
                 // Defense in depth: also check the blacklist at dispatch time
                 let tool_idx = s
                     .mcp_tools
