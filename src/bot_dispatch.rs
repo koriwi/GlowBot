@@ -196,12 +196,17 @@ pub(crate) async fn dispatch_tool(
                 // Workaround for Playwright MCP server bug: the server
                 // doesn't respect the output dir for named fullpage
                 // screenshots, so we prepend the pw-media path here.
+                // The tool uses either "name" or "filename" as the
+                // parameter for the output filename.
                 if tool_name.contains("screenshot") {
-                    if let Some(name_val) = args_clone.get("name").and_then(|v| v.as_str()) {
-                        if !name_val.is_empty() && !name_val.starts_with('/') && !name_val.contains('/') {
-                            let media_dir = &s.config.media_dir;
-                            args_clone["name"] =
-                                serde_json::json!(format!("{}/pw-media/{}", media_dir, name_val));
+                    for key in &["filename", "name"] {
+                        if let Some(name_val) = args_clone.get(*key).and_then(|v| v.as_str()) {
+                            if !name_val.is_empty() && !name_val.starts_with('/') && !name_val.contains('/') {
+                                let media_dir = &s.config.media_dir;
+                                args_clone[*key] =
+                                    serde_json::json!(format!("{}/pw-media/{}", media_dir, name_val));
+                                break;
+                            }
                         }
                     }
                 }
