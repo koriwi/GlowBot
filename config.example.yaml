@@ -59,8 +59,7 @@ chats:
   #   model: "openai/gpt-4o"
   #   interaction_mode: "every_message"    # "every_message" | "mention_only"
   #   interaction_whitelist: []            # user IDs; empty = everyone allowed
-  #   commands_enabled: true               # whether bot commands are enabled
-  #   command_whitelist: []                # user IDs allowed to run commands; empty = everyone (when commands_enabled is true)
+  #   command_whitelist: []                # user IDs allowed to run commands; empty = nobody
   #   system_prompt: ""                    # optional per-chat system prompt
   #   heartbeat_interval_minutes: 30       # optional, override global default; 0 = disabled
   #   bash_enabled: true                   # optional, override global bash_enabled

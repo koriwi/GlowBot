@@ -44,13 +44,11 @@ pub fn parse_command(text: &str) -> Option<Command> {
     }
 }
 
-/// Check if a user is allowed to run bot commands in a chat.
+/// Check if a user is allowed to run bot commands in a group chat.
+/// Empty command_whitelist = nobody can run commands.
 pub fn can_run_command(chat_config: &ChatConfig, user_id: &str) -> bool {
-    if !chat_config.commands_enabled {
-        return false;
-    }
     if chat_config.command_whitelist.is_empty() {
-        return true; // Empty = everyone (when commands_enabled is true)
+        return false;
     }
     chat_config
         .command_whitelist
@@ -79,7 +77,7 @@ pub fn handle_command(
             let chat = config.chat_config(chat_id);
             let model = chat.model.as_deref().unwrap_or(&config.openrouter.model);
             format!(
-                "Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommands: {}\nCommand whitelist: {}",
+                "Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
                 chat_id,
                 model,
                 context_usage,
@@ -89,13 +87,8 @@ pub fn handle_command(
                 } else {
                     chat.interaction_whitelist.join(", ")
                 },
-                if chat.commands_enabled {
-                    "enabled"
-                } else {
-                    "disabled"
-                },
                 if chat.command_whitelist.is_empty() {
-                    "everyone".to_string()
+                    "nobody".to_string()
                 } else {
                     chat.command_whitelist.join(", ")
                 },
@@ -166,21 +159,12 @@ mod tests {
 
     #[test]
     fn test_can_run_command() {
-        // Commands disabled → nobody can run
+        // Empty command_whitelist → nobody can run
         let config = ChatConfig::default();
         assert!(!can_run_command(&config, "123"));
 
-        // Commands enabled, empty whitelist → everyone can run
+        // Whitelist set → only listed users can run
         let config = ChatConfig {
-            commands_enabled: true,
-            command_whitelist: vec![],
-            ..Default::default()
-        };
-        assert!(can_run_command(&config, "123"));
-
-        // Commands enabled, whitelist set → only listed users can run
-        let config = ChatConfig {
-            commands_enabled: true,
             command_whitelist: vec!["456".into()],
             ..Default::default()
         };
@@ -211,8 +195,8 @@ mod tests {
         assert!(resp.contains("default-model"));
         assert!(resp.contains("1k/10k (10%)"));
         assert!(resp.contains("MentionOnly"));
-        assert_eq!(resp.matches("everyone").count(), 2); // interaction whitelist + command whitelist both everyone
-        assert!(resp.contains("disabled"));
+        assert!(resp.contains("everyone")); // interaction whitelist
+        assert!(resp.contains("nobody")); // command whitelist empty = nobody
     }
 
     #[test]

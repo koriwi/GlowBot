@@ -33,7 +33,6 @@ async fn setup_test_bot_with_whitelisted_chat() -> (GlowBot, TempDir, Arc<MockLl
         "-123".into(),
         crate::config::ChatConfig {
             interaction_mode: crate::config::InteractionMode::EveryMessage,
-            commands_enabled: true,
             command_whitelist: vec!["456".into()],
             interaction_whitelist: vec!["456".into()],
             ..Default::default()
@@ -178,7 +177,7 @@ async fn test_process_message_interaction_whitelist_blocks() {
 #[tokio::test]
 async fn test_process_message_command_unauthorized() {
     let (bot, _dir, _mock) = setup_test_bot().await;
-    // Default: commands_enabled is false, so nobody can run commands
+    // Default: command_whitelist is empty, so nobody can run commands
     let result = bot
         .process_message("-123", "456", "@testuser", "/status", "mybot")
         .await
@@ -452,7 +451,6 @@ async fn test_process_message_with_chat_system_prompt() {
         crate::config::ChatConfig {
             interaction_mode: crate::config::InteractionMode::EveryMessage,
             interaction_whitelist: vec![],
-            commands_enabled: false,
             system_prompt: "Custom system prompt".into(),
             ..Default::default()
         },
@@ -1907,7 +1905,7 @@ async fn test_process_message_command_run_no_tg_bot() {
 #[tokio::test]
 async fn test_process_message_command_run_unauthorized() {
     let (bot, _dir, _mock) = setup_test_bot().await;
-    // Default: commands_enabled is false, so nobody can run commands
+    // Default: command_whitelist is empty, so nobody can run commands
     let result = bot
         .process_message("-123", "456", "@testuser", "/run", "mybot")
         .await
@@ -1947,7 +1945,7 @@ async fn test_process_message_command_new() {
 #[tokio::test]
 async fn test_process_message_command_new_unauthorized() {
     let (bot, _dir, _mock) = setup_test_bot().await;
-    // Default: commands_enabled is false
+    // Default: command_whitelist is empty, so nobody can run commands
     let result = bot
         .process_message("-123", "456", "@testuser", "/new", "mybot")
         .await

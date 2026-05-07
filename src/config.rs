@@ -43,10 +43,7 @@ pub struct ChatConfig {
     /// User IDs allowed to interact with the bot. Empty = everyone.
     #[serde(default)]
     pub interaction_whitelist: Vec<String>,
-    /// Whether bot commands (/status, /stop, /tasks, /run) are enabled for this chat.
-    #[serde(default)]
-    pub commands_enabled: bool,
-    /// User IDs allowed to run bot commands. Empty = everyone (when commands_enabled is true).
+    /// User IDs allowed to run bot commands. Empty = nobody can run commands.
     #[serde(default)]
     pub command_whitelist: Vec<String>,
     /// Optional per-chat system prompt appended to the base.
