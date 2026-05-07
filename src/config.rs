@@ -56,6 +56,10 @@ pub struct ChatConfig {
     /// Override the global bash_enabled setting for this chat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bash_enabled: Option<bool>,
+    /// MCP server names to blacklist for this chat.
+    /// Tools from these servers will not be offered to the LLM.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_blacklist: Vec<String>,
 }
 
 /// Per-DM configuration override.

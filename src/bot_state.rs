@@ -82,15 +82,28 @@ impl BotState {
     }
 
     /// Build the full list of tool definitions including MCP tools.
+    /// Filters out MCP servers blacklisted for the given chat.
     /// `send_message` is always included — in normal conversations it's for
     /// headsup/intermediate messages; in heartbeat tasks it's for completion reports.
-    pub fn build_tools(&self, include_bash: bool) -> Vec<crate::openrouter::ToolDefinition> {
+    pub fn build_tools(
+        &self,
+        include_bash: bool,
+        chat_id: &str,
+    ) -> Vec<crate::openrouter::ToolDefinition> {
         let mut t = crate::openrouter::all_tool_definitions(
             include_bash,
             self.config.embedding.model.as_deref(),
             &self.config.media_dir,
         );
         for mt in &self.mcp_tools {
+            if !self.config.is_mcp_server_allowed(chat_id, &mt.server_name) {
+                log::info!(
+                    "MCP server '{}' blacklisted for chat {}, skipping tools",
+                    mt.server_name,
+                    chat_id
+                );
+                continue;
+            }
             t.push(crate::openrouter::ToolDefinition {
                 def_type: "function".into(),
                 function: crate::openrouter::FunctionDef {

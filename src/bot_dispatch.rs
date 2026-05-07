@@ -193,12 +193,16 @@ pub(crate) async fn dispatch_tool(
             let args_clone = args.clone();
             let result = {
                 let s = state.lock().await;
-                match s
+                // Defense in depth: also check the blacklist at dispatch time
+                let tool_idx = s
                     .mcp_tools
                     .iter()
-                    .position(|t| format!("mcp_{}_{}", t.server_name, t.name) == tool_name)
-                {
-                    Some(idx) => {
+                    .position(|t| format!("mcp_{}_{}", t.server_name, t.name) == tool_name);
+                match tool_idx.map(|idx| (idx, s.config.is_mcp_server_allowed(chat_id, &s.mcp_tools[idx].server_name))) {
+                    Some((_, false)) => {
+                        format!("MCP tool blacklisted for this chat: {}", tool_name)
+                    }
+                    Some((idx, true)) => {
                         let mut tc = s.mcp_tools[idx].clone();
                         let server = tc.server_name.clone();
                         drop(s);

@@ -58,3 +58,4 @@ chats:
   #   system_prompt: ""                    # optional per-chat system prompt
   #   heartbeat_interval_minutes: 30       # optional, override global default; 0 = disabled
   #   bash_enabled: true                   # optional, override global bash_enabled
+  #   mcp_blacklist: []                    # optional, MCP server names to exclude for this chat (e.g. ["homeassistant"])

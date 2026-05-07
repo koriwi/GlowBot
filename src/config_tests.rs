@@ -384,3 +384,55 @@ fn test_config_defaults_db_store_reasoning_false() {
     let config = basic_config();
     assert!(!config.db.store_reasoning);
 }
+
+#[test]
+fn test_is_mcp_server_allowed_default() {
+    let config = basic_config();
+    // No blacklist set — all servers allowed for group chats
+    assert!(config.is_mcp_server_allowed("-123", "homeassistant"));
+    assert!(config.is_mcp_server_allowed("-456", "anything"));
+}
+
+#[test]
+fn test_is_mcp_server_allowed_blacklisted() {
+    let mut config = basic_config();
+    config.chats.insert(
+        "-123".into(),
+        ChatConfig {
+            mcp_blacklist: vec!["homeassistant".into()],
+            ..Default::default()
+        },
+    );
+    assert!(!config.is_mcp_server_allowed("-123", "homeassistant"));
+    // Other servers still allowed
+    assert!(config.is_mcp_server_allowed("-123", "download-server"));
+    // Other chats not affected
+    assert!(config.is_mcp_server_allowed("-456", "homeassistant"));
+}
+
+#[test]
+fn test_is_mcp_server_allowed_dm_always_allowed() {
+    let mut config = basic_config();
+    config.chats.insert(
+        "12345".into(),
+        ChatConfig {
+            mcp_blacklist: vec!["homeassistant".into()],
+            ..Default::default()
+        },
+    );
+    // DM chats (positive chat_id) ignore the blacklist
+    assert!(config.is_mcp_server_allowed("12345", "homeassistant"));
+}
+
+#[test]
+fn test_mcp_blacklist_serialization() {
+    let chat = ChatConfig {
+        mcp_blacklist: vec!["homeassistant".into(), "download-srv".into()],
+        ..Default::default()
+    };
+    let yaml = serde_yaml::to_string(&chat).unwrap();
+    assert!(yaml.contains("homeassistant"));
+    assert!(yaml.contains("download-srv"));
+    let loaded: ChatConfig = serde_yaml::from_str(&yaml).unwrap();
+    assert_eq!(loaded.mcp_blacklist, vec!["homeassistant", "download-srv"]);
+}

@@ -83,7 +83,7 @@ pub(crate) async fn process_with_llm_impl(
     let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
         let s = state.lock().await;
         let bash_enabled = s.config.is_bash_enabled(chat_id);
-        s.build_tools(bash_enabled)
+        s.build_tools(bash_enabled, chat_id)
     } else {
         vec![]
     };

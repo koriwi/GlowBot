@@ -819,7 +819,7 @@ async fn test_build_tools_includes_mcp() {
     let mut state = bot.state.lock().await;
 
     // No MCP tools yet — all tool definitions with bash
-    let tools = state.build_tools(true);
+    let tools = state.build_tools(true, "-123");
     assert_eq!(tools.len(), 15);
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
     assert!(tools.iter().any(|t| t.function.name == "bash"));
@@ -836,7 +836,60 @@ async fn test_build_tools_includes_mcp() {
         transport: "streamable".into(),
     });
 
-    let tools = state.build_tools(true);
+    let tools = state.build_tools(true, "-123");
+    assert_eq!(tools.len(), 16);
+    assert!(tools
+        .iter()
+        .any(|t| t.function.name == "mcp_test-srv_test_tool"));
+}
+
+#[tokio::test]
+async fn test_build_tools_mcp_blacklist() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    // Create a config with a blacklisted MCP server for chat "-456"
+    let mut config = crate::config::basic_config();
+    config.chats.insert(
+        "-456".into(),
+        crate::config::ChatConfig {
+            mcp_blacklist: vec!["test-srv".into()],
+            ..Default::default()
+        },
+    );
+    config.save(&data_dir.join("config.yaml")).unwrap();
+
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
+    let mut state = bot.state.lock().await;
+
+    // Add a fake MCP tool
+    state.mcp_tools.push(crate::mcp::McpTool {
+        server_name: "test-srv".into(),
+        name: "test_tool".into(),
+        description: "A test".into(),
+        input_schema: serde_json::json!({"type": "object"}),
+        server_url: "https://example.com".into(),
+        api_key: None,
+        session_id: None,
+        transport: "streamable".into(),
+    });
+
+    // Chat "-456" has the server blacklisted — MCP tool should be excluded
+    let tools = state.build_tools(true, "-456");
+    assert_eq!(tools.len(), 15); // same as without MCP
+    assert!(!tools.iter().any(|t| t.function.name.starts_with("mcp_")));
+
+    // Chat "-123" not blacklisted — MCP tool should be included
+    let tools = state.build_tools(true, "-123");
+    assert_eq!(tools.len(), 16);
+    assert!(tools
+        .iter()
+        .any(|t| t.function.name == "mcp_test-srv_test_tool"));
+
+    // DM chats are never blacklisted
+    let tools = state.build_tools(true, "12345");
     assert_eq!(tools.len(), 16);
     assert!(tools
         .iter()
@@ -856,7 +909,7 @@ async fn test_build_tools_without_bash() {
     let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
     let state = bot.state.lock().await;
 
-    let tools = state.build_tools(false);
+    let tools = state.build_tools(false, "-123");
     assert_eq!(tools.len(), 14); // 15 - bash
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
     assert!(tools.iter().any(|t| t.function.name == "send_message"));

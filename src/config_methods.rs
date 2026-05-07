@@ -63,6 +63,17 @@ impl Config {
             .unwrap_or(self.bash_enabled)
     }
 
+    /// Check whether an MCP server is allowed for a given chat.
+    /// Returns false if the server name is in the chat's mcp_blacklist.
+    /// Only applies to group chats (negative chat_id).
+    pub fn is_mcp_server_allowed(&self, chat_id: &str, server_name: &str) -> bool {
+        if !chat_id.starts_with('-') {
+            return true;
+        }
+        let chat_config = self.chat_config(chat_id);
+        !chat_config.mcp_blacklist.iter().any(|s| s == server_name)
+    }
+
     /// Get the effective heartbeat interval for a chat (global default if not overridden).
     /// Returns None if disabled (set to 0).
     /// For DMs, checks the `dms` entry first.
