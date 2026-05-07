@@ -15,18 +15,6 @@ pub(crate) async fn handle_bot_command_impl(
     tg_bot: Option<&teloxide::Bot>,
     _git_repo: &GitRepo,
 ) -> anyhow::Result<Option<String>> {
-    // /stop sets the stop signal and returns immediately
-    if matches!(command, crate::commands::Command::Stop) {
-        if let Ok(signals) = stop_signals.lock() {
-            if let Some(signal) = signals.get(chat_id) {
-                signal.store(true, std::sync::atomic::Ordering::SeqCst);
-            }
-        }
-        return Ok(Some(
-            "Stop signal sent. Current operations will be cancelled.".into(),
-        ));
-    }
-
     let allowed = {
         let s = state.lock().await;
         let is_dm = !chat_id.starts_with('-');
@@ -43,6 +31,18 @@ pub(crate) async fn handle_bot_command_impl(
 
     if !allowed {
         return Ok(Some("You are not authorized to run bot commands.".into()));
+    }
+
+    // /stop sets the stop signal and returns immediately
+    if matches!(command, crate::commands::Command::Stop) {
+        if let Ok(signals) = stop_signals.lock() {
+            if let Some(signal) = signals.get(chat_id) {
+                signal.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        return Ok(Some(
+            "Stop signal sent. Current operations will be cancelled.".into(),
+        ));
     }
 
     if matches!(command, crate::commands::Command::Tasks) {
