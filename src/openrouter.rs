@@ -10,8 +10,8 @@ pub(crate) use openrouter_tools::*;
 mod openrouter_context;
 pub use openrouter_context::{
     build_trimmed_request, estimate_message_tokens, estimate_messages_tokens, estimate_tokens,
-    estimate_tools_tokens, format_context_usage, trim_message_list, RESPONSE_RESERVE_TOKENS,
-    TOKEN_ESTIMATE_MARGIN,
+    estimate_tools_tokens, format_context_usage, strip_orphaned_tool_results, trim_message_list,
+    RESPONSE_RESERVE_TOKENS, TOKEN_ESTIMATE_MARGIN,
 };
 
 #[path = "openrouter_client.rs"]

@@ -74,6 +74,10 @@ pub(crate) async fn process_with_llm_impl(
                 Vec::new()
             }
         };
+        // Strip orphaned tool results that can occur when the sliding
+        // window drops an assistant_tool_calls message but keeps its
+        // subsequent tool_result messages.
+        let hist = crate::openrouter::strip_orphaned_tool_results(&hist);
         (hist, include)
     };
 

@@ -106,6 +106,11 @@ pub fn build_trimmed_request(
         }
     }
 
+    // Strip orphaned tool results: when we couldn't fit an
+    // assistant_tool_calls message but a cheaper tool_result did fit,
+    // the result starts with orphaned tool messages. Remove them.
+    trimmed_history = strip_orphaned_tool_results(&trimmed_history);
+
     if trimmed {
         let dropped = history.len().saturating_sub(trimmed_history.len());
         log::info!(
@@ -141,7 +146,77 @@ pub fn trim_message_list(
         "... {} earlier messages omitted to fit context limit ...",
         dropped
     )));
-    result.extend_from_slice(&messages[messages.len() - preserve_suffix..]);
+    // Strip orphaned tool_results from the tail: if the assistant_tool_calls
+    // was in the dropped middle, the tail may start with orphaned tool messages.
+    let suffix = &messages[messages.len() - preserve_suffix..];
+    let cleaned_suffix = strip_orphaned_tool_results(suffix);
+    result.extend(cleaned_suffix);
+    result
+}
+
+/// Strip orphaned tool result messages from a message list.
+///
+/// An orphaned tool result is a message with role "tool" whose `tool_call_id`
+/// doesn't match any preceding assistant message's `tool_calls`. This can
+/// happen when:
+/// - `load_messages` slides its window, dropping an assistant_tool_calls
+///   message but keeping its subsequent tool_results
+/// - `build_trimmed_request` skips an expensive assistant_tool_calls
+///   message but fits a cheaper subsequent tool_result
+/// - `trim_message_list` drops the middle containing assistant_tool_calls
+///   but preserves the suffix with orphaned tool_results
+///
+/// DeepSeek and other strict APIs reject requests with orphaned tool messages.
+pub fn strip_orphaned_tool_results(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    if messages.is_empty() {
+        return Vec::new();
+    }
+
+    // Track which tool_call_ids have been "opened" by preceding
+    // assistant_tool_calls messages.
+    let mut open_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut stripped = 0usize;
+
+    let result: Vec<ChatMessage> = messages
+        .iter()
+        .filter(|msg| {
+            // Update open_ids when we see an assistant with tool_calls
+            if msg.role == "assistant" {
+                if let Some(tcs) = &msg.tool_calls {
+                    // Each new assistant_tool_calls resets the set (a new batch of results)
+                    open_ids.clear();
+                    for tc in tcs {
+                        open_ids.insert(tc.id.clone());
+                    }
+                }
+                return true;
+            }
+
+            // For tool messages, check if the tool_call_id is expected
+            if msg.role == "tool" {
+                if let Some(ref id) = msg.tool_call_id {
+                    if open_ids.contains(id) {
+                        return true;
+                    }
+                }
+                // Orphaned tool result — drop it
+                stripped += 1;
+                return false;
+            }
+
+            // Non-tool, non-assistant messages (user, system) — always keep
+            true
+        })
+        .cloned()
+        .collect();
+
+    if stripped > 0 {
+        log::info!(
+            "Stripped {} orphaned tool result(s) from message list",
+            stripped
+        );
+    }
+
     result
 }
 
