@@ -70,7 +70,7 @@ pub async fn run_heartbeat_task(
 
         let context_limit = {
             let s = state.lock().await;
-            s.model_context_lengths.get(&model).copied().unwrap_or(0)
+            s.model_context_lengths.get(crate::openrouter::normalize_model_id(&model)).copied().unwrap_or(0)
         };
 
         let mut messages = vec![

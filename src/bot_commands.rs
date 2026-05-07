@@ -111,7 +111,7 @@ pub(crate) async fn handle_bot_command_impl(
     {
         let s = state.lock().await;
         let model = s.effective_model(chat_id);
-        let needs_fetch = !s.model_context_lengths.contains_key(&model);
+        let needs_fetch = !s.model_context_lengths.contains_key(crate::openrouter::normalize_model_id(&model));
         let api_key = s.config.openrouter.api_key.clone();
         drop(s);
 

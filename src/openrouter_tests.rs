@@ -560,3 +560,15 @@ fn test_truncate_str() {
     // Multi-byte boundary: takes first 3 chars, not bytes
     assert_eq!(truncate_str("héllo world", 3), "hél...");
 }
+
+#[test]
+fn test_normalize_model_id() {
+    // Without provider suffix — unchanged
+    assert_eq!(normalize_model_id("deepseek/deepseek-v4-pro"), "deepseek/deepseek-v4-pro");
+    assert_eq!(normalize_model_id("openai/gpt-4o"), "openai/gpt-4o");
+    // With provider suffix — stripped
+    assert_eq!(normalize_model_id("deepseek/deepseek-v4-pro:deepseek"), "deepseek/deepseek-v4-pro");
+    assert_eq!(normalize_model_id("openai/gpt-4o:nitro"), "openai/gpt-4o");
+    // Multiple colons — only last suffix stripped
+    assert_eq!(normalize_model_id("openai/o3-mini-high:nitro"), "openai/o3-mini-high");
+}

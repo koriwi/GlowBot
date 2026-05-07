@@ -20,6 +20,13 @@ mod openrouter_client;
 pub(crate) use openrouter_client::truncate_str;
 pub use openrouter_client::OpenRouterClient;
 
+/// Normalize an OpenRouter model ID by stripping the optional `:provider` routing suffix.
+/// The `/api/v1/models` endpoint returns IDs like `deepseek/deepseek-v4-pro`, but the config
+/// may specify `deepseek/deepseek-v4-pro:deepseek` to route to a specific provider.
+pub(crate) fn normalize_model_id(model: &str) -> &str {
+    model.rsplit_once(':').map(|(base, _)| base).unwrap_or(model)
+}
+
 /// An OpenRouter chat message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {

@@ -126,7 +126,7 @@ impl BotState {
     /// Reports against the *effective* limit (with safety margin applied).
     pub fn context_usage(&self, chat_id: &str) -> String {
         let model = self.effective_model(chat_id);
-        let raw_limit = self.model_context_lengths.get(&model).copied().unwrap_or(0);
+        let raw_limit = self.model_context_lengths.get(crate::openrouter::normalize_model_id(&model)).copied().unwrap_or(0);
         let effective_limit = if raw_limit == 0 {
             log::warn!(
                 "Model '{}' not found in context length cache; context usage will be limited",

@@ -90,7 +90,7 @@ pub(crate) async fn process_with_llm_impl(
 
     let context_limit = {
         let s = state.lock().await;
-        s.model_context_lengths.get(&model).copied().unwrap_or(0)
+        s.model_context_lengths.get(crate::openrouter::normalize_model_id(&model)).copied().unwrap_or(0)
     };
 
     let max_tool_rounds = 64;
