@@ -95,13 +95,10 @@ impl BotState {
             self.config.embedding.model.as_deref(),
             &self.config.media_dir,
         );
+        let mut blacklisted_counts: HashMap<&str, usize> = HashMap::new();
         for mt in &self.mcp_tools {
             if !self.config.is_mcp_server_allowed(chat_id, &mt.server_name) {
-                log::info!(
-                    "MCP server '{}' blacklisted for chat {}, skipping tools",
-                    mt.server_name,
-                    chat_id
-                );
+                *blacklisted_counts.entry(&mt.server_name).or_insert(0) += 1;
                 continue;
             }
             t.push(crate::openrouter::ToolDefinition {
@@ -112,6 +109,14 @@ impl BotState {
                     parameters: mt.input_schema.clone(),
                 },
             });
+        }
+        for (server_name, count) in &blacklisted_counts {
+            log::info!(
+                "{} tools from MCP server '{}' blacklisted for chat {}, skipping",
+                count,
+                server_name,
+                chat_id
+            );
         }
         t
     }
