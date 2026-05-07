@@ -74,25 +74,47 @@ pub fn handle_command(
 ) -> String {
     match command {
         Command::Status => {
-            let chat = config.chat_config(chat_id);
-            let model = chat.model.as_deref().unwrap_or(&config.openrouter.model);
-            format!(
-                "Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
-                chat_id,
-                model,
-                context_usage,
-                chat.interaction_mode,
-                if chat.interaction_whitelist.is_empty() {
-                    "everyone".to_string()
-                } else {
-                    chat.interaction_whitelist.join(", ")
-                },
-                if chat.command_whitelist.is_empty() {
-                    "nobody".to_string()
-                } else {
-                    chat.command_whitelist.join(", ")
-                },
-            )
+            let model = config.model_for_chat(chat_id);
+            if chat_id.starts_with('-') {
+                // Group chat
+                let chat = config.chat_config(chat_id);
+                format!(
+                    "Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
+                    chat_id,
+                    model,
+                    context_usage,
+                    chat.interaction_mode,
+                    if chat.interaction_whitelist.is_empty() {
+                        "everyone".to_string()
+                    } else {
+                        chat.interaction_whitelist.join(", ")
+                    },
+                    if chat.command_whitelist.is_empty() {
+                        "nobody".to_string()
+                    } else {
+                        chat.command_whitelist.join(", ")
+                    },
+                )
+            } else {
+                // DM
+                let dm = config.dm_config(chat_id);
+                format!(
+                    "Chat ID: {}\nModel: {}\nContext usage: {}\nDM commands: {}\nDM system prompt: {}",
+                    chat_id,
+                    model,
+                    context_usage,
+                    dm.map(|d| if d.commands_enabled { "enabled" } else { "disabled" })
+                        .unwrap_or("disabled (no DM config)"),
+                    dm.map(|d| {
+                        if d.system_prompt.is_empty() {
+                            "not set".to_string()
+                        } else {
+                            format!("set ({} chars)", d.system_prompt.len())
+                        }
+                    })
+                    .unwrap_or("not set (no DM config)".to_string()),
+                )
+            }
         }
         Command::Stop => "Stop command received.".to_string(),
         Command::Tasks => String::new(), // handled in handle_bot_command
@@ -187,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_status_command() {
+    fn test_handle_status_command_group() {
         let mut config = crate::config::basic_config();
         config.openrouter.model = "default-model".into();
         let resp = handle_command(&Command::Status, &mut config, "-123", "1k/10k (10%)");
@@ -197,6 +219,47 @@ mod tests {
         assert!(resp.contains("MentionOnly"));
         assert!(resp.contains("everyone")); // interaction whitelist
         assert!(resp.contains("nobody")); // command whitelist empty = nobody
+        // Group chat must not contain DM-specific fields
+        assert!(!resp.contains("DM commands"));
+    }
+
+    #[test]
+    fn test_handle_status_command_dm_registered() {
+        let mut config = crate::config::basic_config();
+        config.openrouter.model = "default-model".into();
+        config.dms.insert(
+            "123456".into(),
+            crate::config::DmConfig {
+                model: Some("dm-model".into()),
+                commands_enabled: true,
+                system_prompt: "You are helpful.".into(),
+                ..Default::default()
+            },
+        );
+        let resp = handle_command(&Command::Status, &mut config, "123456", "2k/20k (10%)");
+        assert!(resp.contains("123456"));
+        assert!(resp.contains("dm-model"));
+        assert!(resp.contains("2k/20k (10%)"));
+        assert!(resp.contains("DM commands: enabled"));
+        assert!(resp.contains("DM system prompt: set (16 chars)"));
+        // DM must not contain group-specific fields
+        assert!(!resp.contains("Interaction mode"));
+        assert!(!resp.contains("Interaction whitelist"));
+        assert!(!resp.contains("Command whitelist"));
+    }
+
+    #[test]
+    fn test_handle_status_command_dm_unregistered() {
+        let mut config = crate::config::basic_config();
+        config.openrouter.model = "default-model".into();
+        // No DM config for this chat_id — not in the dms map
+        let resp = handle_command(&Command::Status, &mut config, "999", "5k/100k (5%)");
+        assert!(resp.contains("999"));
+        assert!(resp.contains("default-model"));
+        assert!(resp.contains("5k/100k (5%)"));
+        assert!(resp.contains("DM commands: disabled (no DM config)"));
+        assert!(resp.contains("DM system prompt: not set (no DM config)"));
+        assert!(!resp.contains("Interaction mode"));
     }
 
     #[test]
