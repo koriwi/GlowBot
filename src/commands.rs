@@ -15,6 +15,8 @@ pub enum Command {
     New,
     /// /prompt — show the full system prompt and conversation history that would be sent to the LLM
     Prompt,
+    /// /tools — list all tools available in this chat
+    Tools,
 }
 
 /// Parse a Telegram message to see if it's a bot command.
@@ -40,6 +42,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "/run" => Some(Command::Run),
         "/new" => Some(Command::New),
         "/prompt" => Some(Command::Prompt),
+        "/tools" => Some(Command::Tools),
         _ => None,
     }
 }
@@ -121,6 +124,7 @@ pub fn handle_command(
         Command::Run => String::new(),   // handled in handle_bot_command
         Command::New => String::new(),   // handled in handle_bot_command
         Command::Prompt => String::new(), // handled in handle_bot_command
+        Command::Tools => String::new(),   // handled in handle_bot_command
     }
 }
 
@@ -166,6 +170,12 @@ mod tests {
     fn test_parse_command_prompt() {
         assert_eq!(parse_command("/prompt"), Some(Command::Prompt));
         assert_eq!(parse_command("/prompt@glowythebot"), Some(Command::Prompt));
+    }
+
+    #[test]
+    fn test_parse_command_tools() {
+        assert_eq!(parse_command("/tools"), Some(Command::Tools));
+        assert_eq!(parse_command("/tools@glowythebot"), Some(Command::Tools));
     }
 
     #[test]

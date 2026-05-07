@@ -1,6 +1,8 @@
 use super::BotState;
+use crate::config::McpServer;
 use crate::git::GitRepo;
-use crate::openrouter::OpenRouterClient;
+use crate::mcp::McpTool;
+use crate::openrouter::{OpenRouterClient, ToolDefinition};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -92,6 +94,37 @@ pub(crate) async fn handle_bot_command_impl(
         return Ok(Some(prompt_text));
     }
 
+    // /tools — list all tools available in this chat
+    if matches!(command, crate::commands::Command::Tools) {
+        let output = {
+            let s = state.lock().await;
+            let is_dm = !chat_id.starts_with('-');
+            let tools_enabled = if is_dm {
+                s.config.dm_config(chat_id).is_some()
+            } else {
+                true
+            };
+            let bash_enabled = if tools_enabled {
+                s.config.is_bash_enabled(chat_id)
+            } else {
+                false
+            };
+            let builtin_tools = s.build_tools(bash_enabled, chat_id);
+            let mcp_tools: Vec<_> = s
+                .mcp_tools
+                .iter()
+                .filter(|mt| s.config.is_mcp_server_allowed(chat_id, &mt.server_name))
+                .collect();
+            let mcp_blacklisted: Vec<_> = s
+                .mcp_tools
+                .iter()
+                .filter(|mt| !s.config.is_mcp_server_allowed(chat_id, &mt.server_name))
+                .collect();
+            format_tools_output(&builtin_tools, &mcp_tools, &s.mcp_tools, &mcp_blacklisted, &s.config.mcp_servers)
+        };
+        return Ok(Some(output));
+    }
+
     // /run triggers the heartbeat task agent immediately for this chat
     if matches!(command, crate::commands::Command::Run) {
         if let Some(bot) = tg_bot {
@@ -144,4 +177,94 @@ pub(crate) async fn handle_bot_command_impl(
     };
 
     Ok(Some(response))
+}
+
+/// Format the /tools command output: MCP server summary at top, then grouped tool list.
+fn format_tools_output(
+    builtin_tools: &[ToolDefinition],
+    mcp_tools: &[&McpTool],
+    all_mcp_tools: &[McpTool],
+    mcp_blacklisted: &[&McpTool],
+    mcp_servers: &[McpServer],
+) -> String {
+    let mut out = String::new();
+    out.push_str("🛠 *Available Tools*\n");
+
+    // --- MCP Servers summary ---
+    if !mcp_servers.is_empty() {
+        out.push_str("\n*MCP Servers:*\n");
+        for server in mcp_servers {
+            let tool_count = all_mcp_tools
+                .iter()
+                .filter(|t| t.server_name == server.name)
+                .count();
+            let blacklisted_count = mcp_blacklisted
+                .iter()
+                .filter(|t| t.server_name == server.name)
+                .count();
+            let effective = tool_count - blacklisted_count;
+            let status = if blacklisted_count > 0 {
+                format!(
+                    " — {} available, {} blacklisted for this chat",
+                    effective, blacklisted_count
+                )
+            } else {
+                format!(" — {} tool(s)", tool_count)
+            };
+            out.push_str(&format!(
+                "• `{}` ({}, {}){}\n",
+                server.name, server.url, server.transport, status
+            ));
+        }
+    }
+
+    // --- Built-in tools ---
+    // Separate MCP tools from built-in by checking name prefix
+    let builtins: Vec<_> = builtin_tools
+        .iter()
+        .filter(|t| !t.function.name.starts_with("mcp_"))
+        .collect();
+    let mcp: Vec<_> = builtin_tools
+        .iter()
+        .filter(|t| t.function.name.starts_with("mcp_"))
+        .collect();
+
+    out.push_str("\n*Built-in:*\n");
+    for t in &builtins {
+        out.push_str(&format!(
+            "• `{}` — {}\n",
+            t.function.name, t.function.description
+        ));
+    }
+
+    // --- MCP tools grouped by server ---
+    if !mcp.is_empty() {
+        // Group by server name
+        let mut mcp_by_server: HashMap<String, Vec<&ToolDefinition>> = HashMap::new();
+        for t in &mcp {
+            let server_name = mcp_tools
+                .iter()
+                .find(|mt| format!("mcp_{}_{}", mt.server_name, mt.name) == t.function.name)
+                .map(|mt| mt.server_name.as_str())
+                .unwrap_or("unknown");
+            mcp_by_server
+                .entry(server_name.to_string())
+                .or_default()
+                .push(t);
+        }
+        let mut server_names: Vec<_> = mcp_by_server.keys().collect();
+        server_names.sort();
+        for server_name in server_names {
+            let tools = &mcp_by_server[server_name];
+            out.push_str(&format!("\n*MCP: {}*\n", server_name));
+            for t in tools {
+                out.push_str(&format!(
+                    "• `{}` — {}\n",
+                    t.function.name, t.function.description
+                ));
+            }
+        }
+    }
+
+    out
 }

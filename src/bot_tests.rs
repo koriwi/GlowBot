@@ -268,6 +268,103 @@ async fn test_process_message_command_prompt() {
 }
 
 #[tokio::test]
+async fn test_process_message_command_tools_basic() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/tools", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("Available Tools"));
+    assert!(resp.contains("Built-in"));
+    // Built-in tools should be listed
+    assert!(resp.contains("`bash`"));
+    assert!(resp.contains("`read_memory`"));
+    assert!(resp.contains("`update_memory`"));
+    assert!(resp.contains("`send_message`"));
+    assert!(resp.contains("`add_task`"));
+    // No MCP servers section when none configured
+    assert!(!resp.contains("MCP Servers"));
+    assert!(!resp.contains("MCP:"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_tools_with_mcp() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // Inject MCP tools into state
+    {
+        let mut s = bot.state.lock().await;
+        s.mcp_tools = vec![
+            crate::mcp::McpTool {
+                server_name: "test-server".into(),
+                name: "greet".into(),
+                description: "Say hello".into(),
+                input_schema: serde_json::json!({}),
+                server_url: "http://localhost:9999".into(),
+                api_key: None,
+                session_id: None,
+                transport: "streamable".into(),
+            },
+            crate::mcp::McpTool {
+                server_name: "test-server".into(),
+                name: "calculate".into(),
+                description: "Do math".into(),
+                input_schema: serde_json::json!({}),
+                server_url: "http://localhost:9999".into(),
+                api_key: None,
+                session_id: None,
+                transport: "streamable".into(),
+            },
+        ];
+        s.config.mcp_servers = vec![crate::config::McpServer {
+            name: "test-server".into(),
+            transport: "streamable".into(),
+            url: "http://localhost:9999".into(),
+            api_key: None,
+        }];
+    }
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/tools", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("Available Tools"));
+    assert!(resp.contains("MCP Servers"));
+    assert!(resp.contains("test-server"));
+    assert!(resp.contains("http://localhost:9999"));
+    assert!(resp.contains("streamable"));
+    assert!(resp.contains("2 tool(s)"));
+    assert!(resp.contains("Built-in"));
+    assert!(resp.contains("MCP: test-server"));
+    assert!(resp.contains("`mcp_test\u{2d}server_greet`"));
+    assert!(resp.contains("`mcp_test\u{2d}server_calculate`"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_tools_unauthorized() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // user 789 is not in command_whitelist
+    let result = bot
+        .process_message("-123", "789", "@other", "/tools", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("not authorized"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_tools_dm_not_authorized() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // DM from user without DM config — commands not enabled
+    let result = bot
+        .process_message("12345", "12345", "@rando", "/tools", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("not authorized"));
+}
+
+#[tokio::test]
 async fn test_process_message_with_tool_call() {
     let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 
