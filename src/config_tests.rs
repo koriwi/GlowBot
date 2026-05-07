@@ -37,6 +37,7 @@ fn test_chat_config_defaults() {
     assert!(chat.model.is_none());
     assert!(chat.interaction_whitelist.is_empty());
     assert!(!chat.commands_enabled);
+    assert!(chat.command_whitelist.is_empty());
     assert!(chat.system_prompt.is_empty());
 }
 
@@ -86,12 +87,14 @@ fn test_chat_config_serialization() {
     let chat = ChatConfig {
         interaction_whitelist: vec!["123".into(), "456".into()],
         commands_enabled: true,
+        command_whitelist: vec!["789".into()],
         ..Default::default()
     };
     let yaml = serde_yaml::to_string(&chat).unwrap();
     let loaded: ChatConfig = serde_yaml::from_str(&yaml).unwrap();
     assert_eq!(loaded.interaction_whitelist, vec!["123", "456"]);
     assert!(loaded.commands_enabled);
+    assert_eq!(loaded.command_whitelist, vec!["789"]);
 }
 
 #[test]

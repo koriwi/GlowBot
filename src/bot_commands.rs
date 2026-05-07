@@ -10,7 +10,7 @@ pub(crate) async fn handle_bot_command_impl(
     state: &Arc<Mutex<BotState>>,
     stop_signals: &Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
     chat_id: &str,
-    _user_id: &str,
+    user_id: &str,
     command: &crate::commands::Command,
     tg_bot: Option<&teloxide::Bot>,
     _git_repo: &GitRepo,
@@ -25,7 +25,7 @@ pub(crate) async fn handle_bot_command_impl(
                 .unwrap_or(false)
         } else {
             let chat_config = s.config.chat_config(chat_id);
-            crate::commands::can_run_command(&chat_config)
+            crate::commands::can_run_command(&chat_config, user_id)
         }
     };
 
@@ -86,7 +86,7 @@ pub(crate) async fn handle_bot_command_impl(
             } else {
                 true
             };
-            s.assemble_system_prompt(chat_id, tools_enabled, _user_id)
+            s.assemble_system_prompt(chat_id, tools_enabled, user_id)
         };
 
         return Ok(Some(prompt_text));

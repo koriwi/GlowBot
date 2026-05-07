@@ -46,6 +46,9 @@ pub struct ChatConfig {
     /// Whether bot commands (/status, /stop, /tasks, /run) are enabled for this chat.
     #[serde(default)]
     pub commands_enabled: bool,
+    /// User IDs allowed to run bot commands. Empty = everyone (when commands_enabled is true).
+    #[serde(default)]
+    pub command_whitelist: Vec<String>,
     /// Optional per-chat system prompt appended to the base.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub system_prompt: String,

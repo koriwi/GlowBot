@@ -34,6 +34,7 @@ async fn setup_test_bot_with_whitelisted_chat() -> (GlowBot, TempDir, Arc<MockLl
         crate::config::ChatConfig {
             interaction_mode: crate::config::InteractionMode::EveryMessage,
             commands_enabled: true,
+            command_whitelist: vec!["456".into()],
             interaction_whitelist: vec!["456".into()],
             ..Default::default()
         },
@@ -191,12 +192,26 @@ async fn test_process_message_command_unauthorized() {
 #[tokio::test]
 async fn test_process_message_command_authorized() {
     let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
-    // User "456" is in the command whitelist
+    // User "456" is in the command_whitelist
     let result = bot
         .process_message("-123", "456", "@testuser", "/status", "mybot")
         .await
         .unwrap();
     assert!(result.unwrap().contains("Chat ID:"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_blocked_by_command_whitelist() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // User "789" is not in the command_whitelist → blocked
+    let result = bot
+        .process_message("-123", "789", "@otheruser", "/status", "mybot")
+        .await
+        .unwrap();
+    assert_eq!(
+        result,
+        Some("You are not authorized to run bot commands.".into())
+    );
 }
 
 #[tokio::test]
