@@ -153,6 +153,16 @@ pub struct OpenRouterConfig {
     pub api_key: String,
     /// Model to use (required).
     pub model: String,
+    /// Model used to describe images when the conversation model
+    /// doesn't natively support image input.
+    /// This model should support the `image` input modality.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_fallback_model: Option<String>,
+    /// Model used to transcribe audio/voice when the conversation model
+    /// doesn't natively support audio input.
+    /// This model should support the `audio` input modality.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_fallback_model: Option<String>,
 }
 
 /// Global application configuration.

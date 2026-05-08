@@ -5,6 +5,11 @@ telegram_token: "your-telegram-bot-token-here"
 openrouter:
   api_key: "your-openrouter-api-key-here"
   model: "your-model-name-here"
+  # Fallback models for media ingest — used when the conversation model doesn't
+  # natively support the media type (image/audio). Only needed if you want
+  # automatic conversion for non-vision/non-audio models.
+  # image_fallback_model: "openai/gpt-4o"
+  # audio_fallback_model: "google/gemini-2.5-flash"
 
 # Conversation context settings
 conversation:

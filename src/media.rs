@@ -121,6 +121,44 @@ pub fn ingest_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("media").join("ingest")
 }
 
+/// Encode an image file as a base64 data-URL for ContentPart::ImageUrl.
+/// Detects MIME type from file extension.
+pub fn image_to_data_url(path: &Path) -> anyhow::Result<String> {
+    let bytes = std::fs::read(path)?;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("jpg")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "image/jpeg",
+    };
+    let b64 = base64_encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, b64))
+}
+
+/// Encode an audio file as raw base64 for ContentPart::InputAudio.
+/// Returns (base64_data, format). Format is derived from file extension.
+pub fn audio_to_base64(path: &Path) -> anyhow::Result<(String, String)> {
+    let bytes = std::fs::read(path)?;
+    let format = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("ogg")
+        .to_lowercase();
+    let b64 = base64_encode(&bytes);
+    Ok((b64, format))
+}
+
+/// Base64-encode bytes using the standard engine (with padding).
+fn base64_encode(data: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(data)
+}
+
 #[cfg(test)]
 #[path = "media_tests.rs"]
 mod tests;

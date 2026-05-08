@@ -105,6 +105,11 @@ Your personality:
 - Use `send_media` to send files to the chat — it accepts absolute paths, relative paths (from the data directory), or paths inside the media directory at `{media_dir}`. Use `list_media` to browse available media files before sending.
 - When using the Playwright browser automation tool (MCP), it saves all screenshots, downloads, and generated files to `{media_dir}/pw-media`. This is its root/working directory — all file paths returned by Playwright are relative to `{media_dir}/pw-media`.
 - You can manage a per-chat task list with `add_task`, `list_tasks`, and `remove_task`. The bot autonomously works on tasks on a heartbeat timer.
+- You can receive and understand images and voice/audio messages from users.
+  If the current model supports the media type natively, you see/hear it directly.
+  Otherwise, it is automatically converted to text by a fallback model.
+  Converted media is prefixed with metadata indicating the original format.
+  You can also send media via `send_media`.
 "#,
         tools_intro = tools_intro,
         chat_id = chat_id,

@@ -160,6 +160,20 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
 - If the model context length is not yet cached (e.g. OpenRouter fetch failed), `/status` shows `"unknown"`.
 - Heartbeat tasks also track usage, so `/status` reflects the most recent activity even from background processing.
 
+### 4.2a Media Ingest
+
+The bot can receive and process **images** and **voice/audio messages** from users.
+
+- Extraction: `IngestedMedia::try_from_message()` maps Telegram `Message` fields (photo, voice, audio) into a media enum. Videos and documents are skipped for now.
+- Download: Media files are downloaded from Telegram's servers and cached to `media/ingest/`.
+- Model-aware routing: The bot checks `architecture.input_modalities` from the cached model metadata to decide native vs fallback:
+  - **Native image**: If the conversation model supports `image` input, the image is base64-encoded as `image_url` content part and sent directly.
+  - **Native audio**: If the model supports `audio` input, the audio is base64-encoded as `input_audio` content part.
+  - **Fallback image**: Uses `openrouter.image_fallback_model` to describe the image as text.
+  - **Fallback audio**: Uses `openrouter.audio_fallback_model` to transcribe as text.
+- Metadata: Fallback-converted media is prefixed with metadata (dimensions, duration, original filename) so the conversation model knows the context.
+- Config: `image_fallback_model` and `audio_fallback_model` on `openrouter` config block.
+
 ### 4.3 Skills System
 
 Skills extend the bot's capabilities. Each skill is a directory under `skills/`:
@@ -422,6 +436,7 @@ Whitelists contain Telegram user IDs.
 - [x] LLM reasoning/thinking capture and storage (configurable via `conversation.include_reasoning` and `db.store_reasoning`)
 - [x] Typing indicator while LLM is processing
 - [x] MarkdownV2 rendering via `telegram-markdown-v2` crate with plain text fallback
+- [x] Media ingest: images and audio (native multimodal or fallback conversion)
 
 ### Explicitly out of scope for v1
 

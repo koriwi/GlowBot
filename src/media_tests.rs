@@ -1,4 +1,5 @@
 use super::*;
+use base64::Engine;
 use teloxide::types::Message;
 
 #[test]
@@ -200,4 +201,71 @@ fn test_ingest_dir_relative() {
     let data_dir = std::path::Path::new("data");
     let ingest = ingest_dir(data_dir);
     assert_eq!(ingest, std::path::Path::new("data/media/ingest"));
+}
+
+// --- image_to_data_url and audio_to_base64 tests ---
+
+#[test]
+fn test_image_to_data_url_jpg() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("test.jpg");
+    std::fs::write(&path, b"fake-jpeg").unwrap();
+    let url = image_to_data_url(&path).unwrap();
+    let expected_prefix = "data:image/jpeg;base64,";
+    assert!(url.starts_with(expected_prefix), "got: {}", &url[..50]);
+    let b64 = &url[expected_prefix.len()..];
+    assert_eq!(base64::engine::general_purpose::STANDARD.decode(b64).unwrap(), b"fake-jpeg");
+}
+
+#[test]
+fn test_image_to_data_url_png() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("screenshot.png");
+    std::fs::write(&path, b"fake-png").unwrap();
+    let url = image_to_data_url(&path).unwrap();
+    assert!(url.starts_with("data:image/png;base64,"));
+}
+
+#[test]
+fn test_image_to_data_url_no_extension() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("noext");
+    std::fs::write(&path, b"data").unwrap();
+    let url = image_to_data_url(&path).unwrap();
+    assert!(url.starts_with("data:image/jpeg;base64,"));
+}
+
+#[test]
+fn test_audio_to_base64_ogg() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("voice.ogg");
+    std::fs::write(&path, b"fake-audio").unwrap();
+    let (data, format) = audio_to_base64(&path).unwrap();
+    assert_eq!(format, "ogg");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.decode(&data).unwrap(),
+        b"fake-audio"
+    );
+}
+
+#[test]
+fn test_audio_to_base64_wav() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("recording.wav");
+    std::fs::write(&path, b"wav-data").unwrap();
+    let (data, format) = audio_to_base64(&path).unwrap();
+    assert_eq!(format, "wav");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.decode(&data).unwrap(),
+        b"wav-data"
+    );
+}
+
+#[test]
+fn test_audio_to_base64_no_extension() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("unknown");
+    std::fs::write(&path, b"raw").unwrap();
+    let (_data, format) = audio_to_base64(&path).unwrap();
+    assert_eq!(format, "ogg");
 }

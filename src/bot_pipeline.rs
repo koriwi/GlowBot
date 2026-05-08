@@ -84,7 +84,16 @@ pub(crate) async fn process_with_llm_impl(
         (hist, include)
     };
 
-    let current_msg = build_user_message(text, caption, media, username);
+    let current_msg = build_user_message_full(
+        state,
+        chat_id,
+        text,
+        caption,
+        media,
+        username,
+        tg_bot,
+    )
+    .await;
     let mut turn_messages = vec![current_msg.clone()];
 
     let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
@@ -339,46 +348,319 @@ pub(crate) fn chunk_for_embedding(text: &str, max_chars: usize, allow_split: boo
     }
 }
 
-/// Build the user message for the LLM, combining text, caption, and media metadata.
-/// In Phase 2 this only produces text — actual media download/conversion comes later.
-fn build_user_message(
+/// Build the user message for the LLM, handling media ingestion:
+/// - Native image: downloads image, encodes as data-URL, builds user_multimodal
+/// - Fallback image: calls image_fallback_model to describe, builds text message
+/// - Native audio: downloads audio, encodes as base64, builds user_multimodal
+/// - Fallback audio: calls audio_fallback_model to transcribe, builds text message
+async fn build_user_message_full(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: &str,
     text: &str,
     caption: Option<&str>,
     media: Option<&crate::media::IngestedMedia>,
     username: &str,
+    tg_bot: Option<&teloxide::Bot>,
 ) -> ChatMessage {
-    if let Some(media) = media {
-        let parts: Vec<String> = std::iter::empty()
-            .chain(caption.map(|c| c.to_string()))
-            .chain(Some(media_description(media)))
-            .filter(|s| !s.is_empty())
-            .collect();
-        let combined = parts.join("\n");
-        let final_text = if text.is_empty() {
-            combined
+    let media = match media {
+        Some(m) => m,
+        None => return ChatMessage::user_with_name(text, username),
+    };
+
+    let is_image = matches!(media, crate::media::IngestedMedia::Photo { .. });
+
+    // Get model capabilities and config
+    let (_model_id, supports_modality, fallback_model, token, data_dir, api_key) = {
+        let s = state.lock().await;
+        let model_id = s.effective_model(chat_id);
+        let normalized = crate::openrouter::normalize_model_id(&model_id);
+        let meta = s.model_metadata.get(normalized);
+        let supports_modality = meta.map(|m| {
+            if is_image {
+                m.supports_modality("image")
+            } else {
+                m.supports_modality("audio")
+            }
+        }).unwrap_or(false);
+        let fallback_model = if is_image {
+            s.config.openrouter.image_fallback_model.clone()
         } else {
-            format!("{}\n\n{}", combined, text)
+            s.config.openrouter.audio_fallback_model.clone()
         };
-        ChatMessage::user_with_name(&final_text, username)
+        (
+            model_id,
+            supports_modality,
+            fallback_model,
+            s.config.telegram_token.clone(),
+            s.data_dir.clone(),
+            s.config.openrouter.api_key.clone(),
+        )
+    };
+
+    // Download the file from Telegram
+    let file_id = match media {
+        crate::media::IngestedMedia::Photo { file_id, .. } => file_id.as_str(),
+        crate::media::IngestedMedia::Voice { file_id, .. } => file_id.as_str(),
+        crate::media::IngestedMedia::Audio { file_id, .. } => file_id.as_str(),
+    };
+
+    let dest_dir = crate::media::ingest_dir(&data_dir);
+
+    let file_path = match tg_bot {
+        Some(bot) => {
+            use teloxide::prelude::*;
+            match bot.get_file(file_id).send().await {
+                Ok(file) => {
+                    match crate::media::download_file(&file, &token, &dest_dir).await {
+                        Ok(p) => Some(p),
+                        Err(e) => {
+                            log::warn!("Media: failed to download {}: {}", file_id, e);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Media: get_file failed for {}: {}", file_id, e);
+                    None
+                }
+            }
+        }
+        None => {
+            log::info!("Media: no tg_bot available, skipping download for {}", file_id);
+            None
+        }
+    };
+
+    // Build the user message based on capabilities
+    if let Some(fp) = file_path {
+        if supports_modality {
+            // Native path: include media directly as content parts
+            build_native_message(media, caption, text, username, &fp)
+        } else if let Some(ref fb_model) = fallback_model {
+            // Fallback path: convert media to text via fallback model
+            build_fallback_message(
+                media, caption, text, username, &fp, fb_model, &api_key, is_image,
+            )
+            .await
+        } else {
+            // No fallback model configured: metadata only
+            build_text_metadata_message(media, caption, text, username)
+        }
     } else {
-        ChatMessage::user_with_name(text, username)
+        // Download failed or not possible: metadata only
+        build_text_metadata_message(media, caption, text, username)
     }
 }
 
-/// Produce a human-readable description of ingested media for use in text-only messages.
-fn media_description(media: &crate::media::IngestedMedia) -> String {
+/// Build a ChatMessage with native multimodal content parts.
+fn build_native_message(
+    media: &crate::media::IngestedMedia,
+    caption: Option<&str>,
+    text: &str,
+    username: &str,
+    file_path: &std::path::Path,
+) -> ChatMessage {
+    use crate::openrouter::ContentPart;
+    let mut parts: Vec<ContentPart> = Vec::new();
+
+    match media {
+        crate::media::IngestedMedia::Photo { .. } => {
+            match crate::media::image_to_data_url(file_path) {
+                Ok(data_url) => {
+                    parts.push(ContentPart::ImageUrl {
+                        image_url: crate::openrouter::ImageUrlDetail {
+                            url: data_url,
+                            detail: None,
+                        },
+                    });
+                }
+                Err(e) => {
+                    log::warn!("Media: failed to encode image: {}", e);
+                }
+            }
+        }
+        crate::media::IngestedMedia::Voice { .. } | crate::media::IngestedMedia::Audio { .. } => {
+            match crate::media::audio_to_base64(file_path) {
+                Ok((data, format)) => {
+                    parts.push(ContentPart::InputAudio {
+                        input_audio: crate::openrouter::InputAudioDetail { data, format },
+                    });
+                }
+                Err(e) => {
+                    log::warn!("Media: failed to encode audio: {}", e);
+                }
+            }
+        }
+    }
+
+    // Add text parts: caption first, then user text
+    if let Some(cap) = caption {
+        if !cap.is_empty() {
+            parts.push(ContentPart::Text { text: cap.to_string() });
+        }
+    }
+    if !text.is_empty() {
+        parts.push(ContentPart::Text { text: text.to_string() });
+    }
+
+    ChatMessage::user_multimodal_with_name(parts, username)
+}
+
+/// Build a ChatMessage where media is converted to text via a fallback model.
+async fn build_fallback_message(
+    media: &crate::media::IngestedMedia,
+    caption: Option<&str>,
+    text: &str,
+    username: &str,
+    file_path: &std::path::Path,
+    fallback_model: &str,
+    api_key: &str,
+    is_image: bool,
+) -> ChatMessage {
+    let client = OpenRouterClient::new(api_key.to_string());
+
+    let fallback_text = if is_image {
+        call_image_fallback(&client, fallback_model, file_path).await
+    } else {
+        call_audio_fallback(&client, fallback_model, file_path).await
+    };
+
+    let metadata = media_metadata_text(media);
+    let mut combined = metadata;
+    if let Some(cap) = caption {
+        if !cap.is_empty() {
+            combined.push_str(&format!("\nCaption: {}", cap));
+        }
+    }
+    if let Ok(ft) = &fallback_text {
+        combined.push_str(&format!("\n\n{}", ft));
+    } else if let Err(ref e) = fallback_text {
+        log::warn!("Media: fallback conversion failed: {}", e);
+        combined.push_str("\n(Conversion failed)");
+    }
+    if !text.is_empty() {
+        combined.push_str(&format!("\n\n{}", text));
+    }
+
+    ChatMessage::user_with_name(&combined, username)
+}
+
+/// Call an image-capable fallback model to describe an image.
+async fn call_image_fallback(
+    client: &OpenRouterClient,
+    model: &str,
+    image_path: &std::path::Path,
+) -> anyhow::Result<String> {
+    let data_url = crate::media::image_to_data_url(image_path)?;
+    let parts = vec![
+        crate::openrouter::ContentPart::Text {
+            text: "Describe this image in detail. Include any visible text.".into(),
+        },
+        crate::openrouter::ContentPart::ImageUrl {
+            image_url: crate::openrouter::ImageUrlDetail {
+                url: data_url,
+                detail: None,
+            },
+        },
+    ];
+    let msg = ChatMessage::user_multimodal(parts);
+    let request = ChatCompletionRequest {
+        model: model.to_string(),
+        messages: vec![msg],
+        tools: None,
+        tool_choice: None,
+    };
+    let response = client.chat_completion(&request).await?;
+    let text = response
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|c| c.message.content)
+        .unwrap_or_default();
+    Ok(text)
+}
+
+/// Call an audio-capable fallback model to transcribe audio.
+async fn call_audio_fallback(
+    client: &OpenRouterClient,
+    model: &str,
+    audio_path: &std::path::Path,
+) -> anyhow::Result<String> {
+    let (base64_data, format) = crate::media::audio_to_base64(audio_path)?;
+    let parts = vec![
+        crate::openrouter::ContentPart::Text {
+            text: "Please transcribe this audio file.".into(),
+        },
+        crate::openrouter::ContentPart::InputAudio {
+            input_audio: crate::openrouter::InputAudioDetail {
+                data: base64_data,
+                format,
+            },
+        },
+    ];
+    let msg = ChatMessage::user_multimodal(parts);
+    let request = ChatCompletionRequest {
+        model: model.to_string(),
+        messages: vec![msg],
+        tools: None,
+        tool_choice: None,
+    };
+    let response = client.chat_completion(&request).await?;
+    let text = response
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|c| c.message.content)
+        .unwrap_or_default();
+    Ok(text)
+}
+
+/// Build a text-only metadata message (when download fails or no native/fallback available).
+fn build_text_metadata_message(
+    media: &crate::media::IngestedMedia,
+    caption: Option<&str>,
+    text: &str,
+    username: &str,
+) -> ChatMessage {
+    let metadata = media_metadata_text(media);
+    let mut combined = metadata;
+    if let Some(cap) = caption {
+        if !cap.is_empty() {
+            combined.push_str(&format!("\nCaption: {}", cap));
+        }
+    }
+    if !text.is_empty() {
+        combined.push_str(&format!("\n\n{}", text));
+    }
+    ChatMessage::user_with_name(&combined, username)
+}
+
+/// Produce a metadata prefix for ingested media.
+fn media_metadata_text(media: &crate::media::IngestedMedia) -> String {
     match media {
         crate::media::IngestedMedia::Photo { width, height, .. } => {
-            format!("[Media received: photo ({}x{})]", width, height)
+            format!(
+                "[This image ({}x{}) was sent by the user and was automatically converted to text for you.]",
+                width, height
+            )
         }
         crate::media::IngestedMedia::Voice { duration, .. } => {
-            format!("[Media received: voice message ({}s)]", duration)
+            format!(
+                "[This voice message ({}s) was sent by the user and was automatically transcribed for you.]",
+                duration
+            )
         }
         crate::media::IngestedMedia::Audio { duration, title, .. } => {
             if let Some(t) = title {
-                format!("[Media received: audio \"{}\" ({}s)]", t, duration)
+                format!(
+                    "[This audio file \"{}\" ({}s) was sent by the user and was automatically transcribed for you.]",
+                    t, duration
+                )
             } else {
-                format!("[Media received: audio file ({}s)]", duration)
+                format!(
+                    "[This audio file ({}s) was sent by the user and was automatically transcribed for you.]",
+                    duration
+                )
             }
         }
     }

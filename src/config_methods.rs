@@ -110,6 +110,8 @@ pub(crate) fn basic_config() -> Config {
         openrouter: OpenRouterConfig {
             api_key: "test-key".into(),
             model: "test/model".into(),
+            image_fallback_model: None,
+            audio_fallback_model: None,
         },
         conversation: ConversationConfig::default(),
         db: DatabaseConfig::default(),
