@@ -136,7 +136,9 @@ impl GlowBot {
             chat_id,
             user_id,
             username,
-            text,
+            Some(text),
+            None,
+            None,
             bot_username,
             None,
         )
@@ -248,10 +250,13 @@ pub async fn process_message_impl(
     chat_id: &str,
     user_id: &str,
     username: &str,
-    text: &str,
+    text: Option<&str>,
+    caption: Option<&str>,
+    media: Option<&crate::media::IngestedMedia>,
     bot_username: &str,
     tg_bot: Option<&teloxide::Bot>,
 ) -> anyhow::Result<Option<String>> {
+    let text = text.unwrap_or("");
     let is_command = text.trim().starts_with('/');
     let is_mention = text.contains(&format!("@{}", bot_username));
 
@@ -338,11 +343,12 @@ pub async fn process_message_impl(
     }
 
     log::info!(
-        "bot: routing to LLM pipeline (chat={}, user={}, tools_enabled={}, is_dm={})",
+        "bot: routing to LLM pipeline (chat={}, user={}, tools_enabled={}, is_dm={}, has_media={})",
         chat_id,
         user_id,
         tools_enabled,
-        is_dm
+        is_dm,
+        media.is_some()
     );
 
     self::bot_pipeline::process_with_llm_impl(
@@ -353,6 +359,8 @@ pub async fn process_message_impl(
         user_id,
         username,
         text,
+        caption,
+        media,
         tools_enabled,
         tg_bot,
     )

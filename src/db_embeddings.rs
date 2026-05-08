@@ -73,6 +73,7 @@ impl Database {
                     .iter()
                     .map(|p| match p {
                         ContentPart::Text { text } => text.clone(),
+                        _ => String::new(),
                     })
                     .collect::<Vec<_>>()
                     .join(" "),
@@ -132,6 +133,7 @@ impl Database {
                     .iter()
                     .map(|p| match p {
                         ContentPart::Text { text } => text.clone(),
+                        _ => String::new(),
                     })
                     .collect::<Vec<_>>()
                     .join(" "),

@@ -16,14 +16,17 @@ pub(crate) async fn process_with_llm_impl(
     user_id: &str,
     username: &str,
     text: &str,
+    caption: Option<&str>,
+    media: Option<&crate::media::IngestedMedia>,
     tools_enabled: bool,
     tg_bot: Option<&teloxide::Bot>,
 ) -> anyhow::Result<Option<String>> {
     log::info!(
-        "pipeline: starting LLM processing for chat={}, user={}, text=\"{}\"",
+        "pipeline: starting LLM processing for chat={}, user={}, text=\"{}\", has_media={}",
         chat_id,
         user_id,
-        text.chars().take(100).collect::<String>()
+        text.chars().take(100).collect::<String>(),
+        media.is_some()
     );
 
     // Set up stop signal for this chat (clear any previous signal)
@@ -81,7 +84,7 @@ pub(crate) async fn process_with_llm_impl(
         (hist, include)
     };
 
-    let current_msg = ChatMessage::user_with_name(text, username);
+    let current_msg = build_user_message(text, caption, media, username);
     let mut turn_messages = vec![current_msg.clone()];
 
     let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
@@ -333,6 +336,51 @@ pub(crate) fn chunk_for_embedding(text: &str, max_chars: usize, allow_split: boo
             .collect()
     } else {
         vec![chars[..max_chars].iter().collect()]
+    }
+}
+
+/// Build the user message for the LLM, combining text, caption, and media metadata.
+/// In Phase 2 this only produces text — actual media download/conversion comes later.
+fn build_user_message(
+    text: &str,
+    caption: Option<&str>,
+    media: Option<&crate::media::IngestedMedia>,
+    username: &str,
+) -> ChatMessage {
+    if let Some(media) = media {
+        let parts: Vec<String> = std::iter::empty()
+            .chain(caption.map(|c| c.to_string()))
+            .chain(Some(media_description(media)))
+            .filter(|s| !s.is_empty())
+            .collect();
+        let combined = parts.join("\n");
+        let final_text = if text.is_empty() {
+            combined
+        } else {
+            format!("{}\n\n{}", combined, text)
+        };
+        ChatMessage::user_with_name(&final_text, username)
+    } else {
+        ChatMessage::user_with_name(text, username)
+    }
+}
+
+/// Produce a human-readable description of ingested media for use in text-only messages.
+fn media_description(media: &crate::media::IngestedMedia) -> String {
+    match media {
+        crate::media::IngestedMedia::Photo { width, height, .. } => {
+            format!("[Media received: photo ({}x{})]", width, height)
+        }
+        crate::media::IngestedMedia::Voice { duration, .. } => {
+            format!("[Media received: voice message ({}s)]", duration)
+        }
+        crate::media::IngestedMedia::Audio { duration, title, .. } => {
+            if let Some(t) = title {
+                format!("[Media received: audio \"{}\" ({}s)]", t, duration)
+            } else {
+                format!("[Media received: audio file ({}s)]", duration)
+            }
+        }
     }
 }
 

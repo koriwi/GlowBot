@@ -144,10 +144,13 @@ async fn handle_message(
     msg: Message,
     bot_username: &str,
 ) {
-    let text = match msg.text() {
-        Some(t) => t,
-        None => return,
-    };
+    let text = msg.text().map(|s| s.to_string());
+    let caption = msg.caption().map(|s| s.to_string());
+    let media = glowbot::media::IngestedMedia::try_from_message(&msg);
+
+    if text.is_none() && media.is_none() {
+        return; // truly nothing to process (e.g. unsupported message type)
+    }
 
     let chat_id = msg.chat.id.to_string();
     let user_id = msg
@@ -166,7 +169,7 @@ async fn handle_message(
         username,
         user_id,
         chat_id,
-        text
+        text.as_deref().unwrap_or("(media)")
     );
 
     // Show typing indicator while processing
@@ -186,7 +189,7 @@ async fn handle_message(
     };
 
     // /stop bypasses the per-chat lock: just set the stop signal and return
-    if text.trim() == "/stop" {
+    if text.as_deref().map(|t| t.trim() == "/stop").unwrap_or(false) {
         if let Ok(signals) = stop_signals.lock() {
             if let Some(signal) = signals.get(&chat_id) {
                 signal.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -239,7 +242,9 @@ async fn handle_message(
         &chat_id,
         &user_id,
         username,
-        text,
+        text.as_deref(),
+        caption.as_deref(),
+        media.as_ref(),
         bot_username,
         Some(&tg_bot),
     )

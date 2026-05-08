@@ -52,12 +52,36 @@ pub enum ChatContent {
     Parts(Vec<ContentPart>),
 }
 
-/// A content part (text or image etc.).
+/// A content part (text, image, or audio).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ContentPart {
     #[serde(rename = "text")]
     Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl {
+        image_url: ImageUrlDetail,
+    },
+    #[serde(rename = "input_audio")]
+    InputAudio {
+        input_audio: InputAudioDetail,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageUrlDetail {
+    /// Base64 data-URL (e.g. "data:image/jpeg;base64,...") or https URL.
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InputAudioDetail {
+    /// Raw base64-encoded audio data (no `data:` prefix).
+    pub data: String,
+    /// Audio format (e.g. "wav", "mp3", "ogg").
+    pub format: String,
 }
 
 impl ChatMessage {
@@ -87,6 +111,30 @@ impl ChatMessage {
         Self {
             role: "user".into(),
             content: ChatContent::Text(content.to_string()),
+            name: Some(name.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+            reasoning: None,
+        }
+    }
+
+    /// Create a user message with multimodal content parts (text, images, audio).
+    pub fn user_multimodal(parts: Vec<ContentPart>) -> Self {
+        Self {
+            role: "user".into(),
+            content: ChatContent::Parts(parts),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+            reasoning: None,
+        }
+    }
+
+    /// Create a user message with multimodal content parts and a name.
+    pub fn user_multimodal_with_name(parts: Vec<ContentPart>, name: &str) -> Self {
+        Self {
+            role: "user".into(),
+            content: ChatContent::Parts(parts),
             name: Some(name.to_string()),
             tool_calls: None,
             tool_call_id: None,
@@ -156,6 +204,7 @@ impl ChatMessage {
     }
 
     /// Extract text content regardless of format.
+    /// Non-text parts (images, audio) produce placeholder markers.
     pub fn text_content(&self) -> String {
         match &self.content {
             ChatContent::Text(t) => t.clone(),
@@ -163,6 +212,8 @@ impl ChatMessage {
                 .iter()
                 .map(|p| match p {
                     ContentPart::Text { text } => text.clone(),
+                    ContentPart::ImageUrl { .. } => "[image]".to_string(),
+                    ContentPart::InputAudio { .. } => "[audio]".to_string(),
                 })
                 .collect::<Vec<_>>()
                 .join(""),

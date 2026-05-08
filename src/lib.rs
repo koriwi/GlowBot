@@ -7,6 +7,7 @@ pub mod db;
 pub mod git;
 pub mod llm;
 pub mod mcp;
+pub mod media;
 pub mod memory;
 pub mod openrouter;
 pub mod skills;
