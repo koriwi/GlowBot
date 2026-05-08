@@ -10,6 +10,9 @@ openrouter:
   # automatic conversion for non-vision/non-audio models.
   # image_fallback_model: "openai/gpt-4o"
   # audio_fallback_model: "google/gemini-2.5-flash"
+  # Image generation model — when set, the `generate_image` tool is enabled.
+  # Must be an image generation model (e.g. "google/imagen-4", "black-forest-labs/flux-1.1-pro").
+  # image_gen_model: "black-forest-labs/flux-1.1-pro"
   # Embedding model for conversation vector search (RAG) — disabled by default.
   # When set, every message is embedded and stored. Example: "openai/text-embedding-3-small"
   # embedding_model: "openai/text-embedding-3-small"

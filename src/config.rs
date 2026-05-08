@@ -158,6 +158,12 @@ pub struct OpenRouterConfig {
     /// This model should support the `audio` input modality.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_fallback_model: Option<String>,
+    /// Model used for image generation via the `generate_image` tool.
+    /// Must be an image generation model available on OpenRouter
+    /// (e.g. "google/imagen-4", "black-forest-labs/flux-1.1-pro").
+    /// If unset, the `generate_image` tool is not exposed to the LLM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_gen_model: Option<String>,
     /// Embedding model name for conversation vector search (RAG).
     /// When set, every message is embedded and stored.
     /// Example: "openai/text-embedding-3-small"

@@ -1,5 +1,6 @@
 use super::{
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, ModelInfo,
+    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse,
+    ImageGenerationRequest, ImageGenerationResponse, ModelInfo,
 };
 
 /// Truncate a string to `max_len` characters, appending "..." if truncated.
@@ -137,5 +138,45 @@ impl OpenRouterClient {
             )
         })?;
         Ok(completion)
+    }
+
+    /// Generate images via OpenRouter's images/generations API.
+    pub async fn image_generation(
+        &self,
+        request: &ImageGenerationRequest,
+    ) -> anyhow::Result<ImageGenerationResponse> {
+        let response = self
+            .http_client
+            .post("https://openrouter.ai/api/v1/images/generations")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let body_text = response
+            .text()
+            .await
+            .unwrap_or_else(|e| format!("(failed to read body: {})", e));
+        if !status.is_success() {
+            anyhow::bail!(
+                "OpenRouter image generation API error ({}): {}",
+                status,
+                body_text
+            );
+        }
+
+        let gen_response: ImageGenerationResponse = serde_json::from_str(&body_text).map_err(
+            |e| {
+                anyhow::anyhow!(
+                    "Failed to parse image generation response (status {}): {}. Body: {}",
+                    status,
+                    e,
+                    truncate_str(&body_text, 500)
+                )
+            },
+        )?;
+        Ok(gen_response)
     }
 }

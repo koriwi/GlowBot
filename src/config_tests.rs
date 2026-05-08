@@ -421,6 +421,21 @@ fn test_is_mcp_server_allowed_dm_always_allowed() {
 }
 
 #[test]
+fn test_image_gen_model_serialization() {
+    let mut config = basic_config();
+    assert!(config.openrouter.image_gen_model.is_none());
+    config.openrouter.image_gen_model = Some("black-forest-labs/flux-1.1-pro".into());
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("config.yaml");
+    config.save(&path).unwrap();
+    let loaded = Config::load(&path).unwrap();
+    assert_eq!(
+        loaded.openrouter.image_gen_model.as_deref(),
+        Some("black-forest-labs/flux-1.1-pro")
+    );
+}
+
+#[test]
 fn test_mcp_blacklist_serialization() {
     let chat = ChatConfig {
         mcp_blacklist: vec!["homeassistant".into(), "download-srv".into()],

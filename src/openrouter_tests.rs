@@ -75,7 +75,7 @@ fn test_chat_completion_request_seialization() {
     let req = ChatCompletionRequest {
         model: "test/model".into(),
         messages: vec![ChatMessage::system("sys"), ChatMessage::user("hi")],
-        tools: Some(all_tool_definitions(true, None, "/media")),
+        tools: Some(all_tool_definitions(true, None, "/media", None)),
         tool_choice: None,
     };
     let json = serde_json::to_string(&req).unwrap();
@@ -88,7 +88,7 @@ fn test_chat_completion_request_seialization() {
 
 #[test]
 fn test_all_tool_definitions_with_bash() {
-    let tools = all_tool_definitions(true, None, "/media");
+    let tools = all_tool_definitions(true, None, "/media", None);
     assert_eq!(tools.len(), 15);
     assert_eq!(tools[0].function.name, "bash");
     assert_eq!(tools[1].function.name, "read_memory");
@@ -97,7 +97,7 @@ fn test_all_tool_definitions_with_bash() {
 
 #[test]
 fn test_all_tool_definitions_without_bash() {
-    let tools = all_tool_definitions(false, None, "/media");
+    let tools = all_tool_definitions(false, None, "/media", None);
     assert_eq!(tools.len(), 14);
     assert_eq!(tools[0].function.name, "read_memory");
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
@@ -417,7 +417,7 @@ fn test_deserialize_tool_call_invalid_args() {
 #[test]
 fn test_all_tool_definitions_with_embedding_model() {
     // With bash + embedding: 14 base + bash + search_conversations = 16
-    let tools = all_tool_definitions(true, Some("openai/text-embedding-3-small"), "/media");
+    let tools = all_tool_definitions(true, Some("openai/text-embedding-3-small"), "/media", None);
     assert_eq!(tools.len(), 16);
     assert_eq!(tools[0].function.name, "bash");
     assert!(tools
@@ -425,7 +425,7 @@ fn test_all_tool_definitions_with_embedding_model() {
         .any(|t| t.function.name == "search_conversations"));
 
     // Without bash, with embedding: 14 base + search_conversations = 15
-    let tools = all_tool_definitions(false, Some("openai/text-embedding-3-small"), "/media");
+    let tools = all_tool_definitions(false, Some("openai/text-embedding-3-small"), "/media", None);
     assert_eq!(tools.len(), 15);
     assert!(tools
         .iter()
@@ -433,7 +433,7 @@ fn test_all_tool_definitions_with_embedding_model() {
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
 
     // Without embedding model, without bash: 14 base = 14 (no search_conversations)
-    let tools = all_tool_definitions(false, None, "/media");
+    let tools = all_tool_definitions(false, None, "/media", None);
     assert_eq!(tools.len(), 14);
     assert!(!tools
         .iter()
@@ -876,6 +876,111 @@ fn test_text_content_with_image_placeholder() {
         },
     ]);
     assert_eq!(msg.text_content(), "before[image]after");
+}
+
+// ─── image generation tests ────────────────────────────────────────
+
+#[test]
+fn test_generate_image_tool_definition() {
+    let def = generate_image_tool_definition("/media");
+    assert_eq!(def.def_type, "function");
+    assert_eq!(def.function.name, "generate_image");
+    assert!(def.function.description.contains("Generate"));
+    assert!(def.function.description.contains("/media"));
+
+    let params = &def.function.parameters;
+    assert_eq!(params["type"], "object");
+    let required = params["required"].as_array().unwrap();
+    assert_eq!(required.len(), 1);
+    assert_eq!(required[0], "prompt");
+    assert_eq!(params["properties"]["prompt"]["type"], "string");
+    assert_eq!(params["properties"]["size"]["type"], "string");
+    assert_eq!(params["properties"]["n"]["type"], "integer");
+    assert!(params["properties"]["reference_images"]["type"] == "array");
+}
+
+#[test]
+fn test_all_tool_definitions_with_image_gen_model() {
+    // With image_gen_model, without bash, without embedding: 14 base + generate_image = 15
+    let tools = all_tool_definitions(false, None, "/media", Some("black-forest-labs/flux-1.1-pro"));
+    assert_eq!(tools.len(), 15);
+    assert!(tools.iter().any(|t| t.function.name == "generate_image"));
+
+    // With image_gen_model, with bash, without embedding: 14 base + generate_image + bash = 16
+    let tools = all_tool_definitions(true, None, "/media", Some("black-forest-labs/flux-1.1-pro"));
+    assert_eq!(tools.len(), 16);
+    assert_eq!(tools[0].function.name, "bash");
+    assert!(tools.iter().any(|t| t.function.name == "generate_image"));
+
+    // Without image_gen_model: generate_image is excluded
+    let tools = all_tool_definitions(true, None, "/media", None);
+    assert_eq!(tools.len(), 15);
+    assert!(!tools.iter().any(|t| t.function.name == "generate_image"));
+}
+
+#[test]
+fn test_image_generation_request_serialization() {
+    let req = ImageGenerationRequest {
+        model: "black-forest-labs/flux-1.1-pro".into(),
+        prompt: "a cat".into(),
+        n: Some(2),
+        size: Some("1024x1024".into()),
+        image: None,
+        response_format: Some("b64_json".into()),
+    };
+    let json = serde_json::to_string(&req).unwrap();
+    assert!(json.contains("black-forest-labs/flux-1.1-pro"));
+    assert!(json.contains("a cat"));
+    assert!(json.contains("1024x1024"));
+    assert!(json.contains("b64_json"));
+    // Check n field
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed["n"], 2);
+    // No reference images field when None
+    assert!(!json.contains("image"));
+}
+
+#[test]
+fn test_image_generation_request_with_reference_images() {
+    let req = ImageGenerationRequest {
+        model: "test-image/model".into(),
+        prompt: "variation".into(),
+        n: None,
+        size: None,
+        image: Some(vec!["data:image/png;base64,abc123".into()]),
+        response_format: None,
+    };
+    let json = serde_json::to_string(&req).unwrap();
+    assert!(json.contains("data:image/png;base64,abc123"));
+    // No size, n, or response_format when None
+    assert!(!json.contains("size"));
+    assert!(!json.contains("response_format"));
+    // n field should not appear as a string key (but might be null if included)
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert!(parsed.get("n").map_or(true, |v| v.is_null()));
+}
+
+#[test]
+fn test_image_generation_response_deserialization() {
+    let json = serde_json::json!({
+        "data": [
+            { "url": "https://example.com/img1.png" },
+            { "b64_json": "iVBORw0KGgo=" }
+        ]
+    });
+    let resp: ImageGenerationResponse = serde_json::from_value(json).unwrap();
+    assert_eq!(resp.data.len(), 2);
+    assert_eq!(resp.data[0].url.as_deref(), Some("https://example.com/img1.png"));
+    assert!(resp.data[0].b64_json.is_none());
+    assert_eq!(resp.data[1].b64_json.as_deref(), Some("iVBORw0KGgo="));
+    assert!(resp.data[1].url.is_none());
+}
+
+#[test]
+fn test_image_generation_response_empty_data() {
+    let json = serde_json::json!({"data": []});
+    let resp: ImageGenerationResponse = serde_json::from_value(json).unwrap();
+    assert!(resp.data.is_empty());
 }
 
 #[test]

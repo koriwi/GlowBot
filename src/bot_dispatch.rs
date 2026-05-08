@@ -8,6 +8,8 @@ use tokio::sync::Mutex;
 mod bot_dispatch_media;
 #[path = "bot_dispatch_memory.rs"]
 mod bot_dispatch_memory;
+#[path = "bot_dispatch_image.rs"]
+pub(crate) mod bot_dispatch_image;
 #[path = "bot_dispatch_skills.rs"]
 mod bot_dispatch_skills;
 
@@ -178,6 +180,9 @@ pub(crate) async fn dispatch_tool(
             } else {
                 format!("Task '{}' not found.", id)
             }
+        }
+        "generate_image" => {
+            bot_dispatch_image::tool_generate_image(state, &cid, args).await
         }
         "create_skill" => {
             bot_dispatch_skills::tool_create_skill(state, args).await

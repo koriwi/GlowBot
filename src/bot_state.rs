@@ -94,6 +94,7 @@ impl BotState {
             include_bash,
             self.config.openrouter.embedding_model.as_deref(),
             &self.config.media_dir,
+            self.config.openrouter.image_gen_model.as_deref(),
         );
         let mut blacklisted_counts: HashMap<&str, usize> = HashMap::new();
         for mt in &self.mcp_tools {

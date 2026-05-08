@@ -347,6 +347,41 @@ pub(crate) struct EmbeddingResponse {
     pub(crate) data: Vec<EmbeddingData>,
 }
 
+/// An image generation request to OpenRouter's images/generations API.
+#[derive(Debug, Serialize)]
+pub struct ImageGenerationRequest {
+    pub model: String,
+    pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+    /// Base64-encoded reference images for image-to-image or style-guided generation.
+    /// Each entry is a data-URL (e.g. "data:image/png;base64,...").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<Vec<String>>,
+    /// Response format: "url" (default) or "b64_json".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<String>,
+}
+
+/// A single generated image result.
+#[derive(Debug, Deserialize)]
+pub struct ImageData {
+    /// URL to the generated image (when response_format is "url").
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Base64-encoded image data (when response_format is "b64_json").
+    #[serde(default)]
+    pub b64_json: Option<String>,
+}
+
+/// Response from OpenRouter's images/generations API.
+#[derive(Debug, Deserialize)]
+pub struct ImageGenerationResponse {
+    pub data: Vec<ImageData>,
+}
+
 #[cfg(test)]
 #[path = "openrouter_tests.rs"]
 mod tests;

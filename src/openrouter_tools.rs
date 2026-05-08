@@ -82,10 +82,12 @@ pub(crate) fn update_memory_tool_definition() -> ToolDefinition {
 /// All tool definitions. When `include_bash` is false, the bash tool is excluded.
 /// When `model` is Some, adds the search_conversations RAG tool.
 /// `media_dir` is the configured media directory path, shown in the send_media description.
+/// `image_gen_model` enables the `generate_image` tool.
 pub fn all_tool_definitions(
     include_bash: bool,
     embedding_model: Option<&str>,
     media_dir: &str,
+    image_gen_model: Option<&str>,
 ) -> Vec<ToolDefinition> {
     let mut tools = vec![
         read_memory_tool_definition(),
@@ -106,6 +108,9 @@ pub fn all_tool_definitions(
     }
     tools.push(list_media_tool_definition(media_dir));
     tools.push(send_media_tool_definition(media_dir));
+    if image_gen_model.is_some() {
+        tools.push(generate_image_tool_definition(media_dir));
+    }
     if include_bash {
         tools.insert(0, bash_tool_definition());
     }
@@ -393,6 +398,45 @@ pub(crate) fn list_media_tool_definition(media_dir: &str) -> ToolDefinition {
                     }
                 },
                 "required": []
+            }),
+        },
+    }
+}
+
+/// The generate_image tool definition.
+/// Only exposed when `image_gen_model` is configured.
+pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition {
+    let desc = format!(
+        "Generate one or more images from a text description. Optionally provide reference images to guide style, composition, or content. Generated images are saved to the media directory at '{}' and their file paths are returned — use send_media to display them. Reference images must be file paths to existing images (PNG, JPEG, WebP, GIF).",
+        media_dir
+    );
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "generate_image".into(),
+            description: desc,
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Text description of the image to generate. Be detailed — describe subject, style, lighting, composition, colors, mood."
+                    },
+                    "size": {
+                        "type": "string",
+                        "description": "Image size (e.g. '1024x1024', '1792x1024', '1024x1792'). Default depends on the model."
+                    },
+                    "n": {
+                        "type": "integer",
+                        "description": "Number of images to generate (default: 1, max: 4)."
+                    },
+                    "reference_images": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional file paths to reference images to guide the generation (style, composition, etc.). Paths can be relative to the data directory, absolute, or inside the media directory."
+                    }
+                },
+                "required": ["prompt"]
             }),
         },
     }
