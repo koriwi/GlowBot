@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::db::Database;
 use crate::llm::LlmBackend;
-use crate::openrouter::Usage;
+use crate::openrouter::{ModelInfo, Usage};
 use crate::skills::Skill;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,8 +16,8 @@ pub struct BotState {
     pub db: Database,
     /// Tools discovered from MCP servers.
     pub mcp_tools: Vec<crate::mcp::McpTool>,
-    /// Cached model context lengths from OpenRouter.
-    pub model_context_lengths: HashMap<String, u64>,
+    /// Cached model metadata from OpenRouter (includes context lengths and input modalities).
+    pub model_metadata: HashMap<String, ModelInfo>,
     /// Per-chat last token usage from the most recent LLM call.
     pub last_usage: HashMap<String, Usage>,
 }
@@ -131,7 +131,11 @@ impl BotState {
     /// Reports against the *effective* limit (with safety margin applied).
     pub fn context_usage(&self, chat_id: &str) -> String {
         let model = self.effective_model(chat_id);
-        let raw_limit = self.model_context_lengths.get(crate::openrouter::normalize_model_id(&model)).copied().unwrap_or(0);
+        let raw_limit = self
+            .model_metadata
+            .get(crate::openrouter::normalize_model_id(&model))
+            .map(|m| m.context_length)
+            .unwrap_or(0);
         let effective_limit = if raw_limit == 0 {
             log::warn!(
                 "Model '{}' not found in context length cache; context usage will be limited",

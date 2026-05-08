@@ -326,6 +326,40 @@ fn test_deserialize_model_info() {
     let m: ModelInfo = serde_json::from_value(json).unwrap();
     assert_eq!(m.id, "anthropic/claude-sonnet-4");
     assert_eq!(m.context_length, 200000);
+    // Architecture defaults to empty when not present in JSON
+    assert!(m.architecture.input_modalities.is_empty());
+}
+
+#[test]
+fn test_deserialize_model_info_with_architecture() {
+    let json = serde_json::json!({
+        "id": "google/gemini-2.5-flash",
+        "context_length": 1048576,
+        "architecture": {
+            "input_modalities": ["text", "image", "audio", "video"]
+        }
+    });
+    let m: ModelInfo = serde_json::from_value(json).unwrap();
+    assert_eq!(m.id, "google/gemini-2.5-flash");
+    assert_eq!(m.context_length, 1048576);
+    assert_eq!(m.architecture.input_modalities.len(), 4);
+    assert!(m.supports_modality("text"));
+    assert!(m.supports_modality("image"));
+    assert!(m.supports_modality("audio"));
+    assert!(m.supports_modality("video"));
+    assert!(!m.supports_modality("file"));
+}
+
+#[test]
+fn test_supports_modality_empty() {
+    let m = ModelInfo {
+        id: "test/model".into(),
+        context_length: 4096,
+        architecture: Default::default(),
+    };
+    assert!(!m.supports_modality("text"));
+    assert!(!m.supports_modality("image"));
+    assert!(!m.supports_modality("audio"));
 }
 
 #[test]

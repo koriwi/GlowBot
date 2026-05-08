@@ -220,11 +220,31 @@ pub struct Usage {
     pub total_tokens: u64,
 }
 
+/// Model architecture metadata from OpenRouter's /api/v1/models endpoint.
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct ModelArchitecture {
+    /// Input modalities the model natively supports: "text", "image", "audio", "file", "video".
+    #[serde(default)]
+    pub input_modalities: Vec<String>,
+}
+
 /// Model metadata from OpenRouter's /api/v1/models endpoint.
 #[derive(Debug, Deserialize, Clone)]
 pub struct ModelInfo {
     pub id: String,
     pub context_length: u64,
+    #[serde(default)]
+    pub architecture: ModelArchitecture,
+}
+
+impl ModelInfo {
+    /// Check if this model natively supports a given input modality.
+    pub fn supports_modality(&self, modality: &str) -> bool {
+        self.architecture
+            .input_modalities
+            .iter()
+            .any(|m| m == modality)
+    }
 }
 
 /// A response from OpenRouter's chat completions API.

@@ -3,7 +3,7 @@ use super::bot_heartbeat::run_heartbeat_task;
 use super::*;
 use crate::llm::mock::MockLlmBackend;
 use crate::openrouter::{
-    AssistantMessage, ChatCompletionResponse, ChatMessage, Choice, FunctionCall, ToolCall,
+    AssistantMessage, ChatCompletionResponse, ChatMessage, Choice, FunctionCall, ModelInfo, ToolCall,
 };
 use tempfile::TempDir;
 
@@ -1086,7 +1086,7 @@ async fn test_dispatch_send_message_empty_text() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1114,7 +1114,7 @@ async fn test_dispatch_send_message_no_tg_bot() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1142,7 +1142,7 @@ async fn test_dispatch_send_media_empty_file_path() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1170,7 +1170,7 @@ async fn test_dispatch_send_media_file_not_found() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1200,7 +1200,7 @@ async fn test_dispatch_send_media_no_tg_bot() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1229,7 +1229,7 @@ async fn test_dispatch_send_media_original_quality() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1262,7 +1262,7 @@ fn setup_state_with_media_dir(media_dir: &std::path::Path) -> Arc<Mutex<BotState
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     state
@@ -1402,7 +1402,7 @@ async fn test_dispatch_bash_empty_command() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1431,7 +1431,7 @@ async fn test_dispatch_bash_disabled() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1463,7 +1463,7 @@ async fn test_dispatch_read_memory_missing() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1491,7 +1491,7 @@ async fn test_dispatch_update_memory_no_fields() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1519,7 +1519,7 @@ async fn test_dispatch_add_task_empty() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1547,7 +1547,7 @@ async fn test_dispatch_list_tasks_non_empty() {
         data_dir: data_dir.clone(),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     // Add a task first
@@ -1577,7 +1577,7 @@ async fn test_dispatch_remove_task_empty_and_not_found() {
         data_dir: data_dir.clone(),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1614,7 +1614,7 @@ async fn test_dispatch_create_skill_validation() {
         data_dir: data_dir.clone(),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1642,7 +1642,7 @@ async fn test_dispatch_read_skill_not_found() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1670,7 +1670,7 @@ async fn test_dispatch_update_skill_not_found() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -1698,7 +1698,7 @@ async fn test_dispatch_unknown_tool() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "narnia", &serde_json::json!({}), None).await;
@@ -1719,7 +1719,7 @@ async fn test_dispatch_mcp_tool_not_found() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "mcp_no_no", &serde_json::json!({}), None).await;
@@ -1740,7 +1740,7 @@ async fn test_get_recent_messages_empty_history() {
         data_dir,
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -2104,15 +2104,19 @@ fn test_context_usage_formatting() {
         data_dir: std::path::PathBuf::from("/tmp"),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     };
     // No context cached, no usage -> no token data yet
     assert_eq!(state.context_usage("-123"), "no token data yet");
-    // Cache context length for the default model
+    // Cache model metadata for the default model
     state
-        .model_context_lengths
-        .insert("test/model".into(), 200000);
+        .model_metadata
+        .insert("test/model".into(), ModelInfo {
+            id: "test/model".into(),
+            context_length: 200000,
+            architecture: Default::default(),
+        });
     // Effective limit = 200k * 0.75 = 150k
     assert_eq!(state.context_usage("-123"), "0k/150k (0%)");
     // Set usage
@@ -2143,7 +2147,7 @@ async fn test_dispatch_search_conversations_no_model() {
         data_dir: data_dir.clone(),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -2168,7 +2172,7 @@ async fn test_dispatch_search_conversations_empty_query() {
         data_dir: std::path::PathBuf::from("/tmp"),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -2193,7 +2197,7 @@ async fn test_dispatch_search_conversations_no_results() {
         data_dir: std::path::PathBuf::from("/tmp"),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -2235,7 +2239,7 @@ async fn test_dispatch_search_conversations_with_results() {
         data_dir: std::path::PathBuf::from("/tmp"),
         db,
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(
@@ -2265,7 +2269,7 @@ async fn test_dispatch_search_conversations_embedding_error() {
         data_dir: std::path::PathBuf::from("/tmp"),
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
-        model_context_lengths: HashMap::new(),
+        model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
     }));
     let out = dispatch_tool(

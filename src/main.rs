@@ -31,7 +31,7 @@ async fn run_bot() -> anyhow::Result<()> {
     let bot = GlowBot::new_with_llm(&data_dir, llm).await?;
     let bot = Arc::new(Mutex::new(bot));
 
-    // Fetch model context lengths from OpenRouter in the background.
+    // Fetch model metadata from OpenRouter in the background.
     // Avoid holding the bot lock during the HTTP call so message processing isn't blocked.
     {
         let api_key = openrouter_key.clone();
@@ -41,17 +41,16 @@ async fn run_bot() -> anyhow::Result<()> {
             match client.fetch_models().await {
                 Ok(models) => {
                     let mut s = state.lock().await;
-                    for m in &models {
-                        s.model_context_lengths
-                            .insert(m.id.clone(), m.context_length);
+                    for m in models {
+                        s.model_metadata.insert(m.id.clone(), m);
                     }
                     log::info!(
-                        "Cached {} model context lengths from OpenRouter",
-                        models.len()
+                        "Cached {} model metadata entries from OpenRouter",
+                        s.model_metadata.len()
                     );
                 }
                 Err(e) => {
-                    log::warn!("Failed to fetch model context lengths: {}", e);
+                    log::warn!("Failed to fetch model metadata: {}", e);
                 }
             }
         });

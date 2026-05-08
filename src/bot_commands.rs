@@ -144,7 +144,7 @@ pub(crate) async fn handle_bot_command_impl(
     {
         let s = state.lock().await;
         let model = s.effective_model(chat_id);
-        let needs_fetch = !s.model_context_lengths.contains_key(crate::openrouter::normalize_model_id(&model));
+        let needs_fetch = !s.model_metadata.contains_key(crate::openrouter::normalize_model_id(&model));
         let api_key = s.config.openrouter.api_key.clone();
         drop(s);
 
@@ -153,18 +153,18 @@ pub(crate) async fn handle_bot_command_impl(
             match client.fetch_models().await {
                 Ok(models) => {
                     let mut s = state.lock().await;
-                    let old_count = s.model_context_lengths.len();
+                    let old_count = s.model_metadata.len();
                     for m in models {
-                        s.model_context_lengths.insert(m.id, m.context_length);
+                        s.model_metadata.insert(m.id.clone(), m);
                     }
                     log::info!(
-                        "Fetched {} model context lengths on-demand for /status (had {} before)",
-                        s.model_context_lengths.len() - old_count,
+                        "Fetched {} model metadata entries on-demand for /status (had {} before)",
+                        s.model_metadata.len() - old_count,
                         old_count
                     );
                 }
                 Err(e) => {
-                    log::warn!("Failed to fetch model context lengths for /status: {}", e);
+                    log::warn!("Failed to fetch model metadata for /status: {}", e);
                 }
             }
         }

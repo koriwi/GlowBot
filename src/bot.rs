@@ -67,7 +67,7 @@ impl GlowBot {
             data_dir: data_dir.to_path_buf(),
             db: Database::new(&data_dir.join("conversations.db"), &schema_dir)?,
             mcp_tools,
-            model_context_lengths: HashMap::new(),
+            model_metadata: HashMap::new(),
             last_usage: HashMap::new(),
         };
 
@@ -78,9 +78,9 @@ impl GlowBot {
         })
     }
 
-    /// Fetch model context lengths from OpenRouter and populate the cache.
+    /// Fetch model metadata from OpenRouter and populate the cache.
     #[allow(dead_code)]
-    pub async fn fetch_model_contexts(&self) -> anyhow::Result<()> {
+    pub async fn fetch_model_metadata(&self) -> anyhow::Result<()> {
         let api_key = {
             let s = self.state.lock().await;
             s.config.openrouter.api_key.clone()
@@ -91,11 +91,11 @@ impl GlowBot {
 
         let mut s = self.state.lock().await;
         for m in models {
-            s.model_context_lengths.insert(m.id, m.context_length);
+            s.model_metadata.insert(m.id.clone(), m);
         }
         log::info!(
-            "Cached {} model context lengths from OpenRouter",
-            s.model_context_lengths.len()
+            "Cached {} model metadata entries from OpenRouter",
+            s.model_metadata.len()
         );
         Ok(())
     }
