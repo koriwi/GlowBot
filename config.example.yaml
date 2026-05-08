@@ -10,6 +10,9 @@ openrouter:
   # automatic conversion for non-vision/non-audio models.
   # image_fallback_model: "openai/gpt-4o"
   # audio_fallback_model: "google/gemini-2.5-flash"
+  # Embedding model for conversation vector search (RAG) — disabled by default.
+  # When set, every message is embedded and stored. Example: "openai/text-embedding-3-small"
+  # embedding_model: "openai/text-embedding-3-small"
 
 # Conversation context settings
 conversation:
@@ -20,9 +23,8 @@ conversation:
 db:
   store_reasoning: false             # persist LLM reasoning/thinking content in DB (default: false)
 
-# Embedding / vector search (RAG) — disabled by default, requires an embedding model
+# Embedding / vector search (RAG) settings
 embedding:
-  # model: "openai/text-embedding-3-small"
   max_chars: 0                       # 0 = no limit (full text); otherwise truncate / split at this size
   allow_split: false                 # when true, split long text into chunks instead of truncating
   search_limit: 1000                 # max number of embeddings loaded for similarity search (default: 1000)

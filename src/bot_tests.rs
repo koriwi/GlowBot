@@ -2164,7 +2164,7 @@ async fn test_dispatch_search_conversations_no_model() {
 #[tokio::test]
 async fn test_dispatch_search_conversations_empty_query() {
     let mut cfg = crate::config::basic_config();
-    cfg.embedding.model = Some("test-embed-model".into());
+    cfg.openrouter.embedding_model = Some("test-embed-model".into());
     let state = Arc::new(Mutex::new(BotState {
         config: cfg,
         skills: HashMap::new(),
@@ -2189,7 +2189,7 @@ async fn test_dispatch_search_conversations_empty_query() {
 #[tokio::test]
 async fn test_dispatch_search_conversations_no_results() {
     let mut cfg = crate::config::basic_config();
-    cfg.embedding.model = Some("test-embed-model".into());
+    cfg.openrouter.embedding_model = Some("test-embed-model".into());
     let state = Arc::new(Mutex::new(BotState {
         config: cfg,
         skills: HashMap::new(),
@@ -2214,7 +2214,7 @@ async fn test_dispatch_search_conversations_no_results() {
 #[tokio::test]
 async fn test_dispatch_search_conversations_with_results() {
     let mut cfg = crate::config::basic_config();
-    cfg.embedding.model = Some("test-embed-model".into());
+    cfg.openrouter.embedding_model = Some("test-embed-model".into());
     cfg.embedding.search_limit = 5;
 
     let db = crate::db::Database::open_in_memory().unwrap();
@@ -2257,7 +2257,7 @@ async fn test_dispatch_search_conversations_with_results() {
 #[tokio::test]
 async fn test_dispatch_search_conversations_embedding_error() {
     let mut cfg = crate::config::basic_config();
-    cfg.embedding.model = Some("test-embed-model".into());
+    cfg.openrouter.embedding_model = Some("test-embed-model".into());
 
     let mock_llm = Arc::new(MockLlmBackend::new());
     mock_llm.set_error(true);

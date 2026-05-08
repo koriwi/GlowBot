@@ -275,7 +275,7 @@ pub(crate) async fn process_with_llm_impl(
     // Embed messages in the background if embedding model is configured
     {
         let s = state.lock().await;
-        if let Some(ref embed_model) = s.config.embedding.model {
+        if let Some(ref embed_model) = s.config.openrouter.embedding_model {
             if !message_ids.is_empty() {
                 let api_key = s.config.openrouter.api_key.clone();
                 let db = s.db.clone();

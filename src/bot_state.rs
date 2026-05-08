@@ -92,7 +92,7 @@ impl BotState {
     ) -> Vec<crate::openrouter::ToolDefinition> {
         let mut t = crate::openrouter::all_tool_definitions(
             include_bash,
-            self.config.embedding.model.as_deref(),
+            self.config.openrouter.embedding_model.as_deref(),
             &self.config.media_dir,
         );
         let mut blacklisted_counts: HashMap<&str, usize> = HashMap::new();

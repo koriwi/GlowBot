@@ -273,14 +273,14 @@ fn test_config_load_save_with_dms() {
 #[test]
 fn test_embedding_model_serialization() {
     let mut config = basic_config();
-    assert!(config.embedding.model.is_none());
-    config.embedding.model = Some("openai/text-embedding-3-small".into());
+    assert!(config.openrouter.embedding_model.is_none());
+    config.openrouter.embedding_model = Some("openai/text-embedding-3-small".into());
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("config.yaml");
     config.save(&path).unwrap();
     let loaded = Config::load(&path).unwrap();
     assert_eq!(
-        loaded.embedding.model.as_deref(),
+        loaded.openrouter.embedding_model.as_deref(),
         Some("openai/text-embedding-3-small")
     );
 }
@@ -294,7 +294,6 @@ fn test_embedding_search_limit_default() {
 #[test]
 fn test_embedding_config_defaults() {
     let ec = EmbeddingConfig::default();
-    assert!(ec.model.is_none());
     assert_eq!(ec.max_chars, 0);
     assert!(!ec.allow_split);
     assert_eq!(ec.search_limit, 1000);
@@ -303,16 +302,13 @@ fn test_embedding_config_defaults() {
 #[test]
 fn test_embedding_config_serialization() {
     let ec = EmbeddingConfig {
-        model: Some("test-model".into()),
         max_chars: 500,
         allow_split: true,
         search_limit: 200,
     };
     let yaml = serde_yaml::to_string(&ec).unwrap();
-    assert!(yaml.contains("test-model"));
     assert!(yaml.contains("max_chars"));
     let loaded: EmbeddingConfig = serde_yaml::from_str(&yaml).unwrap();
-    assert_eq!(loaded.model.as_deref(), Some("test-model"));
     assert_eq!(loaded.max_chars, 500);
     assert!(loaded.allow_split);
     assert_eq!(loaded.search_limit, 200);

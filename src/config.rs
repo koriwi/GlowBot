@@ -117,10 +117,6 @@ impl Default for ConversationConfig {
 /// Embedding configuration for conversation vector search (RAG).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingConfig {
-    /// Embedding model name. When set, every message is embedded and stored.
-    /// Example: "openai/text-embedding-3-small"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
     /// Maximum characters per embedding. 0 means no limit (full text).
     /// When text exceeds this, it is either truncated (allow_split=false)
     /// or split into multiple chunks (allow_split=true).
@@ -138,7 +134,6 @@ pub struct EmbeddingConfig {
 impl Default for EmbeddingConfig {
     fn default() -> Self {
         Self {
-            model: None,
             max_chars: 0,
             allow_split: false,
             search_limit: default_embedding_search_limit(),
@@ -163,6 +158,11 @@ pub struct OpenRouterConfig {
     /// This model should support the `audio` input modality.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_fallback_model: Option<String>,
+    /// Embedding model name for conversation vector search (RAG).
+    /// When set, every message is embedded and stored.
+    /// Example: "openai/text-embedding-3-small"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_model: Option<String>,
 }
 
 /// Global application configuration.

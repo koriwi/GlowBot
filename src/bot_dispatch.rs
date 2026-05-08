@@ -285,7 +285,7 @@ pub(crate) async fn dispatch_tool(
                 let s = state.lock().await;
                 let cfg = &s.config;
                 (
-                    match &cfg.embedding.model {
+                    match &cfg.openrouter.embedding_model {
                         Some(m) => m.clone(),
                         None => return "Error: embedding model not configured".into(),
                     },

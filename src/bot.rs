@@ -150,7 +150,7 @@ impl GlowBot {
     pub async fn start_embedding_backfill(&self) {
         let (model, api_key, max_chars, allow_split) = {
             let s = self.state.lock().await;
-            match &s.config.embedding.model {
+            match &s.config.openrouter.embedding_model {
                 Some(m) => (
                     m.clone(),
                     s.config.openrouter.api_key.clone(),
