@@ -63,11 +63,13 @@ impl Config {
             .unwrap_or(self.bash_enabled)
     }
 
-    /// Get the effective context limit for heartbeat/background tasks.
-    /// Returns the configured `conversation.heartbeat_context_limit` if set,
-    /// otherwise `None` (caller should fall back to the model's context_length).
-    pub fn heartbeat_context_limit(&self) -> Option<u64> {
-        self.conversation.heartbeat_context_limit
+    /// Get the effective message window size for heartbeat/background tasks.
+    /// Returns the configured `conversation.heartbeat_recent_messages_window_size`
+    /// if set, otherwise falls back to `conversation.recent_messages_window_size`.
+    pub fn heartbeat_recent_messages_window_size(&self) -> usize {
+        self.conversation
+            .heartbeat_recent_messages_window_size
+            .unwrap_or(self.conversation.recent_messages_window_size)
     }
 
     /// Check whether an MCP server is allowed for a given chat.

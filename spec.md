@@ -52,7 +52,7 @@ openrouter_default_model: "anthropic/claude-sonnet-4"
 conversation:
   recent_messages_window_size: 20   # number of recent messages (default: 20)
   include_reasoning: false           # include LLM reasoning/thinking in next requests (default: false)
-  heartbeat_context_limit: 32000    # optional — max context tokens for heartbeat tasks (default: unset, uses model limit)
+  heartbeat_recent_messages_window_size: 10   # optional — conversation history messages for heartbeat tasks; falls back to recent_messages_window_size if unset; 0 = no history
 
 # Database settings
 db:
@@ -275,7 +275,7 @@ chats:
     heartbeat_interval_minutes: 30   # per-chat override
 ```
 
-**Context limit:** Heartbeat tasks use `conversation.heartbeat_context_limit` if configured, otherwise fall back to the model's full `context_length`. This lets background tasks run with a smaller context window to save costs.
+**Conversation context:** Heartbeat tasks load `conversation.heartbeat_recent_messages_window_size` messages from the conversation history (falls back to `recent_messages_window_size` if unset). Set to `0` to give heartbeat tasks no conversation history. This lets you control how much context background tasks see independently from regular messages.
 
 **How it works:**
 - Users (or the LLM) add tasks via `add_task(description)`.

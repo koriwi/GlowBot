@@ -17,6 +17,30 @@ pub async fn run_heartbeat_task(
     let cid = chat_id.to_string();
     let mut tried_this_cycle: std::collections::HashSet<String> = std::collections::HashSet::new();
 
+    // Load conversation history once per heartbeat cycle, using the configured
+    // heartbeat message window size (falls back to recent_messages_window_size).
+    let history: Vec<ChatMessage> = {
+        let s = state.lock().await;
+        let win = s.config.heartbeat_recent_messages_window_size();
+        if win == 0 {
+            Vec::new()
+        } else {
+            let cutoff = s.db.get_cutoff(&cid).unwrap_or(None);
+            let hist = match s.db.load_messages(&cid, win, cutoff) {
+                Ok(msgs) => msgs,
+                Err(e) => {
+                    log::error!(
+                        "Heartbeat chat {}: failed to load conversation history: {}",
+                        cid,
+                        e
+                    );
+                    Vec::new()
+                }
+            };
+            crate::openrouter::strip_orphaned_tool_results(&hist)
+        }
+    };
+
     loop {
         let (task_id, task_desc) = {
             let s = state.lock().await;
@@ -68,51 +92,26 @@ pub async fn run_heartbeat_task(
             s.build_tools(bash_enabled, &cid)
         };
 
-        // Use the configured heartbeat_context_limit if set, otherwise fall back
-        // to the model's context_length. This lets the user give background tasks
-        // a smaller context window to save costs.
         let context_limit = {
             let s = state.lock().await;
-            s.config
-                .heartbeat_context_limit()
-                .unwrap_or_else(|| {
-                    s.model_metadata
-                        .get(crate::openrouter::normalize_model_id(&model))
-                        .map(|m| m.context_length)
-                        .unwrap_or(0)
-                })
+            s.model_metadata
+                .get(crate::openrouter::normalize_model_id(&model))
+                .map(|m| m.context_length)
+                .unwrap_or(0)
         };
 
-        let mut messages = vec![
-            ChatMessage::system(&system_prompt),
-            ChatMessage::user(&task_header),
-        ];
+        let system_msg = ChatMessage::system(&system_prompt);
+        let mut turn_messages = vec![ChatMessage::user(&task_header)];
 
         for _ in 0..10 {
-            // Trim heartbeat messages if accumulated tool rounds are getting too long
-            let request_messages = if context_limit > 0 {
-                let tools_tokens = crate::openrouter::estimate_tools_tokens(&tools);
-                let head_tokens = crate::openrouter::estimate_messages_tokens(&messages[..2]);
-                let tail_tokens = crate::openrouter::estimate_messages_tokens(&messages[2..]);
-                let fixed = head_tokens
-                    .saturating_add(tail_tokens)
-                    .saturating_add(tools_tokens)
-                    .saturating_add(crate::openrouter::RESPONSE_RESERVE_TOKENS);
-                let effective_limit =
-                    (context_limit as f64 * crate::openrouter::TOKEN_ESTIMATE_MARGIN) as u64;
-                if fixed > effective_limit && messages.len() > 4 {
-                    log::info!(
-                        "Heartbeat chat {}: trimming {} old tool rounds to fit context",
-                        cid,
-                        messages.len() - 4
-                    );
-                    crate::openrouter::trim_message_list(&messages, 2, 2)
-                } else {
-                    messages.clone()
-                }
-            } else {
-                messages.clone()
-            };
+            // Build trimmed request using the same logic as the regular pipeline
+            let (request_messages, _) = crate::openrouter::build_trimmed_request(
+                context_limit,
+                &[system_msg.clone()],
+                &history,
+                &turn_messages,
+                &tools,
+            );
 
             let request = ChatCompletionRequest {
                 model: model.clone(),
@@ -154,8 +153,9 @@ pub async fn run_heartbeat_task(
                 if tcs.is_empty() {
                     break;
                 }
-                messages.push(ChatMessage::assistant_tool_calls(tcs.clone()));
-                messages.extend(dispatch_tool_calls(&state, &cid, tcs, None, Some(&tg_bot)).await);
+                turn_messages.push(ChatMessage::assistant_tool_calls(tcs.clone()));
+                turn_messages
+                    .extend(dispatch_tool_calls(&state, &cid, tcs, None, Some(&tg_bot)).await);
                 continue;
             }
             break;

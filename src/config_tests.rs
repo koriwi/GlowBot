@@ -437,37 +437,48 @@ fn test_image_gen_model_serialization() {
 }
 
 #[test]
-fn test_heartbeat_context_limit_default() {
+fn test_heartbeat_recent_messages_window_size_default() {
     let config = basic_config();
-    assert_eq!(config.heartbeat_context_limit(), None);
-    assert_eq!(config.conversation.heartbeat_context_limit, None);
+    // None → falls back to recent_messages_window_size (20)
+    assert_eq!(config.heartbeat_recent_messages_window_size(), 20);
+    assert_eq!(
+        config.conversation.heartbeat_recent_messages_window_size,
+        None
+    );
 }
 
 #[test]
-fn test_heartbeat_context_limit_set() {
+fn test_heartbeat_recent_messages_window_size_set() {
     let mut config = basic_config();
-    config.conversation.heartbeat_context_limit = Some(32000);
-    assert_eq!(config.heartbeat_context_limit(), Some(32000));
+    config.conversation.heartbeat_recent_messages_window_size = Some(5);
+    assert_eq!(config.heartbeat_recent_messages_window_size(), 5);
 }
 
 #[test]
-fn test_heartbeat_context_limit_serialization() {
+fn test_heartbeat_recent_messages_window_size_set_to_zero() {
+    let mut config = basic_config();
+    config.conversation.heartbeat_recent_messages_window_size = Some(0);
+    assert_eq!(config.heartbeat_recent_messages_window_size(), 0);
+}
+
+#[test]
+fn test_heartbeat_recent_messages_window_size_serialization() {
     let conv = ConversationConfig {
-        heartbeat_context_limit: Some(16000),
+        heartbeat_recent_messages_window_size: Some(10),
         ..Default::default()
     };
     let yaml = serde_yaml::to_string(&conv).unwrap();
-    assert!(yaml.contains("heartbeat_context_limit"));
+    assert!(yaml.contains("heartbeat_recent_messages_window_size"));
     let loaded: ConversationConfig = serde_yaml::from_str(&yaml).unwrap();
-    assert_eq!(loaded.heartbeat_context_limit, Some(16000));
+    assert_eq!(loaded.heartbeat_recent_messages_window_size, Some(10));
 }
 
 #[test]
-fn test_heartbeat_context_limit_none_serialization() {
+fn test_heartbeat_recent_messages_window_size_none_serialization() {
     let conv = ConversationConfig::default();
     let yaml = serde_yaml::to_string(&conv).unwrap();
     // None should be skipped
-    assert!(!yaml.contains("heartbeat_context_limit"));
+    assert!(!yaml.contains("heartbeat_recent_messages_window_size"));
 }
 
 #[test]
