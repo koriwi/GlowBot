@@ -5,7 +5,19 @@ use crate::memory::{save_memory, Memory};
 use crate::openrouter::{ChatCompletionRequest, ChatMessage, OpenRouterClient};
 use std::collections::HashMap;
 use std::sync::Arc;
+use teloxide::prelude::*;
 use tokio::sync::Mutex;
+
+/// RAII guard that stops the typing indicator refresher on drop.
+struct TypingGuard {
+    flag: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for TypingGuard {
+    fn drop(&mut self) {
+        self.flag.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 
 /// Process a message through the LLM pipeline (free function).
 pub(crate) async fn process_with_llm_impl(
@@ -28,6 +40,24 @@ pub(crate) async fn process_with_llm_impl(
         text.chars().take(100).collect::<String>(),
         media.is_some()
     );
+
+    // Start a background typing indicator refresher that sends ChatAction::Typing
+    // every 4 seconds so long-running LLM sessions don't look frozen.
+    let _typing_guard = tg_bot.map(|bot| {
+        let bot = bot.clone();
+        let keep_running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let keep_clone = Arc::clone(&keep_running);
+        if let Ok(parsed) = chat_id.parse::<i64>() {
+            let cid = teloxide::types::ChatId(parsed);
+            tokio::spawn(async move {
+                while keep_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = bot.send_chat_action(cid, teloxide::types::ChatAction::Typing).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+                }
+            });
+        }
+        TypingGuard { flag: keep_running }
+    });
 
     // Set up stop signal for this chat (clear any previous signal)
     {

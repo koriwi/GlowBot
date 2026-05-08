@@ -172,11 +172,7 @@ async fn handle_message(
         text.as_deref().unwrap_or("(media)")
     );
 
-    // Show typing indicator while processing
     let chat = ChatId(chat_id.parse().unwrap_or_default());
-    let _ = tg_bot
-        .send_chat_action(chat, teloxide::types::ChatAction::Typing)
-        .await;
 
     // Extract bot components
     let (state, git_repo, stop_signals) = {
