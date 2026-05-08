@@ -77,6 +77,8 @@ fn test_chat_completion_request_seialization() {
         messages: vec![ChatMessage::system("sys"), ChatMessage::user("hi")],
         tools: Some(all_tool_definitions(true, None, "/media", None)),
         tool_choice: None,
+        modalities: None,
+        image_config: None,
     };
     let json = serde_json::to_string(&req).unwrap();
     assert!(json.contains("test/model"));
@@ -244,6 +246,8 @@ fn test_chat_completion_request_with_tool_choice() {
         messages: vec![],
         tools: None,
         tool_choice: Some("auto".into()),
+        modalities: None,
+        image_config: None,
     };
     let json = serde_json::to_string(&req).unwrap();
     assert!(json.contains("tool_choice"));
@@ -895,7 +899,6 @@ fn test_generate_image_tool_definition() {
     assert_eq!(required[0], "prompt");
     assert_eq!(params["properties"]["prompt"]["type"], "string");
     assert_eq!(params["properties"]["size"]["type"], "string");
-    assert_eq!(params["properties"]["n"]["type"], "integer");
     assert!(params["properties"]["reference_images"]["type"] == "array");
 }
 
@@ -919,68 +922,85 @@ fn test_all_tool_definitions_with_image_gen_model() {
 }
 
 #[test]
-fn test_image_generation_request_serialization() {
-    let req = ImageGenerationRequest {
-        model: "black-forest-labs/flux-1.1-pro".into(),
-        prompt: "a cat".into(),
-        n: Some(2),
-        size: Some("1024x1024".into()),
-        image: None,
-        response_format: Some("b64_json".into()),
+fn test_chat_completion_request_with_modalities() {
+    let req = ChatCompletionRequest {
+        model: "google/gemini-2.5-flash-image".into(),
+        messages: vec![ChatMessage::user("a cat")],
+        tools: None,
+        tool_choice: None,
+        modalities: Some(vec!["image".into()]),
+        image_config: Some(ImageConfig {
+            aspect_ratio: Some("16:9".into()),
+            image_size: Some("2K".into()),
+        }),
     };
     let json = serde_json::to_string(&req).unwrap();
-    assert!(json.contains("black-forest-labs/flux-1.1-pro"));
-    assert!(json.contains("a cat"));
-    assert!(json.contains("1024x1024"));
-    assert!(json.contains("b64_json"));
-    // Check n field
-    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(parsed["n"], 2);
-    // No reference images field when None
-    assert!(!json.contains("image"));
+    assert!(json.contains("modalities"));
+    assert!(json.contains("image"));
+    assert!(json.contains("image_config"));
+    assert!(json.contains("aspect_ratio"));
+    assert!(json.contains("16:9"));
+    assert!(json.contains("image_size"));
+    assert!(json.contains("2K"));
 }
 
 #[test]
-fn test_image_generation_request_with_reference_images() {
-    let req = ImageGenerationRequest {
-        model: "test-image/model".into(),
-        prompt: "variation".into(),
-        n: None,
-        size: None,
-        image: Some(vec!["data:image/png;base64,abc123".into()]),
-        response_format: None,
+fn test_chat_completion_request_without_modalities() {
+    let req = ChatCompletionRequest {
+        model: "test/model".into(),
+        messages: vec![ChatMessage::user("hi")],
+        tools: None,
+        tool_choice: None,
+        modalities: None,
+        image_config: None,
     };
     let json = serde_json::to_string(&req).unwrap();
-    assert!(json.contains("data:image/png;base64,abc123"));
-    // No size, n, or response_format when None
-    assert!(!json.contains("size"));
-    assert!(!json.contains("response_format"));
-    // n field should not appear as a string key (but might be null if included)
-    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert!(parsed.get("n").map_or(true, |v| v.is_null()));
+    assert!(!json.contains("modalities"));
+    assert!(!json.contains("image_config"));
 }
 
 #[test]
-fn test_image_generation_response_deserialization() {
+fn test_assistant_message_with_images() {
     let json = serde_json::json!({
-        "data": [
-            { "url": "https://example.com/img1.png" },
-            { "b64_json": "iVBORw0KGgo=" }
+        "content": "Here's your image",
+        "role": "assistant",
+        "images": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "data:image/png;base64,iVBORw0KGgo="
+                }
+            }
         ]
     });
-    let resp: ImageGenerationResponse = serde_json::from_value(json).unwrap();
-    assert_eq!(resp.data.len(), 2);
-    assert_eq!(resp.data[0].url.as_deref(), Some("https://example.com/img1.png"));
-    assert!(resp.data[0].b64_json.is_none());
-    assert_eq!(resp.data[1].b64_json.as_deref(), Some("iVBORw0KGgo="));
-    assert!(resp.data[1].url.is_none());
+    let msg: AssistantMessage = serde_json::from_value(json).unwrap();
+    assert_eq!(msg.content.as_deref(), Some("Here's your image"));
+    let imgs = msg.images.unwrap();
+    assert_eq!(imgs.len(), 1);
+    assert_eq!(imgs[0].image_url.url, "data:image/png;base64,iVBORw0KGgo=");
+    assert_eq!(imgs[0].image_type.as_deref(), Some("image_url"));
 }
 
 #[test]
-fn test_image_generation_response_empty_data() {
-    let json = serde_json::json!({"data": []});
-    let resp: ImageGenerationResponse = serde_json::from_value(json).unwrap();
-    assert!(resp.data.is_empty());
+fn test_assistant_message_without_images() {
+    let json = serde_json::json!({
+        "content": "Hello",
+        "role": "assistant"
+    });
+    let msg: AssistantMessage = serde_json::from_value(json).unwrap();
+    assert!(msg.images.is_none());
+}
+
+#[test]
+fn test_image_config_aspect_ratio() {
+    let config = ImageConfig {
+        aspect_ratio: Some("16:9".into()),
+        image_size: None,
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    assert!(json.contains("aspect_ratio"));
+    assert!(json.contains("16:9"));
+    assert!(!json.contains("image_size"));
 }
 
 #[test]

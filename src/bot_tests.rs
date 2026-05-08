@@ -126,6 +126,7 @@ async fn test_process_message_mention_responds() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -150,6 +151,7 @@ async fn test_process_message_every_message_mode() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -383,6 +385,7 @@ async fn test_process_message_with_tool_call() {
                 }]),
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("tool_calls".into()),
         }],
@@ -397,6 +400,7 @@ async fn test_process_message_with_tool_call() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -438,6 +442,7 @@ async fn test_process_message_empty_tool_calls() {
                 tool_calls: Some(vec![]),
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -471,6 +476,7 @@ async fn test_process_message_loop_limit() {
                     }]),
                     role: Some("assistant".into()),
                     reasoning: None,
+                ..Default::default()
                 },
                 finish_reason: Some("tool_calls".into()),
             }],
@@ -510,6 +516,7 @@ async fn test_process_message_bash_tool_error() {
                 }]),
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("tool_calls".into()),
         }],
@@ -523,6 +530,7 @@ async fn test_process_message_bash_tool_error() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -562,6 +570,7 @@ async fn test_process_message_with_chat_system_prompt() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -619,6 +628,7 @@ async fn test_dm_always_responds_even_in_mention_only_mode() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -658,6 +668,7 @@ async fn test_process_message_with_read_memory_tool() {
                 }]),
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("tool_calls".into()),
         }],
@@ -672,6 +683,7 @@ async fn test_process_message_with_read_memory_tool() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -704,6 +716,7 @@ async fn test_process_message_with_update_memory_tool() {
                 }]),
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("tool_calls".into()),
         }],
@@ -717,6 +730,7 @@ async fn test_process_message_with_update_memory_tool() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -820,6 +834,7 @@ async fn test_dm_allowed_when_in_dms() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -1043,6 +1058,7 @@ async fn test_get_recent_messages_tool() {
                 }]),
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("tool_calls".into()),
         }],
@@ -1057,6 +1073,7 @@ async fn test_get_recent_messages_tool() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -1789,6 +1806,7 @@ async fn test_conversation_history_window_trims() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -1854,6 +1872,7 @@ async fn test_heartbeat_completes_task() {
                 }]),
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("tool_calls".into()),
         }],
@@ -1867,6 +1886,7 @@ async fn test_heartbeat_completes_task() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -1936,6 +1956,7 @@ async fn test_heartbeat_two_tasks_first_uncompleted() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -1957,6 +1978,7 @@ async fn test_heartbeat_two_tasks_first_uncompleted() {
                 }]),
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("tool_calls".into()),
         }],
@@ -1971,6 +1993,7 @@ async fn test_heartbeat_two_tasks_first_uncompleted() {
                 tool_calls: None,
                 role: Some("assistant".into()),
                 reasoning: None,
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
@@ -2071,6 +2094,7 @@ async fn test_conversation_history_respects_cutoff() {
                 tool_calls: None,
                 reasoning: None,
                 role: Some("assistant".into()),
+            ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],

@@ -2,7 +2,7 @@ use super::BotState;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// Handle the `generate_image` tool — generate images via OpenRouter.
+/// Handle the `generate_image` tool — generate images via OpenRouter chat completions.
 pub(crate) async fn tool_generate_image(
     state: &Arc<Mutex<BotState>>,
     chat_id: &str,
@@ -22,10 +22,6 @@ pub(crate) async fn tool_generate_image(
     };
 
     let size = args["size"].as_str().map(|s| s.to_string());
-    let n = args["n"]
-        .as_u64()
-        .map(|v| v.clamp(1, 4) as u32)
-        .unwrap_or(1);
 
     let (api_key, data_dir, media_dir) = {
         let s = state.lock().await;
@@ -36,27 +32,85 @@ pub(crate) async fn tool_generate_image(
         )
     };
 
-    // Resolve reference images to base64 data-URLs
-    let reference_images = resolve_reference_images(args, &data_dir).await;
+    // Build the user message: text prompt + optional reference images
+    let mut content_parts: Vec<crate::openrouter::ContentPart> = vec![
+        crate::openrouter::ContentPart::Text {
+            text: prompt.to_string(),
+        },
+    ];
 
-    // Build the request
-    let request = crate::openrouter::ImageGenerationRequest {
+    // Attach reference images as image_url parts
+    if let Some(ref_paths) = args["reference_images"].as_array() {
+        for p in ref_paths {
+            let path_str = p.as_str().unwrap_or("");
+            if path_str.is_empty() {
+                continue;
+            }
+            let full_path = resolve_file_path(path_str, &data_dir);
+            match std::fs::read(&full_path) {
+                Ok(bytes) => {
+                    let mime = guess_mime(&bytes);
+                    let b64 = base64_encode(&bytes);
+                    content_parts.push(crate::openrouter::ContentPart::ImageUrl {
+                        image_url: crate::openrouter::ImageUrlDetail {
+                            url: format!("data:{};base64,{}", mime, b64),
+                            detail: None,
+                        },
+                    });
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to read reference image '{}': {}",
+                        full_path.display(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    let user_msg = crate::openrouter::ChatMessage::user_multimodal(content_parts);
+
+    // Build image_config from args
+    let image_config = size.as_ref().map(|s| {
+        // If size looks like an aspect ratio (e.g. "16:9"), use aspect_ratio;
+        // otherwise treat as image_size (e.g. "1K", "2K", "4K")
+        if s.contains(':') {
+            crate::openrouter::ImageConfig {
+                aspect_ratio: Some(s.clone()),
+                image_size: None,
+            }
+        } else {
+            crate::openrouter::ImageConfig {
+                aspect_ratio: None,
+                image_size: Some(s.clone()),
+            }
+        }
+    });
+
+    let request = crate::openrouter::ChatCompletionRequest {
         model: image_gen_model.clone(),
-        prompt: prompt.to_string(),
-        n: Some(n),
-        size,
-        image: reference_images,
-        response_format: Some("b64_json".to_string()),
+        messages: vec![user_msg],
+        tools: None,
+        tool_choice: None,
+        modalities: Some(vec!["image".into()]),
+        image_config,
     };
 
     let client = crate::openrouter::OpenRouterClient::new(api_key);
-    let response = match client.image_generation(&request).await {
+    let response = match client.chat_completion(&request).await {
         Ok(r) => r,
         Err(e) => return format!("Error: image generation failed: {}", e),
     };
 
-    if response.data.is_empty() {
-        return "Error: no images returned from generation API".into();
+    // Extract images from the assistant message
+    let images = match response.choices.into_iter().next() {
+        Some(choice) => choice.message.images.unwrap_or_default(),
+        None => return "Error: no response from image generation".into(),
+    };
+
+    if images.is_empty() {
+        return "Error: no images returned from generation".into();
     }
 
     // Save generated images to the media directory
@@ -69,32 +123,25 @@ pub(crate) async fn tool_generate_image(
     let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
     let mut saved_paths: Vec<String> = Vec::new();
 
-    for (i, img) in response.data.iter().enumerate() {
-        let image_bytes = if let Some(ref b64) = img.b64_json {
-            match base64_decode(b64) {
-                Ok(b) => b,
-                Err(e) => {
-                    log::warn!("Failed to decode base64 image {}: {}", i, e);
-                    continue;
-                }
+    for (i, img) in images.iter().enumerate() {
+        let b64_data_url = &img.image_url.url;
+        let image_bytes = match base64_decode(b64_data_url) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("Failed to decode base64 image {}: {}", i, e);
+                continue;
             }
-        } else if let Some(ref url) = img.url {
-            // Fallback: download from URL
-            match download_image(url).await {
-                Ok(b) => b,
-                Err(e) => {
-                    log::warn!("Failed to download image {} from {}: {}", i, url, e);
-                    continue;
-                }
-            }
-        } else {
-            log::warn!("Image {} has neither b64_json nor url, skipping", i);
-            continue;
         };
 
         let ext = detect_image_format(&image_bytes).unwrap_or("png");
-        let filename = if n == 1 {
-            format!("generated/{}_{}.{}", image_gen_model_id(&image_gen_model), timestamp, ext)
+        let total = images.len();
+        let filename = if total == 1 {
+            format!(
+                "generated/{}_{}.{}",
+                image_gen_model_id(&image_gen_model),
+                timestamp,
+                ext
+            )
         } else {
             format!(
                 "generated/{}_{}_{}.{}",
@@ -106,7 +153,11 @@ pub(crate) async fn tool_generate_image(
         };
         let file_path = media_path.join(&filename);
         if let Err(e) = std::fs::write(&file_path, &image_bytes) {
-            log::warn!("Failed to write generated image to {}: {}", file_path.display(), e);
+            log::warn!(
+                "Failed to write generated image to {}: {}",
+                file_path.display(),
+                e
+            );
             continue;
         }
         // Auto-commit the generated image (best-effort)
@@ -170,66 +221,6 @@ fn detect_image_format(bytes: &[u8]) -> Option<&'static str> {
     } else {
         None
     }
-}
-
-/// Download image bytes from a URL.
-async fn download_image(url: &str) -> Result<Vec<u8>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("Download failed: {}", e))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "Download returned HTTP {}",
-            response.status()
-        ));
-    }
-    response
-        .bytes()
-        .await
-        .map(|b| b.to_vec())
-        .map_err(|e| format!("Failed to read download body: {}", e))
-}
-
-/// Resolve reference images from tool args to base64 data-URLs.
-/// Accepts file paths relative to the data directory, absolute paths, or
-/// paths inside the media directory.
-async fn resolve_reference_images(
-    args: &serde_json::Value,
-    data_dir: &std::path::Path,
-) -> Option<Vec<String>> {
-    let paths = args["reference_images"].as_array()?;
-    if paths.is_empty() {
-        return None;
-    }
-    let mut images: Vec<String> = Vec::new();
-    for p in paths {
-        let path_str = p.as_str().unwrap_or("");
-        if path_str.is_empty() {
-            continue;
-        }
-        let full_path = resolve_file_path(path_str, data_dir);
-        match std::fs::read(&full_path) {
-            Ok(bytes) => {
-                let mime = guess_mime(&bytes);
-                let b64 = base64_encode(&bytes);
-                images.push(format!("data:{};base64,{}", mime, b64));
-            }
-            Err(e) => {
-                log::warn!(
-                    "Failed to read reference image '{}': {}",
-                    full_path.display(),
-                    e
-                );
-            }
-        }
-    }
-    if images.is_empty() { None } else { Some(images) }
 }
 
 /// Resolve a file path: try absolute, relative to data_dir, relative to media_dir.

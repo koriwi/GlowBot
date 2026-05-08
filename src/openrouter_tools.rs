@@ -407,7 +407,7 @@ pub(crate) fn list_media_tool_definition(media_dir: &str) -> ToolDefinition {
 /// Only exposed when `image_gen_model` is configured.
 pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition {
     let desc = format!(
-        "Generate one or more images from a text description. Optionally provide reference images to guide style, composition, or content. Generated images are saved to the media directory at '{}' and their file paths are returned — use send_media to display them. Reference images must be file paths to existing images (PNG, JPEG, WebP, GIF).",
+        "Generate images from a text description via OpenRouter chat completions. Optionally provide reference images to guide style, composition, or content. Generated images are saved to the media directory at '{}' and their file paths are returned — use send_media to display them. Reference images must be file paths to existing images (PNG, JPEG, WebP, GIF).",
         media_dir
     );
     ToolDefinition {
@@ -424,11 +424,7 @@ pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition 
                     },
                     "size": {
                         "type": "string",
-                        "description": "Image size (e.g. '1024x1024', '1792x1024', '1024x1792'). Default depends on the model."
-                    },
-                    "n": {
-                        "type": "integer",
-                        "description": "Number of images to generate (default: 1, max: 4)."
+                        "description": "Aspect ratio (e.g. '16:9', '1:1', '4:3') or image size (e.g. '1K', '2K', '4K'). Aspect ratios are preferred for most models; use image size only if the model supports it."
                     },
                     "reference_images": {
                         "type": "array",

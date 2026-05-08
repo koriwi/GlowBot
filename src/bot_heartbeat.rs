@@ -112,6 +112,8 @@ pub async fn run_heartbeat_task(
                 messages: request_messages,
                 tools: Some(tools.clone()),
                 tool_choice: None,
+                modalities: None,
+                image_config: None,
             };
             let (response, usage) = {
                 let s = state.lock().await;

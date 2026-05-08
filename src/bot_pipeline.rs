@@ -165,6 +165,8 @@ pub(crate) async fn process_with_llm_impl(
                 messages,
                 tools: Some(tools.clone()),
                 tool_choice: None,
+                modalities: None,
+                image_config: None,
             };
             let msg_count = request.messages.len();
 
@@ -599,6 +601,8 @@ async fn call_image_fallback(
         messages: vec![msg],
         tools: None,
         tool_choice: None,
+        modalities: None,
+        image_config: None,
     };
     let response = client.chat_completion(&request).await?;
     let text = response
@@ -634,6 +638,8 @@ async fn call_audio_fallback(
         messages: vec![msg],
         tools: None,
         tool_choice: None,
+        modalities: None,
+        image_config: None,
     };
     let response = client.chat_completion(&request).await?;
     let text = response

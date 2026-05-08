@@ -100,6 +100,7 @@ pub mod mock {
                             tool_calls: None,
                             role: Some("assistant".into()),
                             reasoning: None,
+                        ..Default::default()
                         },
                         finish_reason: Some("stop".into()),
                     }],
@@ -136,6 +137,8 @@ pub mod mock {
                 messages: vec![],
                 tools: None,
                 tool_choice: None,
+                modalities: None,
+                image_config: None,
             };
             let resp = mock.chat_completion(&req).await.unwrap();
             assert_eq!(
@@ -154,6 +157,7 @@ pub mod mock {
                         tool_calls: None,
                         role: Some("assistant".into()),
                         reasoning: None,
+                    ..Default::default()
                     },
                     finish_reason: Some("stop".into()),
                 }],
@@ -173,6 +177,7 @@ pub mod mock {
                         }]),
                         role: Some("assistant".into()),
                         reasoning: None,
+                    ..Default::default()
                     },
                     finish_reason: Some("tool_calls".into()),
                 }],
@@ -184,6 +189,8 @@ pub mod mock {
                 messages: vec![],
                 tools: None,
                 tool_choice: None,
+                modalities: None,
+                image_config: None,
             };
             let resp1 = mock.chat_completion(&req).await.unwrap();
             assert_eq!(resp1.choices[0].message.content.as_deref(), Some("First"));
