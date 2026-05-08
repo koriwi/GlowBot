@@ -339,6 +339,7 @@ fn test_conversation_config_serialization() {
     let conv = ConversationConfig {
         recent_messages_window_size: 50,
         include_reasoning: true,
+        ..Default::default()
     };
     let yaml = serde_yaml::to_string(&conv).unwrap();
     assert!(yaml.contains("50"));
@@ -433,6 +434,40 @@ fn test_image_gen_model_serialization() {
         loaded.openrouter.image_gen_model.as_deref(),
         Some("black-forest-labs/flux-1.1-pro")
     );
+}
+
+#[test]
+fn test_heartbeat_context_limit_default() {
+    let config = basic_config();
+    assert_eq!(config.heartbeat_context_limit(), None);
+    assert_eq!(config.conversation.heartbeat_context_limit, None);
+}
+
+#[test]
+fn test_heartbeat_context_limit_set() {
+    let mut config = basic_config();
+    config.conversation.heartbeat_context_limit = Some(32000);
+    assert_eq!(config.heartbeat_context_limit(), Some(32000));
+}
+
+#[test]
+fn test_heartbeat_context_limit_serialization() {
+    let conv = ConversationConfig {
+        heartbeat_context_limit: Some(16000),
+        ..Default::default()
+    };
+    let yaml = serde_yaml::to_string(&conv).unwrap();
+    assert!(yaml.contains("heartbeat_context_limit"));
+    let loaded: ConversationConfig = serde_yaml::from_str(&yaml).unwrap();
+    assert_eq!(loaded.heartbeat_context_limit, Some(16000));
+}
+
+#[test]
+fn test_heartbeat_context_limit_none_serialization() {
+    let conv = ConversationConfig::default();
+    let yaml = serde_yaml::to_string(&conv).unwrap();
+    // None should be skipped
+    assert!(!yaml.contains("heartbeat_context_limit"));
 }
 
 #[test]

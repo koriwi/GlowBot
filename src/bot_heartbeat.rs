@@ -68,12 +68,19 @@ pub async fn run_heartbeat_task(
             s.build_tools(bash_enabled, &cid)
         };
 
+        // Use the configured heartbeat_context_limit if set, otherwise fall back
+        // to the model's context_length. This lets the user give background tasks
+        // a smaller context window to save costs.
         let context_limit = {
             let s = state.lock().await;
-            s.model_metadata
-                .get(crate::openrouter::normalize_model_id(&model))
-                .map(|m| m.context_length)
-                .unwrap_or(0)
+            s.config
+                .heartbeat_context_limit()
+                .unwrap_or_else(|| {
+                    s.model_metadata
+                        .get(crate::openrouter::normalize_model_id(&model))
+                        .map(|m| m.context_length)
+                        .unwrap_or(0)
+                })
         };
 
         let mut messages = vec![

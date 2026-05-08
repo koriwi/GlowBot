@@ -103,6 +103,12 @@ pub struct ConversationConfig {
     /// in the next turn so the model can see its previous thinking.
     #[serde(default)]
     pub include_reasoning: bool,
+    /// Maximum context length (in tokens) for heartbeat/background tasks.
+    /// When set, heartbeat tasks use this limit instead of the model's full context_length.
+    /// This lets you give background tasks a smaller context window to save costs.
+    /// When unset (default), heartbeat tasks use the model's full context_length.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heartbeat_context_limit: Option<u64>,
 }
 
 impl Default for ConversationConfig {
@@ -110,6 +116,7 @@ impl Default for ConversationConfig {
         Self {
             recent_messages_window_size: default_recent_messages_window_size(),
             include_reasoning: false,
+            heartbeat_context_limit: None,
         }
     }
 }

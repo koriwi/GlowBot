@@ -21,6 +21,7 @@ openrouter:
 conversation:
   recent_messages_window_size: 20    # number of recent messages loaded from DB as context (default: 20)
   include_reasoning: false           # include model's reasoning/thinking in subsequent requests (default: false)
+  # heartbeat_context_limit: 32000  # optional — max context tokens for heartbeat tasks; when set, overrides the model's full context_length (default: unset, uses model limit)
 
 # Database settings
 db:

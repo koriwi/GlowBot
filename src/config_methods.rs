@@ -63,6 +63,13 @@ impl Config {
             .unwrap_or(self.bash_enabled)
     }
 
+    /// Get the effective context limit for heartbeat/background tasks.
+    /// Returns the configured `conversation.heartbeat_context_limit` if set,
+    /// otherwise `None` (caller should fall back to the model's context_length).
+    pub fn heartbeat_context_limit(&self) -> Option<u64> {
+        self.conversation.heartbeat_context_limit
+    }
+
     /// Check whether an MCP server is allowed for a given chat.
     /// Returns false if the server name is in the chat's mcp_blacklist.
     /// Only applies to group chats (negative chat_id).
