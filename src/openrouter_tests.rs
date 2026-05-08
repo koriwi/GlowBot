@@ -799,3 +799,97 @@ fn test_trim_message_list_orphan_stripping() {
     // No tool messages
     assert!(result.iter().all(|m| m.role != "tool"));
 }
+
+// --- Multimodal message tests ---
+
+#[test]
+fn test_user_multimodal_with_image() {
+    let msg = ChatMessage::user_multimodal(vec![
+        ContentPart::Text {
+            text: "Look at this".into(),
+        },
+        ContentPart::ImageUrl {
+            image_url: ImageUrlDetail {
+                url: "data:image/jpeg;base64,abc".into(),
+                detail: None,
+            },
+        },
+    ]);
+    assert_eq!(msg.role, "user");
+    assert!(msg.name.is_none());
+    // Verify serialization
+    let json = serde_json::to_value(&msg.content).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["type"], "text");
+    assert_eq!(arr[1]["type"], "image_url");
+    assert_eq!(arr[1]["image_url"]["url"], "data:image/jpeg;base64,abc");
+}
+
+#[test]
+fn test_user_multimodal_with_audio() {
+    let msg = ChatMessage::user_multimodal(vec![
+        ContentPart::InputAudio {
+            input_audio: InputAudioDetail {
+                data: "base64data".into(),
+                format: "ogg".into(),
+            },
+        },
+        ContentPart::Text {
+            text: "Transcribe this".into(),
+        },
+    ]);
+    assert_eq!(msg.role, "user");
+    let json = serde_json::to_value(&msg.content).unwrap();
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr[0]["type"], "input_audio");
+    assert_eq!(arr[0]["input_audio"]["data"], "base64data");
+    assert_eq!(arr[1]["type"], "text");
+}
+
+#[test]
+fn test_user_multimodal_with_name() {
+    let msg = ChatMessage::user_multimodal_with_name(
+        vec![ContentPart::Text {
+            text: "hi".into(),
+        }],
+        "alice",
+    );
+    assert_eq!(msg.name.unwrap(), "alice");
+    assert_eq!(msg.role, "user");
+}
+
+#[test]
+fn test_text_content_with_image_placeholder() {
+    let msg = ChatMessage::user_multimodal(vec![
+        ContentPart::Text {
+            text: "before".into(),
+        },
+        ContentPart::ImageUrl {
+            image_url: ImageUrlDetail {
+                url: "data:image/jpeg;base64,abc".into(),
+                detail: None,
+            },
+        },
+        ContentPart::Text {
+            text: "after".into(),
+        },
+    ]);
+    assert_eq!(msg.text_content(), "before[image]after");
+}
+
+#[test]
+fn test_text_content_with_audio_placeholder() {
+    let msg = ChatMessage::user_multimodal(vec![
+        ContentPart::InputAudio {
+            input_audio: InputAudioDetail {
+                data: "x".into(),
+                format: "ogg".into(),
+            },
+        },
+        ContentPart::Text {
+            text: "text".into(),
+        },
+    ]);
+    assert_eq!(msg.text_content(), "[audio]text");
+}
