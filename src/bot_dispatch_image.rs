@@ -170,8 +170,11 @@ pub(crate) async fn tool_generate_image(
         return "Error: failed to save any generated images".into();
     }
 
-    let paths_json =
-        serde_json::json!({"generated_images": saved_paths, "media_dir": media_dir}).to_string();
+    let absolute_paths: Vec<String> = saved_paths
+        .iter()
+        .map(|p| format!("{}/{}", media_dir.trim_end_matches('/'), p))
+        .collect();
+    let paths_json = serde_json::json!({"generated_images": absolute_paths}).to_string();
     log::info!(
         "Generated {} image(s) with model {} in chat {}",
         saved_paths.len(),
