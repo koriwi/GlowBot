@@ -1,4 +1,5 @@
 use crate::openrouter::ContentPart;
+use std::path::{Path, PathBuf};
 
 /// Ingested media extracted from a Telegram message.
 #[derive(Debug, Clone)]
@@ -63,6 +64,61 @@ pub struct ProcessedMedia {
     /// Multimodal content parts to include alongside text.
     /// ImageUrl for native images, InputAudio for native audio.
     pub content_parts: Vec<ContentPart>,
+}
+
+/// Download a Telegram file and save it to `dest_dir`.
+/// `file` is the result of `bot.get_file(file_id).send().await?`.
+/// `token` is the Telegram bot token for constructing the download URL.
+/// Returns the path to the downloaded file.
+pub async fn download_file(
+    file: &teloxide::types::File,
+    token: &str,
+    dest_dir: &Path,
+) -> anyhow::Result<PathBuf> {
+    let file_path = &file.path;
+
+    // Construct download URL
+    let url = format!(
+        "https://api.telegram.org/file/bot{}/{}",
+        token, file_path
+    );
+
+    // Download file bytes
+    let client = reqwest::Client::new();
+    let response = client.get(&url).send().await?;
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "Telegram file download failed ({}): {}",
+            response.status(),
+            url
+        );
+    }
+    let bytes = response.bytes().await?;
+
+    // Determine output filename from the Telegram file path
+    let filename = Path::new(file_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&file.meta.id);
+
+    // Ensure dest dir exists and write file
+    std::fs::create_dir_all(dest_dir)?;
+    let dest_path = dest_dir.join(filename);
+    tokio::fs::write(&dest_path, &bytes).await?;
+
+    log::info!(
+        "Media: downloaded {} ({} bytes) to {}",
+        file.meta.id,
+        bytes.len(),
+        dest_path.display()
+    );
+
+    Ok(dest_path)
+}
+
+/// Get the ingest directory path under the data directory.
+pub fn ingest_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("media").join("ingest")
 }
 
 #[cfg(test)]
