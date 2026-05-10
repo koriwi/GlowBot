@@ -108,6 +108,7 @@ async fn run_bot() -> anyhow::Result<()> {
 
         let handle = tokio::spawn(async move {
             let mut offset: i32 = 0;
+            let mut consecutive_errors: u32 = 0;
             loop {
                 let updates_result = poll_bot
                     .get_updates()
@@ -121,6 +122,13 @@ async fn run_bot() -> anyhow::Result<()> {
 
                 match updates_result {
                     Ok(updates) => {
+                        if consecutive_errors > 0 {
+                            log::info!(
+                                "GetUpdates recovered after {} consecutive error(s)",
+                                consecutive_errors
+                            );
+                            consecutive_errors = 0;
+                        }
                         for update in updates {
                             offset = (update.id.0 as i32) + 1;
                             match update.kind {
@@ -143,8 +151,25 @@ async fn run_bot() -> anyhow::Result<()> {
                         }
                     }
                     Err(e) => {
-                        log::warn!("GetUpdates error: {}, retrying in 5s", e);
-                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        consecutive_errors += 1;
+                        // Exponential backoff: 2^n seconds, capped at 60s.
+                        // Only escalate to WARN after 5 consecutive failures.
+                        let delay_secs = (2u64.pow(consecutive_errors.min(6))).min(60);
+                        if consecutive_errors >= 5 {
+                            log::warn!(
+                                "GetUpdates error: {} ({} consecutive failures, retrying in {}s)",
+                                e,
+                                consecutive_errors,
+                                delay_secs
+                            );
+                        } else {
+                            log::debug!(
+                                "GetUpdates error: {}, retrying in {}s",
+                                e,
+                                delay_secs
+                            );
+                        }
+                        tokio::time::sleep(Duration::from_secs(delay_secs)).await;
                     }
                 }
             }
