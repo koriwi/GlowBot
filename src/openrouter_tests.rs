@@ -91,7 +91,7 @@ fn test_chat_completion_request_seialization() {
 #[test]
 fn test_all_tool_definitions_with_bash() {
     let tools = all_tool_definitions(true, None, "/media", None);
-    assert_eq!(tools.len(), 15);
+    assert_eq!(tools.len(), 17);
     assert_eq!(tools[0].function.name, "bash");
     assert_eq!(tools[1].function.name, "read_memory");
     assert_eq!(tools[2].function.name, "update_memory");
@@ -100,7 +100,7 @@ fn test_all_tool_definitions_with_bash() {
 #[test]
 fn test_all_tool_definitions_without_bash() {
     let tools = all_tool_definitions(false, None, "/media", None);
-    assert_eq!(tools.len(), 14);
+    assert_eq!(tools.len(), 16);
     assert_eq!(tools[0].function.name, "read_memory");
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
 }
@@ -422,7 +422,7 @@ fn test_deserialize_tool_call_invalid_args() {
 fn test_all_tool_definitions_with_embedding_model() {
     // With bash + embedding: 14 base + bash + search_conversations = 16
     let tools = all_tool_definitions(true, Some("openai/text-embedding-3-small"), "/media", None);
-    assert_eq!(tools.len(), 16);
+    assert_eq!(tools.len(), 18);
     assert_eq!(tools[0].function.name, "bash");
     assert!(tools
         .iter()
@@ -430,15 +430,15 @@ fn test_all_tool_definitions_with_embedding_model() {
 
     // Without bash, with embedding: 14 base + search_conversations = 15
     let tools = all_tool_definitions(false, Some("openai/text-embedding-3-small"), "/media", None);
-    assert_eq!(tools.len(), 15);
+    assert_eq!(tools.len(), 17);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "search_conversations"));
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
 
-    // Without embedding model, without bash: 14 base = 14 (no search_conversations)
+    // Without embedding model, without bash: 14 base + 2 config tools = 16 (no search_conversations)
     let tools = all_tool_definitions(false, None, "/media", None);
-    assert_eq!(tools.len(), 14);
+    assert_eq!(tools.len(), 16);
     assert!(!tools
         .iter()
         .any(|t| t.function.name == "search_conversations"));
@@ -906,18 +906,18 @@ fn test_generate_image_tool_definition() {
 fn test_all_tool_definitions_with_image_gen_model() {
     // With image_gen_model, without bash, without embedding: 14 base + generate_image = 15
     let tools = all_tool_definitions(false, None, "/media", Some("black-forest-labs/flux-1.1-pro"));
-    assert_eq!(tools.len(), 15);
+    assert_eq!(tools.len(), 17);
     assert!(tools.iter().any(|t| t.function.name == "generate_image"));
 
     // With image_gen_model, with bash, without embedding: 14 base + generate_image + bash = 16
     let tools = all_tool_definitions(true, None, "/media", Some("black-forest-labs/flux-1.1-pro"));
-    assert_eq!(tools.len(), 16);
+    assert_eq!(tools.len(), 18);
     assert_eq!(tools[0].function.name, "bash");
     assert!(tools.iter().any(|t| t.function.name == "generate_image"));
 
     // Without image_gen_model: generate_image is excluded
     let tools = all_tool_definitions(true, None, "/media", None);
-    assert_eq!(tools.len(), 15);
+    assert_eq!(tools.len(), 17);
     assert!(!tools.iter().any(|t| t.function.name == "generate_image"));
 }
 

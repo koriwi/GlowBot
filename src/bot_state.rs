@@ -6,6 +6,14 @@ use crate::skills::Skill;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// A pending config change awaiting user approval via inline keyboard.
+#[derive(Debug, Clone)]
+pub struct PendingConfigChange {
+    pub chat_id: String,
+    pub message_id: i32,
+    pub new_yaml: String,
+}
+
 /// Shared bot state accessible from all handlers.
 pub struct BotState {
     pub config: Config,
@@ -20,6 +28,8 @@ pub struct BotState {
     pub model_metadata: HashMap<String, ModelInfo>,
     /// Per-chat last token usage from the most recent LLM call.
     pub last_usage: HashMap<String, Usage>,
+    /// Pending config changes awaiting user approval (keyed by pending_id).
+    pub pending_config_changes: HashMap<String, PendingConfigChange>,
 }
 
 impl BotState {

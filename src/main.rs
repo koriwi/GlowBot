@@ -6,7 +6,7 @@ use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 use teloxide::prelude::*;
-use teloxide::types::BotCommand;
+use teloxide::types::{BotCommand, ParseMode, UpdateKind};
 use tokio::sync::Mutex;
 
 #[tokio::main]
@@ -97,28 +97,56 @@ async fn run_bot() -> anyhow::Result<()> {
 
     log::info!("GlowBot is ready. Starting long-polling...");
 
-    // Wrap polling in a loop to survive network timeouts/disconnects.
-    loop {
-        let handler_bot = Arc::clone(&bot);
-        let handler_username = bot_username.clone();
-        let handler_tg = tg_bot.clone();
-        let handler_locks = Arc::clone(&chat_locks);
+    // Manual polling loop to handle both Message and CallbackQuery updates.
+    // Wrapped in a restart loop to survive network timeouts/disconnects.
+    'polling: loop {
+        let poll_bot = tg_bot.clone();
+        let poll_bot_inner = Arc::clone(&bot);
+        let poll_username = bot_username.clone();
+        let poll_locks = Arc::clone(&chat_locks);
 
         let handle = tokio::spawn(async move {
-            teloxide::repl(handler_tg, move |tg_bot: Bot, msg: Message| {
-                let bot = Arc::clone(&handler_bot);
-                let bot_username = handler_username.clone();
-                let locks = Arc::clone(&handler_locks);
-                async move {
-                    // Spawn each message handler so /stop can interrupt ongoing processing.
-                    // Per-chat serialization is handled inside handle_message.
-                    tokio::spawn(async move {
-                        handle_message(tg_bot, bot, locks, msg, &bot_username).await;
-                    });
-                    Ok(())
+            let mut offset: i32 = 0;
+            loop {
+                let updates_result = poll_bot
+                    .get_updates()
+                    .offset(offset)
+                    .timeout(30)
+                    .allowed_updates(vec![
+                        teloxide::types::AllowedUpdate::Message,
+                        teloxide::types::AllowedUpdate::CallbackQuery,
+                    ])
+                    .await;
+
+                match updates_result {
+                    Ok(updates) => {
+                        for update in updates {
+                            offset = (update.id.0 as i32) + 1;
+                            match update.kind {
+                                UpdateKind::Message(msg) => {
+                                    let tg = poll_bot.clone();
+                                    let b = Arc::clone(&poll_bot_inner);
+                                    let l = Arc::clone(&poll_locks);
+                                    let uname = poll_username.clone();
+                                    tokio::spawn(async move {
+                                        handle_message(tg, b, l, msg, &uname).await;
+                                    });
+                                }
+                                UpdateKind::CallbackQuery(cb) => {
+                                    let tg = poll_bot.clone();
+                                    let b = Arc::clone(&poll_bot_inner);
+                                    handle_callback(tg, b, cb).await;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("GetUpdates error: {}, retrying in 5s", e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
                 }
-            })
-            .await;
+            }
         });
 
         match handle.await {
@@ -128,7 +156,7 @@ async fn run_bot() -> anyhow::Result<()> {
             Err(e) => {
                 if e.is_cancelled() {
                     log::info!("Polling task cancelled, shutting down");
-                    break;
+                    break 'polling;
                 }
                 log::error!("Polling task panicked, restarting in 5s: {}", e);
             }
@@ -365,5 +393,57 @@ async fn run_chat_heartbeat(
 
         // Sleep until next interval for this specific chat
         tokio::time::sleep(Duration::from_secs(interval_secs)).await;
+    }
+}
+
+/// Handle incoming Telegram callback queries (inline keyboard button presses).
+async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::types::CallbackQuery) {
+    let data = cb.data.clone().unwrap_or_default();
+    let callback_id = cb.id.clone();
+
+    log::info!("Callback query received: data={}", data);
+
+    // Only handle config approval callbacks for now
+    if !data.starts_with("cfg:") {
+        log::info!("Unknown callback data prefix, ignoring: {}", data);
+        let _ = tg_bot
+            .answer_callback_query(&callback_id)
+            .text("Unknown action")
+            .await;
+        return;
+    }
+
+    // Answer the callback query immediately (Telegram requires this)
+    let _ = tg_bot.answer_callback_query(&callback_id).await;
+
+    // Process the config callback
+    let state = {
+        let bot_inner = bot.lock().await;
+        bot_inner.state.clone()
+    };
+
+    let result = glowbot::bot::bot_dispatch::bot_dispatch_config::handle_config_callback(
+        &state, &data,
+    )
+    .await;
+
+    if let Some((edit_text, _followup_text)) = result {
+        // Edit the original message to remove buttons and show result
+        if let Some(msg) = cb.message {
+            let chat_id = msg.chat().id;
+            let msg_id = msg.id();
+            let escaped = glowbot::escape_v2_safe(&edit_text);
+            let result = tg_bot
+                .edit_message_text(chat_id, msg_id, &escaped)
+                .parse_mode(ParseMode::MarkdownV2)
+                .await;
+            if let Err(e) = result {
+                log::warn!("Failed to edit message on callback: {}", e);
+                // Try without MarkdownV2
+                let _ = tg_bot
+                    .edit_message_text(chat_id, msg_id, &edit_text)
+                    .await;
+            }
+        }
     }
 }

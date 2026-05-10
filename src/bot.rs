@@ -6,7 +6,7 @@ use crate::llm::LlmBackend;
 #[path = "bot_commands.rs"]
 mod bot_commands;
 #[path = "bot_dispatch.rs"]
-mod bot_dispatch;
+pub mod bot_dispatch;
 #[path = "bot_heartbeat.rs"]
 mod bot_heartbeat;
 #[path = "bot_pipeline.rs"]
@@ -15,7 +15,7 @@ mod bot_pipeline;
 mod bot_state;
 use self::bot_commands::handle_bot_command_impl;
 pub use self::bot_heartbeat::run_heartbeat_task;
-pub use self::bot_state::BotState;
+pub use self::bot_state::{BotState, PendingConfigChange};
 use crate::skills::load_all_skills;
 use std::collections::HashMap;
 use std::path::Path;
@@ -69,6 +69,7 @@ impl GlowBot {
             mcp_tools,
             model_metadata: HashMap::new(),
             last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
         };
 
         Ok(Self {

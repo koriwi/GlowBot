@@ -932,7 +932,7 @@ async fn test_build_tools_includes_mcp() {
 
     // No MCP tools yet — all tool definitions with bash
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 15);
+    assert_eq!(tools.len(), 17);
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
     assert!(tools.iter().any(|t| t.function.name == "bash"));
 
@@ -949,7 +949,7 @@ async fn test_build_tools_includes_mcp() {
     });
 
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 16);
+    assert_eq!(tools.len(), 18);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
@@ -990,19 +990,19 @@ async fn test_build_tools_mcp_blacklist() {
 
     // Chat "-456" has the server blacklisted — MCP tool should be excluded
     let tools = state.build_tools(true, "-456");
-    assert_eq!(tools.len(), 15); // same as without MCP
+    assert_eq!(tools.len(), 17); // same as without MCP
     assert!(!tools.iter().any(|t| t.function.name.starts_with("mcp_")));
 
     // Chat "-123" not blacklisted — MCP tool should be included
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 16);
+    assert_eq!(tools.len(), 18);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
 
     // DM chats are never blacklisted
     let tools = state.build_tools(true, "12345");
-    assert_eq!(tools.len(), 16);
+    assert_eq!(tools.len(), 18);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
@@ -1022,7 +1022,7 @@ async fn test_build_tools_without_bash() {
     let state = bot.state.lock().await;
 
     let tools = state.build_tools(false, "-123");
-    assert_eq!(tools.len(), 14); // 15 - bash
+    assert_eq!(tools.len(), 16); // 14 base + 2 config tools
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
 }
@@ -1105,6 +1105,7 @@ async fn test_dispatch_send_message_empty_text() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1133,6 +1134,7 @@ async fn test_dispatch_send_message_no_tg_bot() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1161,6 +1163,7 @@ async fn test_dispatch_send_media_empty_file_path() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1189,6 +1192,7 @@ async fn test_dispatch_send_media_file_not_found() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1219,6 +1223,7 @@ async fn test_dispatch_send_media_no_tg_bot() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1248,6 +1253,7 @@ async fn test_dispatch_send_media_original_quality() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1281,6 +1287,7 @@ fn setup_state_with_media_dir(media_dir: &std::path::Path) -> Arc<Mutex<BotState
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     state
 }
@@ -1421,6 +1428,7 @@ async fn test_dispatch_bash_empty_command() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1450,6 +1458,7 @@ async fn test_dispatch_bash_disabled() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1482,6 +1491,7 @@ async fn test_dispatch_read_memory_missing() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1510,6 +1520,7 @@ async fn test_dispatch_update_memory_no_fields() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1538,6 +1549,7 @@ async fn test_dispatch_add_task_empty() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1566,6 +1578,7 @@ async fn test_dispatch_list_tasks_non_empty() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     // Add a task first
     dispatch_tool(
@@ -1596,6 +1609,7 @@ async fn test_dispatch_remove_task_empty_and_not_found() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1633,6 +1647,7 @@ async fn test_dispatch_create_skill_validation() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1661,6 +1676,7 @@ async fn test_dispatch_read_skill_not_found() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1689,6 +1705,7 @@ async fn test_dispatch_update_skill_not_found() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1717,6 +1734,7 @@ async fn test_dispatch_unknown_tool() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "narnia", &serde_json::json!({}), None).await;
     assert!(out.contains("Unknown tool"));
@@ -1738,6 +1756,7 @@ async fn test_dispatch_mcp_tool_not_found() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "mcp_no_no", &serde_json::json!({}), None).await;
     assert!(out.contains("MCP tool not found"));
@@ -1759,6 +1778,7 @@ async fn test_get_recent_messages_empty_history() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2130,6 +2150,7 @@ fn test_context_usage_formatting() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     };
     // No context cached, no usage -> no token data yet
     assert_eq!(state.context_usage("-123"), "no token data yet");
@@ -2173,6 +2194,7 @@ async fn test_dispatch_search_conversations_no_model() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2198,6 +2220,7 @@ async fn test_dispatch_search_conversations_empty_query() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2223,6 +2246,7 @@ async fn test_dispatch_search_conversations_no_results() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2265,6 +2289,7 @@ async fn test_dispatch_search_conversations_with_results() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2295,6 +2320,7 @@ async fn test_dispatch_search_conversations_embedding_error() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2325,6 +2351,7 @@ async fn test_dispatch_generate_image_no_model() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2354,6 +2381,7 @@ async fn test_dispatch_generate_image_empty_prompt() {
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
+            pending_config_changes: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2489,4 +2517,206 @@ fn test_guess_mime_default() {
         super::bot_dispatch::bot_dispatch_image::tests::guess_mime_for_test(&data),
         "image/png"
     );
+}
+
+// --- Config tool tests ---
+
+#[tokio::test]
+async fn test_read_config_tool_returns_yaml() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let state = bot.state.clone();
+
+    let result = super::bot_dispatch::bot_dispatch_config::tool_read_config(&state).await;
+
+    // Should contain key config fields
+    assert!(result.contains("telegram_token:"));
+    assert!(result.contains("test-token"));
+    assert!(result.contains("openrouter:"));
+    assert!(result.contains("model:"));
+}
+
+#[tokio::test]
+async fn test_edit_config_missing_config_yaml() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let state = bot.state.clone();
+
+    let args = serde_json::json!({});
+    let result =
+        super::bot_dispatch::bot_dispatch_config::tool_edit_config(&state, "-123", &args, None)
+            .await;
+
+    assert!(result.starts_with("Error: config_yaml parameter required"));
+}
+
+#[tokio::test]
+async fn test_edit_config_invalid_yaml() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let state = bot.state.clone();
+
+    let args = serde_json::json!({"config_yaml": "this is not valid yaml: [unclosed"});
+    let result =
+        super::bot_dispatch::bot_dispatch_config::tool_edit_config(&state, "-123", &args, None)
+            .await;
+
+    assert!(result.starts_with("Error: invalid YAML"));
+}
+
+#[tokio::test]
+async fn test_edit_config_no_changes() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let state = bot.state.clone();
+
+    // Serialize current config back to YAML
+    let current_yaml = serde_yaml::to_string(&state.lock().await.config).unwrap();
+
+    let args = serde_json::json!({"config_yaml": current_yaml});
+    let result =
+        super::bot_dispatch::bot_dispatch_config::tool_edit_config(&state, "-123", &args, None)
+            .await;
+
+    assert!(result.contains("Config unchanged"));
+}
+
+#[tokio::test]
+async fn test_edit_config_requires_tg_bot() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let state = bot.state.clone();
+
+    // Valid yaml with a change, but no tg_bot
+    let new_yaml = "telegram_token: test-token\nopenrouter:\n  api_key: test-key\n  model: new/model\n";
+    let args = serde_json::json!({"config_yaml": new_yaml});
+    let result =
+        super::bot_dispatch::bot_dispatch_config::tool_edit_config(&state, "-123", &args, None)
+            .await;
+
+    assert!(result.contains("requires Telegram bot context"));
+}
+
+#[tokio::test]
+async fn test_handle_config_callback_accept() {
+    let (bot, dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let state = bot.state.clone();
+
+    // Create a new config YAML with a change
+    let new_yaml = "telegram_token: test-token\nopenrouter:\n  api_key: test-key\n  model: changed/model\n";
+
+    // Store a pending change
+    let pending_id = "test123";
+    {
+        let mut s = state.lock().await;
+        s.pending_config_changes.insert(
+            pending_id.to_string(),
+            PendingConfigChange {
+                chat_id: "-123".to_string(),
+                message_id: 42,
+                new_yaml: new_yaml.to_string(),
+            },
+        );
+    }
+
+    let data = format!("cfg:{}:accept", pending_id);
+    let result =
+        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, &data).await;
+
+    assert!(result.is_some());
+    let (edit_text, followup) = result.unwrap();
+    assert!(edit_text.contains("Config Change Applied") || edit_text.contains("restarting"));
+    assert!(followup.is_none());
+
+    // Verify the config was saved to disk
+    let saved_config =
+        crate::config::Config::load(&dir.path().join("glowbot_data").join("config.yaml"))
+            .unwrap();
+    assert_eq!(saved_config.openrouter.model, "changed/model");
+}
+
+#[tokio::test]
+async fn test_handle_config_callback_deny() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let state = bot.state.clone();
+
+    let new_yaml = "telegram_token: test-token\nopenrouter:\n  api_key: test-key\n  model: some/model\n";
+
+    let pending_id = "deny_test";
+    {
+        let mut s = state.lock().await;
+        s.pending_config_changes.insert(
+            pending_id.to_string(),
+            PendingConfigChange {
+                chat_id: "-123".to_string(),
+                message_id: 42,
+                new_yaml: new_yaml.to_string(),
+            },
+        );
+    }
+
+    let data = format!("cfg:{}:deny", pending_id);
+    let result =
+        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, &data).await;
+
+    assert!(result.is_some());
+    let (edit_text, followup) = result.unwrap();
+    assert!(edit_text.contains("Config Change Denied"));
+    assert!(followup.is_some());
+    assert!(followup.unwrap().contains("user denied the proposed config change"));
+
+    // Verify the pending change was removed
+    assert!(state.lock().await.pending_config_changes.is_empty());
+}
+
+#[tokio::test]
+async fn test_handle_config_callback_unknown_pending_id() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let state = bot.state.clone();
+
+    let data = "cfg:nonexistent:accept";
+    let result =
+        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, data).await;
+
+    assert!(result.is_some());
+    let (edit_text, followup) = result.unwrap();
+    assert!(edit_text.contains("expired") || edit_text.contains("already processed"));
+    assert!(followup.is_none());
+}
+
+#[tokio::test]
+async fn test_handle_config_callback_unknown_action() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let state = bot.state.clone();
+
+    let new_yaml = "telegram_token: test-token\nopenrouter:\n  api_key: test-key\n  model: x/model\n";
+
+    let pending_id = "unknown_action_test";
+    {
+        let mut s = state.lock().await;
+        s.pending_config_changes.insert(
+            pending_id.to_string(),
+            PendingConfigChange {
+                chat_id: "-123".to_string(),
+                message_id: 42,
+                new_yaml: new_yaml.to_string(),
+            },
+        );
+    }
+
+    let data = format!("cfg:{}:something_else", pending_id);
+    let result =
+        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, &data).await;
+
+    assert!(result.is_some());
+    let (edit_text, _followup) = result.unwrap();
+    assert!(edit_text.contains("Unknown action"));
+}
+
+#[tokio::test]
+async fn test_handle_config_callback_non_cfg_prefix() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let state = bot.state.clone();
+
+    let result =
+        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, "something_else")
+            .await;
+
+    // Non-cfg callbacks return None (handled in main.rs)
+    assert!(result.is_none());
 }

@@ -114,6 +114,9 @@ pub fn all_tool_definitions(
     if include_bash {
         tools.insert(0, bash_tool_definition());
     }
+    // Config tools are always available (they have their own permission model)
+    tools.push(read_config_tool_definition());
+    tools.push(edit_config_tool_definition());
     tools
 }
 
@@ -433,6 +436,43 @@ pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition 
                     }
                 },
                 "required": ["prompt"]
+            }),
+        },
+    }
+}
+
+/// The read_config tool definition.
+pub(crate) fn read_config_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "read_config".into(),
+            description: "Read the current bot configuration. Returns the full config.yaml as a YAML string. Always call this first before using edit_config so you can see the current settings.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+    }
+}
+
+/// The edit_config tool definition.
+pub(crate) fn edit_config_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "edit_config".into(),
+            description: "Propose changes to the bot configuration. Provide the COMPLETE new config as YAML (call read_config first, then modify and provide the full result). The diff will be shown to the user for approval with Accept/Deny buttons. If the YAML is invalid, an error is returned. If valid, the proposal is sent to the user and you should wait for their response before asking about config changes.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "config_yaml": {
+                        "type": "string",
+                        "description": "The complete new config.yaml content as a YAML string. Must be valid YAML that can be parsed as a Config."
+                    }
+                },
+                "required": ["config_yaml"]
             }),
         },
     }

@@ -12,6 +12,8 @@ mod bot_dispatch_memory;
 pub(crate) mod bot_dispatch_image;
 #[path = "bot_dispatch_skills.rs"]
 mod bot_dispatch_skills;
+#[path = "bot_dispatch_config.rs"]
+pub mod bot_dispatch_config;
 
 /// Log a tool call to `tool_calls.log` in the given data directory.
 pub(crate) fn log_tool_call_to(
@@ -277,6 +279,12 @@ pub(crate) async fn dispatch_tool(
                 })
                 .collect();
             serde_json::json!({"messages": items}).to_string()
+        }
+        "read_config" => {
+            bot_dispatch_config::tool_read_config(state).await
+        }
+        "edit_config" => {
+            bot_dispatch_config::tool_edit_config(state, &cid, args, tg_bot).await
         }
         "search_conversations" => {
             let query = args["query"].as_str().unwrap_or("");
