@@ -138,6 +138,13 @@ impl BotState {
         list.has_tasks()
     }
 
+    /// Check if a chat has any due reminders (trigger_at in the past).
+    pub fn has_due_reminders(&self, chat_id: &str) -> bool {
+        let list =
+            crate::reminders::ReminderList::load(&self.chats_dir(), chat_id).unwrap_or_default();
+        !list.due().is_empty()
+    }
+
     /// Get the formatted context usage string for a chat, e.g. "37k/189k (15%)"
     /// Reports against the *effective* limit (with safety margin applied).
     pub fn context_usage(&self, chat_id: &str) -> String {

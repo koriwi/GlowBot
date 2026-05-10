@@ -932,7 +932,7 @@ async fn test_build_tools_includes_mcp() {
 
     // No MCP tools yet — all tool definitions with bash
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 17);
+    assert_eq!(tools.len(), 20);
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
     assert!(tools.iter().any(|t| t.function.name == "bash"));
 
@@ -949,7 +949,7 @@ async fn test_build_tools_includes_mcp() {
     });
 
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 18);
+    assert_eq!(tools.len(), 21);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
@@ -990,19 +990,19 @@ async fn test_build_tools_mcp_blacklist() {
 
     // Chat "-456" has the server blacklisted — MCP tool should be excluded
     let tools = state.build_tools(true, "-456");
-    assert_eq!(tools.len(), 17); // same as without MCP
+    assert_eq!(tools.len(), 20); // same as without MCP
     assert!(!tools.iter().any(|t| t.function.name.starts_with("mcp_")));
 
     // Chat "-123" not blacklisted — MCP tool should be included
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 18);
+    assert_eq!(tools.len(), 21);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
 
     // DM chats are never blacklisted
     let tools = state.build_tools(true, "12345");
-    assert_eq!(tools.len(), 18);
+    assert_eq!(tools.len(), 21);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
@@ -1022,7 +1022,7 @@ async fn test_build_tools_without_bash() {
     let state = bot.state.lock().await;
 
     let tools = state.build_tools(false, "-123");
-    assert_eq!(tools.len(), 16); // 14 base + 2 config tools
+    assert_eq!(tools.len(), 19); // 17 base + 2 config tools
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
 }

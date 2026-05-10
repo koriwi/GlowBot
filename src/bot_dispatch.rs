@@ -183,6 +183,49 @@ pub(crate) async fn dispatch_tool(
                 format!("Task '{}' not found.", id)
             }
         }
+        "create_reminder" => {
+            let desc = args["description"].as_str().unwrap_or("");
+            let trigger = args["trigger_at"].as_str().unwrap_or("");
+            if desc.is_empty() || trigger.is_empty() {
+                return "Error: description and trigger_at required".into();
+            }
+            // Validate the timestamp
+            if chrono::DateTime::parse_from_rfc3339(trigger).is_err() {
+                return format!("Error: trigger_at must be a valid ISO 8601 timestamp in UTC (e.g. '2026-05-11T18:00:00Z'), got: {}", trigger);
+            }
+            let action = args["action"].as_str();
+            let s = state.lock().await;
+            let mut list =
+                crate::reminders::ReminderList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            let id = list.add(desc, trigger, action);
+            let _ = list.save(&s.chats_dir(), &cid);
+            format!("Reminder '{}' created for {}: {}", id, trigger, desc)
+        }
+        "list_reminders" => {
+            let s = state.lock().await;
+            let list =
+                crate::reminders::ReminderList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            if list.reminders.is_empty() {
+                "No pending reminders.".into()
+            } else {
+                serde_json::to_string_pretty(&list.reminders).unwrap_or_default()
+            }
+        }
+        "remove_reminder" => {
+            let id = args["id"].as_str().unwrap_or("");
+            if id.is_empty() {
+                return "Error: id required".into();
+            }
+            let s = state.lock().await;
+            let mut list =
+                crate::reminders::ReminderList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            if list.remove(id) {
+                let _ = list.save(&s.chats_dir(), &cid);
+                format!("Reminder '{}' removed. {} remaining.", id, list.reminders.len())
+            } else {
+                format!("Reminder '{}' not found.", id)
+            }
+        }
         "generate_image" => {
             bot_dispatch_image::tool_generate_image(state, &cid, args).await
         }

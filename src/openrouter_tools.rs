@@ -100,6 +100,9 @@ pub fn all_tool_definitions(
         add_task_tool_definition(),
         list_tasks_tool_definition(),
         remove_task_tool_definition(),
+        create_reminder_tool_definition(),
+        list_reminders_tool_definition(),
+        remove_reminder_tool_definition(),
         get_recent_messages_tool_definition(),
         send_message_tool_definition(),
     ];
@@ -294,6 +297,72 @@ pub(crate) fn remove_task_tool_definition() -> ToolDefinition {
                     "id": {
                         "type": "string",
                         "description": "The ID of the task to remove (from list_tasks)."
+                    }
+                },
+                "required": ["id"]
+            }),
+        },
+    }
+}
+
+/// The create_reminder tool definition.
+pub(crate) fn create_reminder_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "create_reminder".into(),
+            description: "Create a reminder that will fire at a specific time. Use this when a user asks to be reminded about something at a known time (e.g. 'remind me tomorrow at 3pm to call mom'). The trigger_at must be an ISO 8601 timestamp in UTC. Optionally provide an action for the bot to perform when the reminder fires (e.g. looking up information first). If the request has no specific time or depends on external state (e.g. 'tell me when the stock hits $100'), use add_task instead.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "What to remind the user about (e.g. 'Call your mom'). This is sent as-is when the reminder fires."
+                    },
+                    "trigger_at": {
+                        "type": "string",
+                        "description": "ISO 8601 timestamp in UTC when the reminder should fire (e.g. '2026-05-11T18:00:00Z'). Convert the user's natural language time to UTC."
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": "Optional: what the bot should do when the reminder fires, beyond just sending the description. For example: 'Look up mom's phone number from memory and include it in the message'. If omitted, only the description is sent."
+                    }
+                },
+                "required": ["description", "trigger_at"]
+            }),
+        },
+    }
+}
+
+/// The list_reminders tool definition.
+pub(crate) fn list_reminders_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "list_reminders".into(),
+            description: "List all pending reminders for this chat, including their trigger times.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+    }
+}
+
+/// The remove_reminder tool definition.
+pub(crate) fn remove_reminder_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "remove_reminder".into(),
+            description: "Remove a pending reminder from this chat's reminder list.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "The ID of the reminder to remove (from list_reminders)."
                     }
                 },
                 "required": ["id"]

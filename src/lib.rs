@@ -11,6 +11,7 @@ pub mod media;
 pub mod memory;
 pub mod openrouter;
 pub mod skills;
+pub mod reminders;
 pub mod system_prompt;
 pub mod tasks;
 

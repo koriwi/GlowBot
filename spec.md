@@ -144,6 +144,7 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
   - `read_skill` – read an existing skill's full content as JSON.
   - `update_skill` – update an existing skill (name, description?, body?). Triggers reload.
   - **`add_task`, `list_tasks`, `remove_task`** — manage the chat's task list.
+  - **`create_reminder`, `list_reminders`, `remove_reminder`** — manage time-based reminders. See §4.7a.
   - **`send_message`** — send a plain text message to the current chat. **Only exposed during heartbeat/background task processing**; normal conversation relies on the assistant reply being sent automatically. The agent uses this sparingly (at most once per task) to report completion or deliver results that the user explicitly requested.
   - **`get_recent_messages`** — returns the last N messages from the conversation history. The bot does NOT automatically send past messages — only the current user message is included in each request. The LLM must call this tool when it needs context from earlier in the conversation.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
@@ -291,6 +292,28 @@ chats:
 
 ---
 
+### 4.7a Reminders
+
+Reminders fire at a **specific time** (ISO 8601 timestamp), unlike tasks which are state-dependent. Each chat can have a reminder list (`chats/<chat_id>/reminders.yaml`).
+
+**Decision: reminder vs task:**
+- Use `create_reminder` when the user wants something at a **known time** (e.g. "remind me tomorrow at 3pm to call mom").
+- Use `add_task` when the trigger is **state-dependent** (e.g. "tell me when the stock hits $100" — the exact time is unknown).
+
+**How it works:**
+- The LLM calls `create_reminder(description, trigger_at, action?)` — `trigger_at` is an ISO 8601 timestamp in UTC, converted from the user's natural language.
+- `action` is optional: if set, the bot performs the action (e.g. "look up mom's phone number from memory and include it") when the reminder fires, before sending the message.
+- `list_reminders()` shows pending reminders with their trigger times.
+- `remove_reminder(id)` removes a pending reminder.
+- The background **scheduler** loop (every 60s) scans for due reminders (trigger_at in the past) across all chats. Reminders fire **independently** of heartbeat interval settings — they always fire when due.
+- **No action**: the description is sent as a message (`⏰ Reminder: ...`) and the reminder is removed.
+- **Has action**: a one-off LLM agent runs to perform the action, sends the result via `send_message`, then the reminder is removed.
+- Data is stored per-chat in `chats/<chat_id>/reminders.yaml` (YAML, same pattern as `tasks.yaml`).
+
+**Tools:** `create_reminder`, `list_reminders`, `remove_reminder`.
+
+---
+
 ### 4.8 Memory System
 
 #### Short-term (conversation context)
@@ -426,6 +449,7 @@ Whitelists contain Telegram user IDs.
 - [x] Tool call logging to `tool_calls.log`
 - [x] MCP server integration for external tool discovery
 - [x] Heartbeat task system with autonomous background agents
+- [x] Reminders system — time-based triggers with optional LLM actions, independent of heartbeat
 - [x] Per-user `.md` memory with YAML frontmatter, freeform body
 - [x] Memory frontmatter injected into system prompt; full file readable via tools
 - [x] `/status`, `/tasks`, `/stop` commands

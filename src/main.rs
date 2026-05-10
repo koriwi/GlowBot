@@ -293,19 +293,59 @@ async fn handle_message(
     }
 }
 
-/// Background heartbeat orchestrator. Discovers chats with tasks and spawns
+/// Background heartbeat orchestrator. Discovers chats with tasks/reminders and spawns
 /// a dedicated timer loop for each, using the chat's configured interval.
 /// DMs use the global default; group chats can override.
+/// Chats with due reminders are processed immediately even without heartbeat enabled.
 async fn run_heartbeat_loop(bot: Arc<Mutex<GlowBot>>, tg_bot: Bot) {
     tokio::time::sleep(Duration::from_secs(30)).await;
 
     // Track which chats already have an active heartbeat task loop.
-    // Using std::sync::Mutex because it's only accessed briefly for HashSet ops.
     let active: Arc<tokio::sync::Mutex<HashSet<String>>> =
         Arc::new(tokio::sync::Mutex::new(HashSet::new()));
 
     loop {
-        // Scan for chats with pending tasks and their intervals.
+        // --- Scan for due reminders (fires even without heartbeat enabled) ---
+        let reminder_chats: Vec<String> = {
+            let inner = bot.lock().await;
+            let state = inner.state.lock().await;
+            let chats_dir = state.chats_dir();
+            let mut result = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(&chats_dir) {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            if name.parse::<i64>().is_ok() && state.has_due_reminders(name) {
+                                result.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            result
+        };
+
+        for chat_id in reminder_chats {
+            let mut guard = active.lock().await;
+            if !guard.contains(&chat_id) {
+                guard.insert(chat_id.clone());
+                drop(guard);
+                let bot_clone = Arc::clone(&bot);
+                let tg_clone = tg_bot.clone();
+                let active_clone = Arc::clone(&active);
+                let cid = chat_id.clone();
+                tokio::spawn(async move {
+                    let (state, git_repo) = {
+                        let inner = bot_clone.lock().await;
+                        (inner.state.clone(), inner.git_repo.clone())
+                    };
+                    glowbot::bot::run_heartbeat_task(state, git_repo, &cid, tg_clone.clone()).await;
+                    active_clone.lock().await.remove(&chat_id);
+                });
+            }
+        }
+
+        // --- Scan for chats with pending tasks ---
         let chats: Vec<(String, u64)> = {
             let inner = bot.lock().await;
             let state = inner.state.lock().await;
