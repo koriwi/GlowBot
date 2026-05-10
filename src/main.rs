@@ -143,7 +143,7 @@ async fn run_bot() -> anyhow::Result<()> {
                         }
                     }
                     Err(e) => {
-                        log::error!("GetUpdates error: {}, retrying in 5s", e);
+                        log::warn!("GetUpdates error: {}, retrying in 5s", e);
                         tokio::time::sleep(Duration::from_secs(5)).await;
                     }
                 }
