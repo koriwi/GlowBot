@@ -71,8 +71,10 @@ async fn run_bot() -> anyhow::Result<()> {
     let commands = vec![
         BotCommand::new("status", "Show current config for this chat"),
         BotCommand::new("tasks", "Show pending tasks for this chat"),
+        BotCommand::new("new", "Reset context — messages before now are excluded from conversation"),
         BotCommand::new("prompt", "Show the system prompt sent to the LLM"),
         BotCommand::new("run", "Run task agent immediately for this chat"),
+        BotCommand::new("tools", "Show available tools in this chat"),
         BotCommand::new("stop", "Stop the bot"),
     ];
     if let Err(e) = tg_bot.set_my_commands(commands).await {
