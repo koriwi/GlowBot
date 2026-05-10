@@ -19,6 +19,12 @@ fn short_id() -> String {
     format!("{:x}", ts)
 }
 
+/// Tool: read_config_schema — returns the JSON Schema for all config types.
+pub(crate) async fn tool_read_config_schema() -> String {
+    let schema = schemars::schema_for!(crate::config::Config);
+    serde_json::to_string_pretty(&schema).unwrap_or_else(|e| format!("Error generating schema: {}", e))
+}
+
 /// Tool: read_config — returns the current config as YAML.
 pub(crate) async fn tool_read_config(state: &Arc<Mutex<BotState>>) -> String {
     let s = state.lock().await;

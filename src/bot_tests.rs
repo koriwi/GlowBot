@@ -932,7 +932,7 @@ async fn test_build_tools_includes_mcp() {
 
     // No MCP tools yet — all tool definitions with bash
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 20);
+    assert_eq!(tools.len(), 21);
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
     assert!(tools.iter().any(|t| t.function.name == "bash"));
 
@@ -949,7 +949,7 @@ async fn test_build_tools_includes_mcp() {
     });
 
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 21);
+    assert_eq!(tools.len(), 22);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
@@ -990,19 +990,19 @@ async fn test_build_tools_mcp_blacklist() {
 
     // Chat "-456" has the server blacklisted — MCP tool should be excluded
     let tools = state.build_tools(true, "-456");
-    assert_eq!(tools.len(), 20); // same as without MCP
+    assert_eq!(tools.len(), 21); // same as without MCP
     assert!(!tools.iter().any(|t| t.function.name.starts_with("mcp_")));
 
     // Chat "-123" not blacklisted — MCP tool should be included
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 21);
+    assert_eq!(tools.len(), 22);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
 
     // DM chats are never blacklisted
     let tools = state.build_tools(true, "12345");
-    assert_eq!(tools.len(), 21);
+    assert_eq!(tools.len(), 22);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
@@ -1022,7 +1022,7 @@ async fn test_build_tools_without_bash() {
     let state = bot.state.lock().await;
 
     let tools = state.build_tools(false, "-123");
-    assert_eq!(tools.len(), 19); // 17 base + 2 config tools
+    assert_eq!(tools.len(), 20); // 17 base + 3 config tools
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
 }
@@ -2533,6 +2533,42 @@ async fn test_read_config_tool_returns_yaml() {
     assert!(result.contains("test-token"));
     assert!(result.contains("openrouter:"));
     assert!(result.contains("model:"));
+}
+
+#[tokio::test]
+async fn test_read_config_schema_returns_valid_schema() {
+    let result =
+        super::bot_dispatch::bot_dispatch_config::tool_read_config_schema().await;
+
+    // Should be valid JSON
+    let v: serde_json::Value =
+        serde_json::from_str(&result).expect("schema should be valid JSON");
+
+    // Should be a JSON Schema object with properties
+    assert_eq!(v["type"], "object");
+    let props = &v["properties"];
+    assert!(props["telegram_token"].is_object());
+    assert!(props["openrouter"].is_object());
+    assert!(props["chats"].is_object());
+    assert!(props["dms"].is_object());
+    assert!(props["mcp_servers"].is_object());
+    assert!(props["heartbeat_interval_minutes"].is_object());
+    assert!(props["bash_enabled"].is_object());
+    assert!(props["media_dir"].is_object());
+    assert!(props["embedding"].is_object());
+    assert!(props["conversation"].is_object());
+    assert!(props["db"].is_object());
+
+    // Verify nested ChatConfig schema is accessible too
+    // The schema should describe ChatConfig (used in chats HashMap values)
+    let schema_str = result;
+    assert!(schema_str.contains("ChatConfig"));
+    assert!(schema_str.contains("DmConfig"));
+    assert!(schema_str.contains("model"));
+    assert!(schema_str.contains("interaction_mode"));
+    assert!(schema_str.contains("image_fallback_model"));
+    assert!(schema_str.contains("audio_fallback_model"));
+    assert!(schema_str.contains("image_gen_model"));
 }
 
 #[tokio::test]

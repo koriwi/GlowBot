@@ -323,6 +323,9 @@ pub(crate) async fn dispatch_tool(
                 .collect();
             serde_json::json!({"messages": items}).to_string()
         }
+        "read_config_schema" => {
+            bot_dispatch_config::tool_read_config_schema().await
+        }
         "read_config" => {
             bot_dispatch_config::tool_read_config(state).await
         }

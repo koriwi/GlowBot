@@ -118,6 +118,7 @@ pub fn all_tool_definitions(
         tools.insert(0, bash_tool_definition());
     }
     // Config tools are always available (they have their own permission model)
+    tools.push(read_config_schema_tool_definition());
     tools.push(read_config_tool_definition());
     tools.push(edit_config_tool_definition());
     tools
@@ -505,6 +506,22 @@ pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition 
                     }
                 },
                 "required": ["prompt"]
+            }),
+        },
+    }
+}
+
+/// The read_config_schema tool definition.
+pub(crate) fn read_config_schema_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "read_config_schema".into(),
+            description: "Get the JSON Schema describing all available configuration fields, their types, descriptions, and defaults. Use this BEFORE calling read_config or edit_config to understand what fields exist and what values are allowed. Returns the complete schema for Config, ChatConfig, DmConfig, OpenRouterConfig, and all nested types.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
             }),
         },
     }

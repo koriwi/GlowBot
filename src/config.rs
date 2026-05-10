@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use schemars::JsonSchema;
 
 /// An MCP (Model Context Protocol) server configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct McpServer {
     /// Display name for this server.
     #[serde(default)]
@@ -22,7 +23,7 @@ fn default_transport() -> String {
 }
 
 /// Interaction mode for a chat.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, JsonSchema)]
 pub enum InteractionMode {
     #[serde(rename = "every_message")]
     EveryMessage,
@@ -32,7 +33,7 @@ pub enum InteractionMode {
 }
 
 /// Per-chat configuration override (groups only).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct ChatConfig {
     /// Optional model override for this chat.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -72,7 +73,7 @@ pub struct ChatConfig {
 }
 
 /// Per-DM configuration override.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct DmConfig {
     /// Optional model override for this DM.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -102,7 +103,7 @@ pub struct DmConfig {
 }
 
 /// Database-related configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct DatabaseConfig {
     /// Whether to persist LLM reasoning/thinking content in the database.
     /// Reasoning is only captured when `conversation.include_reasoning` is also enabled.
@@ -111,7 +112,7 @@ pub struct DatabaseConfig {
 }
 
 /// Conversation context configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ConversationConfig {
     /// Number of recent messages to load from the database as context.
     #[serde(default = "default_recent_messages_window_size")]
@@ -140,7 +141,7 @@ impl Default for ConversationConfig {
 }
 
 /// Embedding configuration for conversation vector search (RAG).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EmbeddingConfig {
     /// Maximum characters per embedding. 0 means no limit (full text).
     /// When text exceeds this, it is either truncated (allow_split=false)
@@ -167,7 +168,7 @@ impl Default for EmbeddingConfig {
 }
 
 /// OpenRouter API configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OpenRouterConfig {
     /// OpenRouter API key.
     pub api_key: String,
@@ -197,7 +198,7 @@ pub struct OpenRouterConfig {
 }
 
 /// Global application configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Config {
     /// Telegram bot token.
     pub telegram_token: String,
