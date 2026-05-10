@@ -63,7 +63,15 @@ async fn run_bot() -> anyhow::Result<()> {
     }
 
     log::info!("Initializing Telegram bot...");
-    let tg_bot = Bot::new(telegram_token);
+    // Create HTTP client with TCP keepalive so the 30s long-poll connection
+    // survives NAT/firewall idle-connection timeouts (which were causing the
+    // "operation timed out" errors on get_updates every ~17s).
+    let http_client = reqwest_011::Client::builder()
+        .tcp_keepalive(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+        .expect("Failed to build reqwest client for Telegram");
+    let tg_bot = Bot::with_client(telegram_token, http_client);
     let bot_username = tg_bot.get_me().await?.username.clone().unwrap_or_default();
     log::info!("Bot username: @{}", bot_username);
 
@@ -152,24 +160,22 @@ async fn run_bot() -> anyhow::Result<()> {
                     }
                     Err(e) => {
                         consecutive_errors += 1;
-                        // Exponential backoff: 2^n seconds, capped at 60s.
                         // Only escalate to WARN after 5 consecutive failures.
-                        let delay_secs = (2u64.pow(consecutive_errors.min(6))).min(60);
+                        // TCP keepalive (15s) should prevent most timeouts;
+                        // these should now only fire during genuine outages.
                         if consecutive_errors >= 5 {
                             log::warn!(
-                                "GetUpdates error: {} ({} consecutive failures, retrying in {}s)",
+                                "GetUpdates error: {} ({} consecutive failures, retrying in 5s)",
                                 e,
-                                consecutive_errors,
-                                delay_secs
+                                consecutive_errors
                             );
                         } else {
                             log::debug!(
-                                "GetUpdates error: {}, retrying in {}s",
-                                e,
-                                delay_secs
+                                "GetUpdates error: {}, retrying in 5s",
+                                e
                             );
                         }
-                        tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+                        tokio::time::sleep(Duration::from_secs(5)).await;
                     }
                 }
             }

@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 teloxide = { version = "0.13", default-features = false, features = ["rustls", "ctrlc_handler"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# reqwest 0.11 for configuring teloxide's HTTP client with TCP keepalive
+reqwest_011 = { package = "reqwest", version = "0.11", default-features = false, features = ["rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1"

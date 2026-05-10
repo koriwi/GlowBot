@@ -601,6 +601,7 @@ dependencies = [
  "futures",
  "log",
  "mockall",
+ "reqwest 0.11.27",
  "reqwest 0.12.28",
  "rusqlite",
  "schemars",
