@@ -191,16 +191,14 @@ async fn test_download_file_disk_write() {
 
 #[test]
 fn test_ingest_dir_path() {
-    let data_dir = std::path::Path::new("/glowbot_data");
-    let ingest = ingest_dir(data_dir);
-    assert_eq!(ingest, std::path::Path::new("/glowbot_data/media/ingest"));
+    let ingest = ingest_dir("/media");
+    assert_eq!(ingest, std::path::Path::new("/media/ingest"));
 }
 
 #[test]
-fn test_ingest_dir_relative() {
-    let data_dir = std::path::Path::new("data");
-    let ingest = ingest_dir(data_dir);
-    assert_eq!(ingest, std::path::Path::new("data/media/ingest"));
+fn test_ingest_dir_custom() {
+    let ingest = ingest_dir("/custom/path");
+    assert_eq!(ingest, std::path::Path::new("/custom/path/ingest"));
 }
 
 // --- image_to_data_url and audio_to_base64 tests ---

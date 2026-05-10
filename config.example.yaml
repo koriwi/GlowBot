@@ -41,6 +41,7 @@ bash_enabled: true                   # (default: true)
 # Directory where media files (images, videos, etc.) are stored,
 # typically populated by MCP tools or bash downloads.
 # The send_media and list_media tools reference this path.
+# Telegram-ingested photos/audio are saved to <media_dir>/ingest/.
 media_dir: "/media"                  # (default: /media)
 
 # MCP servers for additional tools (Model Context Protocol)

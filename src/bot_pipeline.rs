@@ -402,7 +402,7 @@ async fn build_user_message_full(
     let is_image = matches!(media, crate::media::IngestedMedia::Photo { .. });
 
     // Get model capabilities and config
-    let (_model_id, supports_modality, fallback_model, token, data_dir, api_key) = {
+    let (_model_id, supports_modality, fallback_model, token, media_dir, api_key) = {
         let s = state.lock().await;
         let model_id = s.effective_model(chat_id);
         let normalized = crate::openrouter::normalize_model_id(&model_id);
@@ -424,7 +424,7 @@ async fn build_user_message_full(
             supports_modality,
             fallback_model,
             s.config.telegram_token.clone(),
-            s.data_dir.clone(),
+            s.config.media_dir.clone(),
             s.config.openrouter.api_key.clone(),
         )
     };
@@ -436,7 +436,7 @@ async fn build_user_message_full(
         crate::media::IngestedMedia::Audio { file_id, .. } => file_id.as_str(),
     };
 
-    let dest_dir = crate::media::ingest_dir(&data_dir);
+    let dest_dir = crate::media::ingest_dir(&media_dir);
 
     let file_path = match tg_bot {
         Some(bot) => {
@@ -494,6 +494,12 @@ fn build_native_message(
 ) -> ChatMessage {
     use crate::openrouter::ContentPart;
     let mut parts: Vec<ContentPart> = Vec::new();
+
+    // Tell the LLM where the ingested file is saved so it can use it
+    // as a reference_image for generate_image or pass it to other tools.
+    parts.push(ContentPart::Text {
+        text: format!("[Ingested file saved to: {}]", file_path.display()),
+    });
 
     match media {
         crate::media::IngestedMedia::Photo { .. } => {
@@ -558,7 +564,7 @@ async fn build_fallback_message(
     };
 
     let metadata = media_metadata_text(media);
-    let mut combined = metadata;
+    let mut combined = format!("{} File saved to: {}", metadata, file_path.display());
     if let Some(cap) = caption {
         if !cap.is_empty() {
             combined.push_str(&format!("\nCaption: {}", cap));

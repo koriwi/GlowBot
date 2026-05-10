@@ -116,9 +116,10 @@ pub async fn download_file(
     Ok(dest_path)
 }
 
-/// Get the ingest directory path under the data directory.
-pub fn ingest_dir(data_dir: &Path) -> PathBuf {
-    data_dir.join("media").join("ingest")
+/// Get the ingest directory path under the configured media directory.
+/// All ingested Telegram files (photos, voice, audio) are saved here.
+pub fn ingest_dir(media_dir: &str) -> PathBuf {
+    PathBuf::from(media_dir).join("ingest")
 }
 
 /// Encode an image file as a base64 data-URL for ContentPart::ImageUrl.

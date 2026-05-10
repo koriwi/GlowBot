@@ -46,7 +46,7 @@ pub(crate) async fn tool_generate_image(
             if path_str.is_empty() {
                 continue;
             }
-            let full_path = resolve_file_path(path_str, &data_dir);
+            let full_path = resolve_file_path(path_str, &data_dir, &media_dir);
             match std::fs::read(&full_path) {
                 Ok(bytes) => {
                     let mime = guess_mime(&bytes);
@@ -227,7 +227,7 @@ fn detect_image_format(bytes: &[u8]) -> Option<&'static str> {
 }
 
 /// Resolve a file path: try absolute, relative to data_dir, relative to media_dir.
-fn resolve_file_path(path_str: &str, data_dir: &std::path::Path) -> std::path::PathBuf {
+fn resolve_file_path(path_str: &str, data_dir: &std::path::Path, media_dir: &str) -> std::path::PathBuf {
     let p = std::path::Path::new(path_str);
     if p.is_absolute() {
         return p.to_path_buf();
@@ -238,7 +238,7 @@ fn resolve_file_path(path_str: &str, data_dir: &std::path::Path) -> std::path::P
         return candidate;
     }
     // Try relative to media_dir (in case it's not under data_dir)
-    let media_candidate = std::path::PathBuf::from("/media").join(path_str);
+    let media_candidate = std::path::PathBuf::from(media_dir).join(path_str);
     if media_candidate.exists() {
         return media_candidate;
     }
