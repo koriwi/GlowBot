@@ -62,6 +62,37 @@ pub(crate) async fn handle_bot_command_impl(
         return Ok(Some(response));
     }
 
+    if matches!(command, crate::commands::Command::Reminders) {
+        let s = state.lock().await;
+        let list =
+            crate::reminders::ReminderList::load(&s.chats_dir(), chat_id).unwrap_or_default();
+        let response = if list.reminders.is_empty() {
+            "No pending reminders for this chat.".to_string()
+        } else {
+            let mut lines = vec![format!(
+                "*{} pending reminder(s):*",
+                list.reminders.len()
+            )];
+            for (i, r) in list.reminders.iter().enumerate() {
+                let action_note = if r.action.is_some() {
+                    " [has action]"
+                } else {
+                    ""
+                };
+                lines.push(format!(
+                    "{}. `{}` — {} @ {}{}",
+                    i + 1,
+                    r.id,
+                    r.description,
+                    r.trigger_at,
+                    action_note
+                ));
+            }
+            lines.join("\n")
+        };
+        return Ok(Some(response));
+    }
+
     // /new sets a forget cutoff timestamp — messages before this are excluded from context
     if matches!(command, crate::commands::Command::New) {
         let ts = chrono::Utc::now().timestamp();

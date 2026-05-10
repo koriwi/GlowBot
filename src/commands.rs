@@ -9,6 +9,8 @@ pub enum Command {
     Stop,
     /// /tasks
     Tasks,
+    /// /reminders — list pending reminders
+    Reminders,
     /// /run — trigger heartbeat/task agent immediately
     Run,
     /// /new — set a "forget" cutoff; only messages after this point are included in context
@@ -39,6 +41,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "/status" => Some(Command::Status),
         "/stop" => Some(Command::Stop),
         "/tasks" => Some(Command::Tasks),
+        "/reminders" => Some(Command::Reminders),
         "/run" => Some(Command::Run),
         "/new" => Some(Command::New),
         "/prompt" => Some(Command::Prompt),
@@ -120,7 +123,8 @@ pub fn handle_command(
             }
         }
         Command::Stop => "Stop command received.".to_string(),
-        Command::Tasks => String::new(), // handled in handle_bot_command
+        Command::Tasks => String::new(),     // handled in handle_bot_command
+        Command::Reminders => String::new(), // handled in handle_bot_command
         Command::Run => String::new(),   // handled in handle_bot_command
         Command::New => String::new(),   // handled in handle_bot_command
         Command::Prompt => String::new(), // handled in handle_bot_command
@@ -145,6 +149,7 @@ mod tests {
     #[test]
     fn test_parse_command_strips_botname_suffix() {
         assert_eq!(parse_command("/tasks@glowythebot"), Some(Command::Tasks));
+        assert_eq!(parse_command("/reminders@glowythebot"), Some(Command::Reminders));
         assert_eq!(parse_command("/status@otherbot"), Some(Command::Status));
         assert_eq!(parse_command("/stop@somebot"), Some(Command::Stop));
         // With arguments
@@ -158,6 +163,11 @@ mod tests {
     fn test_parse_command_run() {
         assert_eq!(parse_command("/run"), Some(Command::Run));
         assert_eq!(parse_command("/run@glowythebot"), Some(Command::Run));
+    }
+
+    #[test]
+    fn test_parse_command_reminders() {
+        assert_eq!(parse_command("/reminders"), Some(Command::Reminders));
     }
 
     #[test]
