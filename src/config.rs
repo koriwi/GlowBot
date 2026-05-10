@@ -60,6 +60,15 @@ pub struct ChatConfig {
     /// Tools from these servers will not be offered to the LLM.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mcp_blacklist: Vec<String>,
+    /// Override the global image fallback model for this chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_fallback_model: Option<String>,
+    /// Override the global audio fallback model for this chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_fallback_model: Option<String>,
+    /// Override the global image generation model for this chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_gen_model: Option<String>,
 }
 
 /// Per-DM configuration override.
@@ -81,6 +90,15 @@ pub struct DmConfig {
     /// Override the global bash_enabled setting for this DM.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bash_enabled: Option<bool>,
+    /// Override the global image fallback model for this DM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_fallback_model: Option<String>,
+    /// Override the global audio fallback model for this DM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_fallback_model: Option<String>,
+    /// Override the global image generation model for this DM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_gen_model: Option<String>,
 }
 
 /// Database-related configuration.

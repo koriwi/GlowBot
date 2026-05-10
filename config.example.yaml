@@ -59,6 +59,9 @@ dms:
   #   system_prompt: "You are talking to the bot owner."
   #   heartbeat_interval_minutes: 30   # optional, override global default; 0 = disabled
   #   bash_enabled: true               # optional, override global bash_enabled
+  #   image_fallback_model: "openai/gpt-4o"   # optional, override global image fallback model
+  #   audio_fallback_model: "google/gemini-2.5-flash"  # optional, override global audio fallback model
+  #   image_gen_model: "black-forest-labs/flux-1.1-pro"  # optional, override global image gen model
 
 # Group-specific overrides (keyed by Telegram chat ID, negative)
 chats:
@@ -70,4 +73,7 @@ chats:
   #   system_prompt: ""                    # optional per-chat system prompt
   #   heartbeat_interval_minutes: 30       # optional, override global default; 0 = disabled
   #   bash_enabled: true                   # optional, override global bash_enabled
+  #   image_fallback_model: "openai/gpt-4o"  # optional, override global image fallback model
+  #   audio_fallback_model: "google/gemini-2.5-flash"  # optional, override global audio fallback model
+  #   image_gen_model: "black-forest-labs/flux-1.1-pro"  # optional, override global image gen model
   #   mcp_blacklist: []                    # optional, MCP server names to exclude for this chat (e.g. ["homeassistant"])

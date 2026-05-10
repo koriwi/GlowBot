@@ -415,9 +415,9 @@ async fn build_user_message_full(
             }
         }).unwrap_or(false);
         let fallback_model = if is_image {
-            s.config.openrouter.image_fallback_model.clone()
+            s.config.image_fallback_model_for_chat(chat_id).map(String::from)
         } else {
-            s.config.openrouter.audio_fallback_model.clone()
+            s.config.audio_fallback_model_for_chat(chat_id).map(String::from)
         };
         (
             model_id,

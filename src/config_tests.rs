@@ -481,6 +481,188 @@ fn test_heartbeat_recent_messages_window_size_none_serialization() {
     assert!(!yaml.contains("heartbeat_recent_messages_window_size"));
 }
 
+// --- image_fallback_model_for_chat tests ---
+
+#[test]
+fn test_image_fallback_model_for_group_no_override() {
+    let mut config = basic_config();
+    config.openrouter.image_fallback_model = Some("global-img-fb".into());
+    assert_eq!(
+        config.image_fallback_model_for_chat("-123"),
+        Some("global-img-fb")
+    );
+}
+
+#[test]
+fn test_image_fallback_model_for_group_override() {
+    let mut config = basic_config();
+    config.openrouter.image_fallback_model = Some("global-img-fb".into());
+    config.chats.insert(
+        "-123".into(),
+        ChatConfig {
+            image_fallback_model: Some("chat-img-fb".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        config.image_fallback_model_for_chat("-123"),
+        Some("chat-img-fb")
+    );
+    // Other chat uses global
+    assert_eq!(
+        config.image_fallback_model_for_chat("-999"),
+        Some("global-img-fb")
+    );
+}
+
+#[test]
+fn test_image_fallback_model_for_dm_no_override() {
+    let mut config = basic_config();
+    config.openrouter.image_fallback_model = Some("global-img-fb".into());
+    // DM without config entry → uses global
+    assert_eq!(
+        config.image_fallback_model_for_chat("123"),
+        Some("global-img-fb")
+    );
+}
+
+#[test]
+fn test_image_fallback_model_for_dm_override() {
+    let mut config = basic_config();
+    config.openrouter.image_fallback_model = Some("global-img-fb".into());
+    config.dms.insert(
+        "123".into(),
+        DmConfig {
+            image_fallback_model: Some("dm-img-fb".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        config.image_fallback_model_for_chat("123"),
+        Some("dm-img-fb")
+    );
+}
+
+#[test]
+fn test_image_fallback_model_none_global() {
+    let config = basic_config();
+    assert_eq!(config.image_fallback_model_for_chat("-123"), None);
+    assert_eq!(config.image_fallback_model_for_chat("456"), None);
+}
+
+// --- audio_fallback_model_for_chat tests ---
+
+#[test]
+fn test_audio_fallback_model_for_group_no_override() {
+    let mut config = basic_config();
+    config.openrouter.audio_fallback_model = Some("global-audio-fb".into());
+    assert_eq!(
+        config.audio_fallback_model_for_chat("-123"),
+        Some("global-audio-fb")
+    );
+}
+
+#[test]
+fn test_audio_fallback_model_for_group_override() {
+    let mut config = basic_config();
+    config.openrouter.audio_fallback_model = Some("global-audio-fb".into());
+    config.chats.insert(
+        "-123".into(),
+        ChatConfig {
+            audio_fallback_model: Some("chat-audio-fb".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        config.audio_fallback_model_for_chat("-123"),
+        Some("chat-audio-fb")
+    );
+    assert_eq!(
+        config.audio_fallback_model_for_chat("-999"),
+        Some("global-audio-fb")
+    );
+}
+
+#[test]
+fn test_audio_fallback_model_for_dm_override() {
+    let mut config = basic_config();
+    config.openrouter.audio_fallback_model = Some("global-audio-fb".into());
+    config.dms.insert(
+        "123".into(),
+        DmConfig {
+            audio_fallback_model: Some("dm-audio-fb".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        config.audio_fallback_model_for_chat("123"),
+        Some("dm-audio-fb")
+    );
+}
+
+#[test]
+fn test_audio_fallback_model_none_global() {
+    let config = basic_config();
+    assert_eq!(config.audio_fallback_model_for_chat("-123"), None);
+}
+
+// --- image_gen_model_for_chat tests ---
+
+#[test]
+fn test_image_gen_model_for_group_no_override() {
+    let mut config = basic_config();
+    config.openrouter.image_gen_model = Some("global-img-gen".into());
+    assert_eq!(
+        config.image_gen_model_for_chat("-123"),
+        Some("global-img-gen")
+    );
+}
+
+#[test]
+fn test_image_gen_model_for_group_override() {
+    let mut config = basic_config();
+    config.openrouter.image_gen_model = Some("global-img-gen".into());
+    config.chats.insert(
+        "-123".into(),
+        ChatConfig {
+            image_gen_model: Some("chat-img-gen".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        config.image_gen_model_for_chat("-123"),
+        Some("chat-img-gen")
+    );
+    assert_eq!(
+        config.image_gen_model_for_chat("-999"),
+        Some("global-img-gen")
+    );
+}
+
+#[test]
+fn test_image_gen_model_for_dm_override() {
+    let mut config = basic_config();
+    config.openrouter.image_gen_model = Some("global-img-gen".into());
+    config.dms.insert(
+        "123".into(),
+        DmConfig {
+            image_gen_model: Some("dm-img-gen".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        config.image_gen_model_for_chat("123"),
+        Some("dm-img-gen")
+    );
+}
+
+#[test]
+fn test_image_gen_model_none_global() {
+    let config = basic_config();
+    assert_eq!(config.image_gen_model_for_chat("-123"), None);
+    assert_eq!(config.image_gen_model_for_chat("456"), None);
+}
+
 #[test]
 fn test_mcp_blacklist_serialization() {
     let chat = ChatConfig {

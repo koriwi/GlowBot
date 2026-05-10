@@ -83,6 +83,54 @@ impl Config {
         !chat_config.mcp_blacklist.iter().any(|s| s == server_name)
     }
 
+    /// Get the effective image fallback model for a chat.
+    /// For DMs, checks the `dms` entry first.
+    pub fn image_fallback_model_for_chat(&self, chat_id: &str) -> Option<&str> {
+        if !chat_id.starts_with('-') {
+            if let Some(dm) = self.dms.get(chat_id) {
+                if dm.image_fallback_model.is_some() {
+                    return dm.image_fallback_model.as_deref();
+                }
+            }
+        }
+        self.chats
+            .get(chat_id)
+            .and_then(|c| c.image_fallback_model.as_deref())
+            .or(self.openrouter.image_fallback_model.as_deref())
+    }
+
+    /// Get the effective audio fallback model for a chat.
+    /// For DMs, checks the `dms` entry first.
+    pub fn audio_fallback_model_for_chat(&self, chat_id: &str) -> Option<&str> {
+        if !chat_id.starts_with('-') {
+            if let Some(dm) = self.dms.get(chat_id) {
+                if dm.audio_fallback_model.is_some() {
+                    return dm.audio_fallback_model.as_deref();
+                }
+            }
+        }
+        self.chats
+            .get(chat_id)
+            .and_then(|c| c.audio_fallback_model.as_deref())
+            .or(self.openrouter.audio_fallback_model.as_deref())
+    }
+
+    /// Get the effective image generation model for a chat.
+    /// For DMs, checks the `dms` entry first.
+    pub fn image_gen_model_for_chat(&self, chat_id: &str) -> Option<&str> {
+        if !chat_id.starts_with('-') {
+            if let Some(dm) = self.dms.get(chat_id) {
+                if dm.image_gen_model.is_some() {
+                    return dm.image_gen_model.as_deref();
+                }
+            }
+        }
+        self.chats
+            .get(chat_id)
+            .and_then(|c| c.image_gen_model.as_deref())
+            .or(self.openrouter.image_gen_model.as_deref())
+    }
+
     /// Get the effective heartbeat interval for a chat (global default if not overridden).
     /// Returns None if disabled (set to 0).
     /// For DMs, checks the `dms` entry first.

@@ -15,8 +15,8 @@ pub(crate) async fn tool_generate_image(
 
     let image_gen_model = {
         let s = state.lock().await;
-        match &s.config.openrouter.image_gen_model {
-            Some(m) => m.clone(),
+        match s.config.image_gen_model_for_chat(chat_id) {
+            Some(m) => m.to_string(),
             None => return "Error: image generation model not configured".into(),
         }
     };
