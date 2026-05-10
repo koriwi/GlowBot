@@ -2524,20 +2524,41 @@ fn test_guess_mime_default() {
 #[tokio::test]
 async fn test_process_message_command_config_redacts_sensitive() {
     let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // Add an MCP server with an API key to verify it gets redacted
+    {
+        let mut state = bot.state.lock().await;
+        state.config.mcp_servers.push(crate::config::McpServer {
+            name: "test-mcp".into(),
+            transport: "streamable".into(),
+            url: "http://localhost:9999".into(),
+            api_key: Some("secret-mcp-key".into()),
+        });
+        state.config.mcp_servers.push(crate::config::McpServer {
+            name: "no-key-mcp".into(),
+            transport: "http".into(),
+            url: "http://localhost:8888".into(),
+            api_key: None,
+        });
+    }
     let result = bot
         .process_message("-123", "456", "@testuser", "/config", "mybot")
         .await
         .unwrap();
     let resp = result.unwrap();
-    // Should contain config YAML but NOT the real token or API key
+    // Should contain config YAML but NOT the real token, API key, or MCP keys
     assert!(resp.contains("```yaml"));
     assert!(resp.contains("telegram_token"));
     assert!(resp.contains("[REDACTED]"));
     assert!(!resp.contains("test-token"));
     assert!(!resp.contains("test-key"));
+    assert!(!resp.contains("secret-mcp-key"));
     // Should contain other config fields
     assert!(resp.contains("openrouter"));
     assert!(resp.contains("model:"));
+    // MCP server details should still be visible (except the key)
+    assert!(resp.contains("test-mcp"));
+    assert!(resp.contains("no-key-mcp"));
+    assert!(resp.contains("http://localhost:9999"));
 }
 
 #[tokio::test]
