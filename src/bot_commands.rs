@@ -156,6 +156,25 @@ pub(crate) async fn handle_bot_command_impl(
         return Ok(Some(output));
     }
 
+    // /config — show the current config with sensitive fields redacted
+    if matches!(command, crate::commands::Command::Config) {
+        let yaml = {
+            let s = state.lock().await;
+            let mut config = s.config.clone();
+            // Redact sensitive fields
+            config.telegram_token = "[REDACTED]".into();
+            config.openrouter.api_key = "[REDACTED]".into();
+            serde_yaml::to_string(&config).unwrap_or_else(|e| format!("Error: {}", e))
+        };
+        return Ok(Some(format!("```yaml\n{}\n```", yaml)));
+    }
+
+    // /config_schema — show the JSON Schema for all config fields
+    if matches!(command, crate::commands::Command::ConfigSchema) {
+        let schema = super::bot_dispatch::bot_dispatch_config::tool_read_config_schema().await;
+        return Ok(Some(format!("```json\n{}\n```", schema)));
+    }
+
     // /run triggers the heartbeat task agent immediately for this chat
     if matches!(command, crate::commands::Command::Run) {
         if let Some(bot) = tg_bot {

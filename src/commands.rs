@@ -19,6 +19,10 @@ pub enum Command {
     Prompt,
     /// /tools — list all tools available in this chat
     Tools,
+    /// /config — show the current config (sensitive fields redacted)
+    Config,
+    /// /config_schema — show the JSON Schema for all config fields
+    ConfigSchema,
 }
 
 /// Parse a Telegram message to see if it's a bot command.
@@ -46,6 +50,8 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "/new" => Some(Command::New),
         "/prompt" => Some(Command::Prompt),
         "/tools" => Some(Command::Tools),
+        "/config" => Some(Command::Config),
+        "/config_schema" => Some(Command::ConfigSchema),
         _ => None,
     }
 }
@@ -129,6 +135,8 @@ pub fn handle_command(
         Command::New => String::new(),   // handled in handle_bot_command
         Command::Prompt => String::new(), // handled in handle_bot_command
         Command::Tools => String::new(),   // handled in handle_bot_command
+        Command::Config => String::new(),   // handled in handle_bot_command
+        Command::ConfigSchema => String::new(), // handled in handle_bot_command
     }
 }
 
@@ -186,6 +194,21 @@ mod tests {
     fn test_parse_command_tools() {
         assert_eq!(parse_command("/tools"), Some(Command::Tools));
         assert_eq!(parse_command("/tools@glowythebot"), Some(Command::Tools));
+    }
+
+    #[test]
+    fn test_parse_command_config() {
+        assert_eq!(parse_command("/config"), Some(Command::Config));
+        assert_eq!(parse_command("/config@glowythebot"), Some(Command::Config));
+    }
+
+    #[test]
+    fn test_parse_command_config_schema() {
+        assert_eq!(parse_command("/config_schema"), Some(Command::ConfigSchema));
+        assert_eq!(
+            parse_command("/config_schema@glowythebot"),
+            Some(Command::ConfigSchema)
+        );
     }
 
     #[test]

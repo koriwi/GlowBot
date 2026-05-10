@@ -2522,6 +2522,63 @@ fn test_guess_mime_default() {
 // --- Config tool tests ---
 
 #[tokio::test]
+async fn test_process_message_command_config_redacts_sensitive() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/config", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    // Should contain config YAML but NOT the real token or API key
+    assert!(resp.contains("```yaml"));
+    assert!(resp.contains("telegram_token"));
+    assert!(resp.contains("[REDACTED]"));
+    assert!(!resp.contains("test-token"));
+    assert!(!resp.contains("test-key"));
+    // Should contain other config fields
+    assert!(resp.contains("openrouter"));
+    assert!(resp.contains("model:"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_config_schema() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/config_schema", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    // Should contain JSON schema with config field names
+    assert!(resp.contains("```json"));
+    assert!(resp.contains("ChatConfig"));
+    assert!(resp.contains("DmConfig"));
+    assert!(resp.contains("telegram_token"));
+    assert!(resp.contains("openrouter"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_config_unauthorized() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    let result = bot
+        .process_message("-123", "999", "@unknown", "/config", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("not authorized"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_config_schema_unauthorized() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    let result = bot
+        .process_message("-123", "999", "@unknown", "/config_schema", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("not authorized"));
+}
+
+#[tokio::test]
 async fn test_read_config_tool_returns_yaml() {
     let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
     let state = bot.state.clone();
