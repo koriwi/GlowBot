@@ -74,12 +74,16 @@ pub async fn handle_model_callback(
             // Use splitn(3) to keep model IDs with colons intact
             // (e.g. "google/gemma-4-31b-it:free")
             let model_id = data.splitn(3, ':').nth(2).unwrap_or("");
-            let _ = edit_to_detail(state, chat_id, bot, msg_id, model_id).await;
+            if let Err(e) = edit_to_detail(state, chat_id, bot, msg_id, model_id).await {
+                log::error!("Failed to edit to detail for model '{}': {}", model_id, e);
+            }
         }
         "select" => {
             // Use splitn(3) to keep model IDs with colons intact
             let model_id = data.splitn(3, ':').nth(2).unwrap_or("");
-            let _ = select_model(state, chat_id, bot, msg_id, model_id).await;
+            if let Err(e) = select_model(state, chat_id, bot, msg_id, model_id).await {
+                log::error!("Failed to select model '{}': {}", model_id, e);
+            }
         }
         "provider_list" => {
             let _ = edit_to_provider_list(state, chat_id, bot, msg_id).await;
@@ -378,12 +382,16 @@ async fn edit_to_detail(
 
     let is_config_default = model_id == current_config_model;
 
+    // Escape all variable text for MarkdownV2. The model name/id may contain
+    // special chars like (, ), -, etc. that break Telegram's parser.
+    let escaped_display = crate::escape_v2_safe(&display_name);
+    let escaped_pricing = crate::escape_v2_safe(&pricing_text);
     let text = format!(
         "*{}*\nID: `{}`\nContext: {}\nPricing: {}{}{}",
-        display_name,
+        escaped_display,
         model_id,
         context_len,
-        pricing_text,
+        escaped_pricing,
         if is_config_default { "\n📌 Config default" } else { "" },
         if is_selected { "\n✅ Currently selected" } else { "" },
     );
