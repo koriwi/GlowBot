@@ -14,6 +14,8 @@ pub(crate) mod bot_dispatch_image;
 mod bot_dispatch_skills;
 #[path = "bot_dispatch_config.rs"]
 pub mod bot_dispatch_config;
+#[path = "bot_dispatch_model.rs"]
+pub mod bot_dispatch_model;
 
 /// Log a tool call to `tool_calls.log` in the given data directory.
 pub(crate) fn log_tool_call_to(
@@ -331,6 +333,12 @@ pub(crate) async fn dispatch_tool(
         }
         "edit_config" => {
             bot_dispatch_config::tool_edit_config(state, &cid, args, tg_bot).await
+        }
+        "get_model_info" => {
+            bot_dispatch_model::tool_get_model_info(state, &cid).await
+        }
+        "propose_model_change" => {
+            bot_dispatch_model::tool_propose_model_change(state, &cid, args, tg_bot).await
         }
         "search_conversations" => {
             let query = args["query"].as_str().unwrap_or("");

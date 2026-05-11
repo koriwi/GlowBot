@@ -79,12 +79,16 @@ async fn run_bot() -> anyhow::Result<()> {
     let commands = vec![
         BotCommand::new("status", "Show current config for this chat"),
         BotCommand::new("model", "Set or view the current model"),
+        BotCommand::new("models", "Browse and temporarily switch models"),
+        BotCommand::new("model_default", "Reset model to config default"),
         BotCommand::new("tasks", "Show pending tasks for this chat"),
         BotCommand::new("reminders", "Show pending reminders for this chat"),
         BotCommand::new("new", "Reset context — messages before now are excluded from conversation"),
         BotCommand::new("prompt", "Show the system prompt sent to the LLM"),
         BotCommand::new("run", "Run task agent immediately for this chat"),
         BotCommand::new("tools", "Show available tools in this chat"),
+        BotCommand::new("config", "Show the current config (redacted)"),
+        BotCommand::new("config_schema", "Show the JSON Schema for config fields"),
         BotCommand::new("stop", "Stop the bot"),
     ];
     if let Err(e) = tg_bot.set_my_commands(commands).await {
@@ -487,6 +491,35 @@ async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::ty
             glowbot::bot::bot_models::handle_model_callback(
                 &state, &data, &tg_bot, msg.chat().id, msg.id(),
             ).await;
+        }
+        return;
+    }
+
+    // Handle model change proposal callbacks (mdl: prefix)
+    if data.starts_with("mdl:") {
+        let _ = tg_bot.answer_callback_query(&callback_id).await;
+        let state = {
+            let bot_inner = bot.lock().await;
+            bot_inner.state.clone()
+        };
+        let result = glowbot::bot::bot_dispatch::bot_dispatch_model::handle_model_callback_approval(
+            &state, &data, Some(&tg_bot),
+        )
+        .await;
+        if let Some((edit_text, _followup)) = result {
+            if let Some(msg) = cb.message {
+                let chat_id = msg.chat().id;
+                let msg_id = msg.id();
+                let escaped = glowbot::escape_v2_safe(&edit_text);
+                let res = tg_bot
+                    .edit_message_text(chat_id, msg_id, &escaped)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .await;
+                if let Err(e) = res {
+                    log::warn!("Failed to edit model proposal message: {}", e);
+                    let _ = tg_bot.edit_message_text(chat_id, msg_id, &edit_text).await;
+                }
+            }
         }
         return;
     }

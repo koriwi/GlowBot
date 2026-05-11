@@ -17,7 +17,7 @@ mod bot_pipeline;
 mod bot_state;
 use self::bot_commands::handle_bot_command_impl;
 pub use self::bot_heartbeat::run_heartbeat_task;
-pub use self::bot_state::{BotState, PendingConfigChange};
+pub use self::bot_state::{BotState, PendingConfigChange, PendingModelChange};
 use crate::skills::load_all_skills;
 use std::collections::HashMap;
 use std::path::Path;
@@ -73,6 +73,7 @@ impl GlowBot {
             model_order: Vec::new(),
             last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
         };

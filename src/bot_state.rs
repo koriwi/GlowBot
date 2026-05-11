@@ -14,6 +14,14 @@ pub struct PendingConfigChange {
     pub new_yaml: String,
 }
 
+/// A pending model change proposal awaiting user approval via inline keyboard.
+#[derive(Debug, Clone)]
+pub struct PendingModelChange {
+    pub chat_id: String,
+    pub message_id: i32,
+    pub proposed_model: String,
+}
+
 /// Shared bot state accessible from all handlers.
 pub struct BotState {
     pub config: Config,
@@ -32,6 +40,8 @@ pub struct BotState {
     pub last_usage: HashMap<String, Usage>,
     /// Pending config changes awaiting user approval (keyed by pending_id).
     pub pending_config_changes: HashMap<String, PendingConfigChange>,
+    /// Pending model change proposals awaiting user approval (keyed by pending_id).
+    pub pending_model_changes: HashMap<String, PendingModelChange>,
     /// Per-chat temporary model overrides set via /models (keyed by chat_id string).
     /// Cleared on /model_default or restart.
     pub model_overrides: HashMap<String, String>,

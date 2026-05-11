@@ -932,7 +932,7 @@ async fn test_build_tools_includes_mcp() {
 
     // No MCP tools yet — all tool definitions with bash
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 21);
+    assert_eq!(tools.len(), 23);
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
     assert!(tools.iter().any(|t| t.function.name == "bash"));
 
@@ -949,7 +949,7 @@ async fn test_build_tools_includes_mcp() {
     });
 
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 22);
+    assert_eq!(tools.len(), 24);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
@@ -990,19 +990,19 @@ async fn test_build_tools_mcp_blacklist() {
 
     // Chat "-456" has the server blacklisted — MCP tool should be excluded
     let tools = state.build_tools(true, "-456");
-    assert_eq!(tools.len(), 21); // same as without MCP
+    assert_eq!(tools.len(), 23); // same as without MCP
     assert!(!tools.iter().any(|t| t.function.name.starts_with("mcp_")));
 
     // Chat "-123" not blacklisted — MCP tool should be included
     let tools = state.build_tools(true, "-123");
-    assert_eq!(tools.len(), 22);
+    assert_eq!(tools.len(), 24);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
 
     // DM chats are never blacklisted
     let tools = state.build_tools(true, "12345");
-    assert_eq!(tools.len(), 22);
+    assert_eq!(tools.len(), 24);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "mcp_test-srv_test_tool"));
@@ -1022,7 +1022,7 @@ async fn test_build_tools_without_bash() {
     let state = bot.state.lock().await;
 
     let tools = state.build_tools(false, "-123");
-    assert_eq!(tools.len(), 20); // 17 base + 3 config tools
+    assert_eq!(tools.len(), 22); // 17 base + 3 config + 2 model tools
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
 }
@@ -1107,6 +1107,7 @@ async fn test_dispatch_send_message_empty_text() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1139,6 +1140,7 @@ async fn test_dispatch_send_message_no_tg_bot() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1171,6 +1173,7 @@ async fn test_dispatch_send_media_empty_file_path() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1203,6 +1206,7 @@ async fn test_dispatch_send_media_file_not_found() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1237,6 +1241,7 @@ async fn test_dispatch_send_media_no_tg_bot() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1270,6 +1275,7 @@ async fn test_dispatch_send_media_original_quality() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1307,6 +1313,7 @@ fn setup_state_with_media_dir(media_dir: &std::path::Path) -> Arc<Mutex<BotState
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1451,6 +1458,7 @@ async fn test_dispatch_bash_empty_command() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1484,6 +1492,7 @@ async fn test_dispatch_bash_disabled() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1520,6 +1529,7 @@ async fn test_dispatch_read_memory_missing() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1552,6 +1562,7 @@ async fn test_dispatch_update_memory_no_fields() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1584,6 +1595,7 @@ async fn test_dispatch_add_task_empty() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1616,6 +1628,7 @@ async fn test_dispatch_list_tasks_non_empty() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1650,6 +1663,7 @@ async fn test_dispatch_remove_task_empty_and_not_found() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1691,6 +1705,7 @@ async fn test_dispatch_create_skill_validation() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1723,6 +1738,7 @@ async fn test_dispatch_read_skill_not_found() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1755,6 +1771,7 @@ async fn test_dispatch_update_skill_not_found() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1787,6 +1804,7 @@ async fn test_dispatch_unknown_tool() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1812,6 +1830,7 @@ async fn test_dispatch_mcp_tool_not_found() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -1837,6 +1856,7 @@ async fn test_get_recent_messages_empty_history() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -2212,6 +2232,7 @@ fn test_context_usage_formatting() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     };
@@ -2262,6 +2283,7 @@ async fn test_dispatch_search_conversations_no_model() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -2291,6 +2313,7 @@ async fn test_dispatch_search_conversations_empty_query() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -2320,6 +2343,7 @@ async fn test_dispatch_search_conversations_no_results() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -2366,6 +2390,7 @@ async fn test_dispatch_search_conversations_with_results() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -2400,6 +2425,7 @@ async fn test_dispatch_search_conversations_embedding_error() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -2434,6 +2460,7 @@ async fn test_dispatch_generate_image_no_model() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));
@@ -2467,6 +2494,7 @@ async fn test_dispatch_generate_image_empty_prompt() {
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
     }));

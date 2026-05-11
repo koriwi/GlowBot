@@ -121,6 +121,9 @@ pub fn all_tool_definitions(
     tools.push(read_config_schema_tool_definition());
     tools.push(read_config_tool_definition());
     tools.push(edit_config_tool_definition());
+    // Model info tools are always available
+    tools.push(get_model_info_tool_definition());
+    tools.push(propose_model_change_tool_definition());
     tools
 }
 
@@ -585,6 +588,47 @@ pub(crate) fn search_conversations_tool_definition() -> ToolDefinition {
                     }
                 },
                 "required": ["query"]
+            }),
+        },
+    }
+}
+
+/// The get_model_info tool definition.
+pub(crate) fn get_model_info_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "get_model_info".into(),
+            description: "Get information about the currently active model for this chat. Returns the effective model (including any routing specifier like :nitro, :floor, :free), the config default model, whether there's a temporary override, the model's context length and pricing (if known from OpenRouter metadata), and the list of available routing specifiers. Use this when the user asks about the current model, or before proposing a model change so you know what's currently set.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+    }
+}
+
+/// The propose_model_change tool definition.
+pub(crate) fn propose_model_change_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "propose_model_change".into(),
+            description: "Propose a temporary model change to the user. This sends an Accept/Deny dialog to the chat. If the user accepts, the model is temporarily switched (until /model_default resets it). If denied, nothing changes. Use this when the user asks to try a different model, or when you recommend a model switch. You can provide a model_id and/or a routing specifier (:nitro, :floor, :free) to apply to the current model. Returns a status indicating the proposal was sent — DO NOT ask the user again about it, wait for their button response.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "model_id": {
+                        "type": "string",
+                        "description": "The full model ID to switch to (e.g. 'openai/gpt-4o', 'anthropic/claude-sonnet-4'). If omitted and specifier is provided, the specifier is applied to the current model."
+                    },
+                    "specifier": {
+                        "type": "string",
+                        "description": "Optional routing specifier to apply: 'nitro', 'floor', or 'free'. If model_id is provided, the specifier is appended to it. If only specifier is provided, it's applied to the current model."
+                    }
+                },
+                "required": []
             }),
         },
     }

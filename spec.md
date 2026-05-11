@@ -145,6 +145,11 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
   - `update_skill` – update an existing skill (name, description?, body?). Triggers reload.
   - **`add_task`, `list_tasks`, `remove_task`** — manage the chat's task list.
   - **`create_reminder`, `list_reminders`, `remove_reminder`** — manage time-based reminders. See §4.7a.
+  - **`get_model_info`** — returns current model, base model, specifier, config default, override status, available specifiers, and cached metadata (context length, pricing).
+  - **`propose_model_change`** — proposes a model change to the user with Accept/Deny buttons. Takes `model_id` and/or `specifier`. If accepted, the model is temporarily switched (persists until `/model_default` resets it).
+  - **`read_config_schema`** — returns the JSON Schema for all config types.
+  - **`read_config`** — returns the current config as YAML.
+  - **`edit_config`** — proposes config changes via Accept/Deny dialog.
   - **`send_message`** — send a plain text message to the current chat. **Only exposed during heartbeat/background task processing**; normal conversation relies on the assistant reply being sent automatically. The agent uses this sparingly (at most once per task) to report completion or deliver results that the user explicitly requested.
   - **`get_recent_messages`** — returns the last N messages from the conversation history. The bot does NOT automatically send past messages — only the current user message is included in each request. The LLM must call this tool when it needs context from earlier in the conversation.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
@@ -406,9 +411,18 @@ Commands are Telegram bot commands (`/command`) used for control and settings. *
 | Command | Purpose | Requires |
 |---------|---------|----------|
 | `/status` | Show current config + context usage for this chat | command whitelist |
+| `/model` | Show or set the current model (supports specifiers: `:nitro`, `:floor`, `:free`) | command whitelist |
+| `/models` | Browse and temporarily switch models via inline keyboard | command whitelist |
+| `/model_default` | Reset temporary model override to config default (alias: `/model_reset`) | command whitelist |
 | `/tasks` | List all pending tasks for this chat | command whitelist |
-| `/stop` | Interrupt ongoing LLM processing for this chat | none (always available) |
+| `/reminders` | List all pending reminders for this chat | command whitelist |
+| `/run` | Trigger the task agent to run immediately for this chat | command whitelist |
 | `/new` | Reset conversation context — stores a cutoff timestamp; only messages after this point are included in future context | command whitelist |
+| `/prompt` | Show the system prompt that would be sent to the LLM | command whitelist |
+| `/tools` | List all available tools for this chat (built-in + MCP) | command whitelist |
+| `/config` | Show the current config with sensitive fields redacted | command whitelist |
+| `/config_schema` | Show the JSON Schema for all config fields | command whitelist |
+| `/stop` | Interrupt ongoing LLM processing for this chat | none (always available) |
 
 #### `/status` output format
 
