@@ -385,12 +385,13 @@ async fn edit_to_detail(
     // Escape all variable text for MarkdownV2. The model name/id may contain
     // special chars like (, ), -, etc. that break Telegram's parser.
     let escaped_display = crate::escape_v2_safe(&display_name);
+    let escaped_context = crate::escape_v2_safe(&context_len);
     let escaped_pricing = crate::escape_v2_safe(&pricing_text);
     let text = format!(
         "*{}*\nID: `{}`\nContext: {}\nPricing: {}{}{}",
         escaped_display,
         model_id,
-        context_len,
+        escaped_context,
         escaped_pricing,
         if is_config_default { "\n📌 Config default" } else { "" },
         if is_selected { "\n✅ Currently selected" } else { "" },
