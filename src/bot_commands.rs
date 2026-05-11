@@ -214,35 +214,46 @@ pub(crate) async fn handle_bot_command_impl(
         return Ok(Some("Run command cannot be used in this context.".into()));
     }
 
-    // If the model's context length isn't cached, fetch it on-demand for /status
-    {
-        let s = state.lock().await;
-        let model = s.effective_model(chat_id);
-        let needs_fetch = !s.model_metadata.contains_key(crate::openrouter::normalize_model_id(&model));
-        let api_key = s.config.openrouter.api_key.clone();
-        drop(s);
+    // /status — show effective model (including temporary overrides)
+    if matches!(command, crate::commands::Command::Status) {
+        // If the model's context length isn't cached, fetch it on-demand
+        {
+            let s = state.lock().await;
+            let model = s.effective_model(chat_id);
+            let needs_fetch = !s.model_metadata.contains_key(crate::openrouter::normalize_model_id(&model));
+            let api_key = s.config.openrouter.api_key.clone();
+            drop(s);
 
-        if needs_fetch {
-            let client = OpenRouterClient::new(api_key);
-            match client.fetch_models().await {
-                Ok(models) => {
-                    let mut s = state.lock().await;
-                    let old_count = s.model_metadata.len();
-                    for m in models {
-                        s.model_order.push(m.id.clone());
-                        s.model_metadata.insert(m.id.clone(), m);
+            if needs_fetch {
+                let client = OpenRouterClient::new(api_key);
+                match client.fetch_models().await {
+                    Ok(models) => {
+                        let mut s = state.lock().await;
+                        let old_count = s.model_metadata.len();
+                        for m in models {
+                            s.model_order.push(m.id.clone());
+                            s.model_metadata.insert(m.id.clone(), m);
+                        }
+                        log::info!(
+                            "Fetched {} model metadata entries on-demand for /status (had {} before)",
+                            s.model_metadata.len() - old_count,
+                            old_count
+                        );
                     }
-                    log::info!(
-                        "Fetched {} model metadata entries on-demand for /status (had {} before)",
-                        s.model_metadata.len() - old_count,
-                        old_count
-                    );
-                }
-                Err(e) => {
-                    log::warn!("Failed to fetch model metadata for /status: {}", e);
+                    Err(e) => {
+                        log::warn!("Failed to fetch model metadata for /status: {}", e);
+                    }
                 }
             }
         }
+
+        let response = {
+            let mut s = state.lock().await;
+            let usage = s.context_usage(chat_id);
+            let model = s.effective_model(chat_id);
+            crate::commands::handle_command_with_model(command, &mut s.config, chat_id, &usage, Some(&model))
+        };
+        return Ok(Some(response));
     }
 
     let response = {

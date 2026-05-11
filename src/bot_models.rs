@@ -71,11 +71,14 @@ pub async fn handle_model_callback(
             .await;
         }
         "detail" => {
-            let model_id = parts.get(2).unwrap_or(&"");
+            // Use splitn(3) to keep model IDs with colons intact
+            // (e.g. "google/gemma-4-31b-it:free")
+            let model_id = data.splitn(3, ':').nth(2).unwrap_or("");
             let _ = edit_to_detail(state, chat_id, bot, msg_id, model_id).await;
         }
         "select" => {
-            let model_id = parts.get(2).unwrap_or(&"");
+            // Use splitn(3) to keep model IDs with colons intact
+            let model_id = data.splitn(3, ':').nth(2).unwrap_or("");
             let _ = select_model(state, chat_id, bot, msg_id, model_id).await;
         }
         "provider_list" => {

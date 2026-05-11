@@ -90,9 +90,21 @@ pub fn handle_command(
     chat_id: &str,
     context_usage: &str,
 ) -> String {
+    handle_command_with_model(command, config, chat_id, context_usage, None)
+}
+
+/// Handle a command with an optional effective model override (for /status showing
+/// temporary model overrides set via inline keyboard).
+pub fn handle_command_with_model(
+    command: &Command,
+    config: &mut Config,
+    chat_id: &str,
+    context_usage: &str,
+    effective_model: Option<&str>,
+) -> String {
     match command {
         Command::Status => {
-            let model = config.model_for_chat(chat_id);
+            let model = effective_model.unwrap_or_else(|| config.model_for_chat(chat_id));
             if chat_id.starts_with('-') {
                 // Group chat
                 let chat = config.chat_config(chat_id);
