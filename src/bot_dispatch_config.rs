@@ -65,14 +65,18 @@ pub(crate) async fn tool_edit_config(
         Err(e) => return format!("Error: config is valid YAML but failed to re-serialize — {}", e),
     };
 
-    // Get current config YAML for diff
-    let old_yaml = {
+    // Create redacted versions for the diff display to avoid leaking secrets
+    let redacted_old = {
         let s = state.lock().await;
-        serde_yaml::to_string(&s.config).unwrap_or_default()
+        s.config.redacted()
     };
+    let redacted_new = new_config.redacted();
 
-    // Generate unified diff
-    let diff = TextDiff::from_lines(&old_yaml, &canonical_new_yaml);
+    let redacted_old_yaml = serde_yaml::to_string(&redacted_old).unwrap_or_default();
+    let redacted_new_yaml = serde_yaml::to_string(&redacted_new).unwrap_or_default();
+
+    // Generate unified diff from redacted configs
+    let diff = TextDiff::from_lines(&redacted_old_yaml, &redacted_new_yaml);
     let mut diff_text = String::new();
     for change in diff.iter_all_changes() {
         let sign = match change.tag() {

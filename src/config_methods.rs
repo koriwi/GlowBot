@@ -157,6 +157,19 @@ impl Config {
             Some(interval)
         }
     }
+
+    /// Return a clone with sensitive fields redacted for display.
+    pub fn redacted(&self) -> Self {
+        let mut c = self.clone();
+        c.telegram_token = "[REDACTED]".into();
+        c.openrouter.api_key = "[REDACTED]".into();
+        for server in c.mcp_servers.iter_mut() {
+            if server.api_key.is_some() {
+                server.api_key = Some("[REDACTED]".into());
+            }
+        }
+        c
+    }
 }
 
 /// Test helper: a basic Config with minimal defaults.

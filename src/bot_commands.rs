@@ -160,16 +160,8 @@ pub(crate) async fn handle_bot_command_impl(
     if matches!(command, crate::commands::Command::Config) {
         let yaml = {
             let s = state.lock().await;
-            let mut config = s.config.clone();
-            // Redact sensitive fields
-            config.telegram_token = "[REDACTED]".into();
-            config.openrouter.api_key = "[REDACTED]".into();
-            for server in config.mcp_servers.iter_mut() {
-                if server.api_key.is_some() {
-                    server.api_key = Some("[REDACTED]".into());
-                }
-            }
-            serde_yaml::to_string(&config).unwrap_or_else(|e| format!("Error: {}", e))
+            let redacted = s.config.redacted();
+            serde_yaml::to_string(&redacted).unwrap_or_else(|e| format!("Error: {}", e))
         };
         return Ok(Some(format!("```yaml\n{}\n```", yaml)));
     }
