@@ -7,6 +7,7 @@ use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, MessageId, Par
 use tokio::sync::Mutex;
 
 const MODELS_PER_PAGE: usize = 6;
+const PROVIDERS_PER_PAGE: usize = 20;
 /// Telegram's max callback data length in bytes.
 const MAX_CALLBACK_BYTES: usize = 64;
 
@@ -45,7 +46,7 @@ pub(crate) async fn send_model_menu(
 
     let keyboard = InlineKeyboardMarkup::new(vec![
         vec![InlineKeyboardButton::callback("🆓 Free Models", "model:browse:free:0")],
-        vec![InlineKeyboardButton::callback("🏭 By Provider", "model:provider_list")],
+        vec![InlineKeyboardButton::callback("🏭 By Provider", "model:provider_list:0")],
         vec![InlineKeyboardButton::callback("🆕 Newest", "model:browse:newest:0")],
         vec![InlineKeyboardButton::callback("🔥 Popular", "model:browse:popular:0")],
     ]);
@@ -152,7 +153,8 @@ pub async fn handle_model_callback(
             }
         }
         "provider_list" => {
-            let _ = edit_to_provider_list(state, chat_id, bot, msg_id).await;
+            let page = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let _ = edit_to_provider_list(state, chat_id, bot, msg_id, page).await;
         }
         _ => {}
     }
@@ -189,7 +191,7 @@ async fn edit_to_menu(
 ) -> anyhow::Result<()> {
     let keyboard = InlineKeyboardMarkup::new(vec![
         vec![InlineKeyboardButton::callback("🆓 Free Models", "model:browse:free:0")],
-        vec![InlineKeyboardButton::callback("🏭 By Provider", "model:provider_list")],
+        vec![InlineKeyboardButton::callback("🏭 By Provider", "model:provider_list:0")],
         vec![InlineKeyboardButton::callback("🆕 Newest", "model:browse:newest:0")],
         vec![InlineKeyboardButton::callback("🔥 Popular", "model:browse:popular:0")],
     ]);
@@ -204,12 +206,13 @@ async fn edit_to_menu(
     Ok(())
 }
 
-/// Edit message to show a list of providers.
+/// Edit message to show a list of providers (paginated).
 async fn edit_to_provider_list(
     state: &Arc<Mutex<BotState>>,
     chat_id: ChatId,
     bot: &teloxide::Bot,
     msg_id: MessageId,
+    page: usize,
 ) -> anyhow::Result<()> {
     let s = state.lock().await;
     let mut providers: Vec<String> = s
@@ -230,9 +233,13 @@ async fn edit_to_provider_list(
         return Ok(());
     }
 
-    let max_display = 30.min(providers.len());
+    let total_pages = (total + PROVIDERS_PER_PAGE - 1) / PROVIDERS_PER_PAGE;
+    let clamped_page = page.min(total_pages.saturating_sub(1));
+    let start = clamped_page * PROVIDERS_PER_PAGE;
+    let end = (start + PROVIDERS_PER_PAGE).min(total);
+
     let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
-    for provider in providers.iter().take(max_display) {
+    for provider in providers[start..end].iter() {
         let label = if provider.len() > 20 {
             format!("{}…", &provider[..19])
         } else {
@@ -243,6 +250,31 @@ async fn edit_to_provider_list(
             format!("model:browse:provider:{}:0", provider),
         )]);
     }
+
+    // Navigation row
+    let mut nav_row: Vec<InlineKeyboardButton> = Vec::new();
+    if clamped_page > 0 {
+        nav_row.push(InlineKeyboardButton::callback(
+            "◀ Prev",
+            format!("model:provider_list:{}", clamped_page - 1),
+        ));
+    }
+    if total_pages > 1 {
+        nav_row.push(InlineKeyboardButton::callback(
+            format!("{}/{}", clamped_page + 1, total_pages),
+            "noop",
+        ));
+    }
+    if clamped_page + 1 < total_pages {
+        nav_row.push(InlineKeyboardButton::callback(
+            "Next ▶",
+            format!("model:provider_list:{}", clamped_page + 1),
+        ));
+    }
+    if !nav_row.is_empty() {
+        rows.push(nav_row);
+    }
+
     rows.push(vec![InlineKeyboardButton::callback(
         "↩ Back",
         "model:menu",
