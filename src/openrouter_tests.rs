@@ -358,13 +358,77 @@ fn test_deserialize_model_info_with_architecture() {
 fn test_supports_modality_empty() {
     let m = ModelInfo {
         id: "test/model".into(),
+        name: String::new(),
+        created: 0,
         context_length: 4096,
         architecture: Default::default(),
+        pricing: Default::default(),
     };
     assert!(!m.supports_modality("text"));
     assert!(!m.supports_modality("image"));
     assert!(!m.supports_modality("audio"));
 }
+
+#[test]
+fn test_model_pricing_is_free() {
+    use crate::openrouter::ModelPricing;
+    let free = ModelPricing {
+        prompt: "0".into(),
+        completion: "0".into(),
+        request: "0".into(),
+    };
+    assert!(free.is_free());
+
+    let paid = ModelPricing {
+        prompt: "0.000001".into(),
+        completion: "0.000002".into(),
+        request: "0".into(),
+    };
+    assert!(!paid.is_free());
+}
+
+#[test]
+fn test_model_provider() {
+    let m = ModelInfo {
+        id: "openai/gpt-4o".into(),
+        name: "OpenAI: GPT-4o".into(),
+        created: 1715367049,
+        context_length: 128000,
+        architecture: Default::default(),
+        pricing: Default::default(),
+    };
+    assert_eq!(m.provider(), "openai");
+}
+
+#[test]
+fn test_model_provider_no_slash() {
+    let m = ModelInfo {
+        id: "custom-model".into(),
+        name: String::new(),
+        created: 0,
+        context_length: 4096,
+        architecture: Default::default(),
+        pricing: Default::default(),
+    };
+    assert_eq!(m.provider(), "custom-model");
+}
+
+#[test]
+fn test_deserialize_model_with_pricing() {
+    let json = serde_json::json!({
+        "id": "google/gemini-2.5-flash",
+        "context_length": 1048576,
+        "pricing": {
+            "prompt": "0.0000375",
+            "completion": "0.00015"
+        }
+    });
+    let m: ModelInfo = serde_json::from_value(json).unwrap();
+    assert_eq!(m.pricing.prompt, "0.0000375");
+    assert_eq!(m.pricing.completion, "0.00015");
+    assert!(!m.pricing.is_free());
+}
+
 
 #[test]
 fn test_deserialize_response_with_usage() {

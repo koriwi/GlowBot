@@ -1106,6 +1106,7 @@ async fn test_dispatch_send_message_empty_text() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1135,6 +1136,7 @@ async fn test_dispatch_send_message_no_tg_bot() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1164,6 +1166,7 @@ async fn test_dispatch_send_media_empty_file_path() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1193,6 +1196,7 @@ async fn test_dispatch_send_media_file_not_found() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1224,6 +1228,7 @@ async fn test_dispatch_send_media_no_tg_bot() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1254,6 +1259,7 @@ async fn test_dispatch_send_media_original_quality() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1288,6 +1294,7 @@ fn setup_state_with_media_dir(media_dir: &std::path::Path) -> Arc<Mutex<BotState
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     state
 }
@@ -1429,6 +1436,7 @@ async fn test_dispatch_bash_empty_command() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1459,6 +1467,7 @@ async fn test_dispatch_bash_disabled() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1492,6 +1501,7 @@ async fn test_dispatch_read_memory_missing() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1521,6 +1531,7 @@ async fn test_dispatch_update_memory_no_fields() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1550,6 +1561,7 @@ async fn test_dispatch_add_task_empty() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1579,6 +1591,7 @@ async fn test_dispatch_list_tasks_non_empty() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     // Add a task first
     dispatch_tool(
@@ -1610,6 +1623,7 @@ async fn test_dispatch_remove_task_empty_and_not_found() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1648,6 +1662,7 @@ async fn test_dispatch_create_skill_validation() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1677,6 +1692,7 @@ async fn test_dispatch_read_skill_not_found() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1706,6 +1722,7 @@ async fn test_dispatch_update_skill_not_found() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1735,6 +1752,7 @@ async fn test_dispatch_unknown_tool() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "narnia", &serde_json::json!({}), None).await;
     assert!(out.contains("Unknown tool"));
@@ -1757,6 +1775,7 @@ async fn test_dispatch_mcp_tool_not_found() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "mcp_no_no", &serde_json::json!({}), None).await;
     assert!(out.contains("MCP tool not found"));
@@ -1779,6 +1798,7 @@ async fn test_get_recent_messages_empty_history() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2151,6 +2171,7 @@ fn test_context_usage_formatting() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     };
     // No context cached, no usage -> no token data yet
     assert_eq!(state.context_usage("-123"), "no token data yet");
@@ -2159,8 +2180,11 @@ fn test_context_usage_formatting() {
         .model_metadata
         .insert("test/model".into(), ModelInfo {
             id: "test/model".into(),
+            name: String::new(),
+            created: 0,
             context_length: 200000,
             architecture: Default::default(),
+            pricing: Default::default(),
         });
     // Effective limit = 200k * 0.75 = 150k
     assert_eq!(state.context_usage("-123"), "0k/150k (0%)");
@@ -2195,6 +2219,7 @@ async fn test_dispatch_search_conversations_no_model() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2221,6 +2246,7 @@ async fn test_dispatch_search_conversations_empty_query() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2247,6 +2273,7 @@ async fn test_dispatch_search_conversations_no_results() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2290,6 +2317,7 @@ async fn test_dispatch_search_conversations_with_results() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2321,6 +2349,7 @@ async fn test_dispatch_search_conversations_embedding_error() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2352,6 +2381,7 @@ async fn test_dispatch_generate_image_no_model() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2382,6 +2412,7 @@ async fn test_dispatch_generate_image_empty_prompt() {
         model_metadata: HashMap::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2597,6 +2628,55 @@ async fn test_process_message_command_config_schema_unauthorized() {
         .unwrap();
     let resp = result.unwrap();
     assert!(resp.contains("not authorized"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_model_default() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // Set a temporary override first
+    {
+        let mut s = bot.state.lock().await;
+        s.model_overrides.insert("-123".into(), "override/model".into());
+    }
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/model_default", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("Model reset to config default"));
+    assert!(resp.contains("test/model"));
+    // Verify override was cleared
+    let s = bot.state.lock().await;
+    assert!(!s.model_overrides.contains_key("-123"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_model_reset_alias() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    {
+        let mut s = bot.state.lock().await;
+        s.model_overrides.insert("-123".into(), "override/model".into());
+    }
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/model_reset", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("Model reset to config default"));
+}
+
+#[tokio::test]
+async fn test_effective_model_respects_override() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    {
+        let mut s = bot.state.lock().await;
+        s.model_overrides.insert("-123".into(), "override/model".into());
+    }
+    let s = bot.state.lock().await;
+    // effective_model should return the override, not the config default
+    assert_eq!(s.effective_model("-123"), "override/model");
+    // Without override, returns config default
+    assert_eq!(s.effective_model("-999"), "test/model");
 }
 
 #[tokio::test]

@@ -475,12 +475,30 @@ async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::ty
 
     log::info!("Callback query received: data={}", data);
 
+    // Handle model browsing callbacks
+    if data.starts_with("model:") {
+        let _ = tg_bot.answer_callback_query(&callback_id).await;
+        if let Some(msg) = &cb.message {
+            let state = {
+                let bot_inner = bot.lock().await;
+                bot_inner.state.clone()
+            };
+            glowbot::bot::bot_models::handle_model_callback(
+                &state, &data, &tg_bot, msg.chat().id, msg.id(),
+            ).await;
+        }
+        return;
+    }
+
     // Only handle config approval callbacks for now
     if !data.starts_with("cfg:") {
-        log::info!("Unknown callback data prefix, ignoring: {}", data);
+        // Silently ignore noop callbacks (page indicators) and unknown callbacks
+        if data != "noop" {
+            log::info!("Unknown callback data prefix, ignoring: {}", data);
+        }
         let _ = tg_bot
             .answer_callback_query(&callback_id)
-            .text("Unknown action")
+            .text(if data == "noop" { "" } else { "Unknown action" })
             .await;
         return;
     }

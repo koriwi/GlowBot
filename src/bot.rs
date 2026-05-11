@@ -5,6 +5,8 @@ use crate::git::GitRepo;
 use crate::llm::LlmBackend;
 #[path = "bot_commands.rs"]
 mod bot_commands;
+#[path = "bot_models.rs"]
+pub mod bot_models;
 #[path = "bot_dispatch.rs"]
 pub mod bot_dispatch;
 #[path = "bot_heartbeat.rs"]
@@ -70,6 +72,7 @@ impl GlowBot {
             model_metadata: HashMap::new(),
             last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
+            model_overrides: HashMap::new(),
         };
 
         Ok(Self {

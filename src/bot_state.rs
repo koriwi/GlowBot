@@ -30,6 +30,9 @@ pub struct BotState {
     pub last_usage: HashMap<String, Usage>,
     /// Pending config changes awaiting user approval (keyed by pending_id).
     pub pending_config_changes: HashMap<String, PendingConfigChange>,
+    /// Per-chat temporary model overrides set via /models (keyed by chat_id string).
+    /// Cleared on /model_default or restart.
+    pub model_overrides: HashMap<String, String>,
 }
 
 impl BotState {
@@ -86,8 +89,11 @@ impl BotState {
         )
     }
 
-    /// Get the effective model for a chat.
+    /// Get the effective model for a chat, respecting any temporary override.
     pub fn effective_model(&self, chat_id: &str) -> String {
+        if let Some(override_model) = self.model_overrides.get(chat_id) {
+            return override_model.clone();
+        }
         self.config.model_for_chat(chat_id).to_string()
     }
 

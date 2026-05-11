@@ -294,16 +294,49 @@ pub struct ModelArchitecture {
     pub input_modalities: Vec<String>,
 }
 
+/// Pricing information for a model. The API returns strings that may be "0" or decimal strings like "0.0000025".
+/// We parse as string then convert to f64 as needed.
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct ModelPricing {
+    #[serde(default)]
+    pub prompt: String,
+    #[serde(default)]
+    pub completion: String,
+    #[serde(default)]
+    pub request: String,
+}
+
+impl ModelPricing {
+    /// Check if this model is free (all prompt, completion, and request costs are "0").
+    pub fn is_free(&self) -> bool {
+        self.prompt == "0" && self.completion == "0" && self.request == "0"
+    }
+}
+
 /// Model metadata from OpenRouter's /api/v1/models endpoint.
 #[derive(Debug, Deserialize, Clone)]
 pub struct ModelInfo {
     pub id: String,
+    /// Human-readable name (e.g. "OpenAI: GPT-4o").
+    #[serde(default)]
+    pub name: String,
+    /// Unix timestamp of when the model was created / added to OpenRouter.
+    #[serde(default)]
+    pub created: u64,
     pub context_length: u64,
     #[serde(default)]
     pub architecture: ModelArchitecture,
+    /// Pricing information (prompt, completion, request costs as strings).
+    #[serde(default)]
+    pub pricing: ModelPricing,
 }
 
 impl ModelInfo {
+    /// Get the provider part of the model ID (e.g. "openai" from "openai/gpt-4o").
+    pub fn provider(&self) -> &str {
+        self.id.split('/').next().unwrap_or("unknown")
+    }
+
     /// Check if this model natively supports a given input modality.
     pub fn supports_modality(&self, modality: &str) -> bool {
         self.architecture

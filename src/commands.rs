@@ -23,6 +23,10 @@ pub enum Command {
     Config,
     /// /config_schema — show the JSON Schema for all config fields
     ConfigSchema,
+    /// /models — browse and temporarily switch models via inline keyboard
+    Models,
+    /// /model_default (alias /model_reset) — reset the model to config default
+    ModelDefault,
 }
 
 /// Parse a Telegram message to see if it's a bot command.
@@ -52,6 +56,8 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "/tools" => Some(Command::Tools),
         "/config" => Some(Command::Config),
         "/config_schema" => Some(Command::ConfigSchema),
+        "/models" => Some(Command::Models),
+        "/model_default" | "/model_reset" => Some(Command::ModelDefault),
         _ => None,
     }
 }
@@ -141,6 +147,8 @@ pub fn handle_command(
         Command::Tools => String::new(),   // handled in handle_bot_command
         Command::Config => String::new(),   // handled in handle_bot_command
         Command::ConfigSchema => String::new(), // handled in handle_bot_command
+        Command::Models => String::new(),   // handled in handle_bot_command
+        Command::ModelDefault => String::new(), // handled in handle_bot_command
     }
 }
 
@@ -213,6 +221,20 @@ mod tests {
             parse_command("/config_schema@glowythebot"),
             Some(Command::ConfigSchema)
         );
+    }
+
+    #[test]
+    fn test_parse_command_models() {
+        assert_eq!(parse_command("/models"), Some(Command::Models));
+        assert_eq!(parse_command("/models@glowythebot"), Some(Command::Models));
+    }
+
+    #[test]
+    fn test_parse_command_model_default() {
+        assert_eq!(parse_command("/model_default"), Some(Command::ModelDefault));
+        assert_eq!(parse_command("/model_reset"), Some(Command::ModelDefault));
+        assert_eq!(parse_command("/model_default@glowythebot"), Some(Command::ModelDefault));
+        assert_eq!(parse_command("/model_reset@glowythebot"), Some(Command::ModelDefault));
     }
 
     #[test]

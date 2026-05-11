@@ -172,6 +172,33 @@ pub(crate) async fn handle_bot_command_impl(
         return Ok(Some(format!("```json\n{}\n```", schema)));
     }
 
+    // /model_default (alias /model_reset) — reset temporary model override
+    if matches!(command, crate::commands::Command::ModelDefault) {
+        {
+            let mut s = state.lock().await;
+            s.model_overrides.remove(chat_id);
+        }
+        let model = {
+            let s = state.lock().await;
+            s.config.model_for_chat(chat_id).to_string()
+        };
+        return Ok(Some(format!("🔁 Model reset to config default: `{}`", model)));
+    }
+
+    // /models — browse and switch models via inline keyboard
+    if matches!(command, crate::commands::Command::Models) {
+        let bot = match tg_bot {
+            Some(b) => b.clone(),
+            None => return Ok(Some("Models command cannot be used in this context (no Telegram bot available).".into())),
+        };
+        let state_clone = Arc::clone(state);
+        let cid = chat_id.to_string();
+        tokio::spawn(async move {
+            let _ = super::bot_models::send_model_menu(&state_clone, &cid, bot).await;
+        });
+        return Ok(None); // Response is sent via the spawned task
+    }
+
     // /run triggers the heartbeat task agent immediately for this chat
     if matches!(command, crate::commands::Command::Run) {
         if let Some(bot) = tg_bot {
