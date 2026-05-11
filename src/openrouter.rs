@@ -307,9 +307,9 @@ pub struct ModelPricing {
 }
 
 impl ModelPricing {
-    /// Check if this model is free (all prompt, completion, and request costs are "0").
+    /// Check if this model is free (prompt and completion costs are "0").
     pub fn is_free(&self) -> bool {
-        self.prompt == "0" && self.completion == "0" && self.request == "0"
+        self.prompt == "0" && self.completion == "0"
     }
 }
 

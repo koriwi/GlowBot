@@ -70,6 +70,7 @@ impl GlowBot {
             db: Database::new(&data_dir.join("conversations.db"), &schema_dir)?,
             mcp_tools,
             model_metadata: HashMap::new(),
+            model_order: Vec::new(),
             last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
             model_overrides: HashMap::new(),
@@ -95,6 +96,7 @@ impl GlowBot {
 
         let mut s = self.state.lock().await;
         for m in models {
+            s.model_order.push(m.id.clone());
             s.model_metadata.insert(m.id.clone(), m);
         }
         log::info!(

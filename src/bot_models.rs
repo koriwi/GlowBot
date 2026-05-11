@@ -55,11 +55,15 @@ pub async fn handle_model_callback(
         }
         "browse" => {
             let category = parts.get(2).unwrap_or(&"free");
-            let page: usize = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
-            let provider = if *category == "provider" {
-                parts.get(4).map(|s| s.to_string())
+            // For provider browsing, the format is model:browse:provider:<name>:<page>
+            // For other categories, it's model:browse:<category>:<page>
+            let (provider, page): (Option<String>, usize) = if *category == "provider" {
+                let p = parts.get(3).map(|s| s.to_string());
+                let pg = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
+                (p, pg)
             } else {
-                None
+                let pg = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
+                (None, pg)
             };
             let _ = edit_to_browse(
                 state, chat_id, bot, msg_id, category, page, provider.as_deref(),
@@ -96,6 +100,7 @@ async fn fetch_models_if_needed(state: &Arc<Mutex<BotState>>) -> anyhow::Result<
         let models = client.fetch_models().await?;
         let mut s = state.lock().await;
         for m in models {
+            s.model_order.push(m.id.clone());
             s.model_metadata.insert(m.id.clone(), m);
         }
     }
@@ -219,7 +224,12 @@ async fn edit_to_browse(
     match category {
         "newest" => filtered.sort_by(|a, b| b.created.cmp(&a.created)),
         "popular" => {
-            filtered.sort_by(|a, b| a.name.cmp(&b.name));
+            // Sort by API return order (model_order)
+            filtered.sort_by(|a, b| {
+                let pos_a = s.model_order.iter().position(|id| *id == a.id);
+                let pos_b = s.model_order.iter().position(|id| *id == b.id);
+                pos_a.cmp(&pos_b)
+            });
         }
         _ => filtered.sort_by(|a, b| a.name.cmp(&b.name)),
     }

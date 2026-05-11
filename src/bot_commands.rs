@@ -229,6 +229,7 @@ pub(crate) async fn handle_bot_command_impl(
                     let mut s = state.lock().await;
                     let old_count = s.model_metadata.len();
                     for m in models {
+                        s.model_order.push(m.id.clone());
                         s.model_metadata.insert(m.id.clone(), m);
                     }
                     log::info!(

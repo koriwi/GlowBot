@@ -26,6 +26,8 @@ pub struct BotState {
     pub mcp_tools: Vec<crate::mcp::McpTool>,
     /// Cached model metadata from OpenRouter (includes context lengths and input modalities).
     pub model_metadata: HashMap<String, ModelInfo>,
+    /// Model IDs in the order they were returned by the API (for "popular" sort).
+    pub model_order: Vec<String>,
     /// Per-chat last token usage from the most recent LLM call.
     pub last_usage: HashMap<String, Usage>,
     /// Pending config changes awaiting user approval (keyed by pending_id).

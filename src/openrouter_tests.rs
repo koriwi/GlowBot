@@ -375,14 +375,14 @@ fn test_model_pricing_is_free() {
     let free = ModelPricing {
         prompt: "0".into(),
         completion: "0".into(),
-        request: "0".into(),
+        request: String::new(),
     };
     assert!(free.is_free());
 
     let paid = ModelPricing {
         prompt: "0.000001".into(),
         completion: "0.000002".into(),
-        request: "0".into(),
+        request: String::new(),
     };
     assert!(!paid.is_free());
 }
