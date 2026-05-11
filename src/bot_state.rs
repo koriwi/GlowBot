@@ -35,6 +35,9 @@ pub struct BotState {
     /// Per-chat temporary model overrides set via /models (keyed by chat_id string).
     /// Cleared on /model_default or restart.
     pub model_overrides: HashMap<String, String>,
+    /// Per-chat last browse callback data, used for "Back" navigation
+    /// from the model detail view back to the originating browse page.
+    pub last_browse_cb: HashMap<String, String>,
 }
 
 impl BotState {

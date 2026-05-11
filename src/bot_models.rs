@@ -91,6 +91,14 @@ pub async fn handle_model_callback(
                 let pg = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
                 (None, pg)
             };
+
+            // Save the browse callback so the detail view's Back button can return here.
+            {
+                let mut s = state.lock().await;
+                s.last_browse_cb
+                    .insert(chat_id.to_string(), data.to_string());
+            }
+
             if let Err(e) = edit_to_browse(
                 state, chat_id, bot, msg_id, category, page, provider.as_deref(),
             )
@@ -110,6 +118,25 @@ pub async fn handle_model_callback(
             };
             if let Err(e) = edit_to_detail(state, chat_id, bot, msg_id, model_id).await {
                 log::error!("Failed to edit to detail for model '{}': {}", model_id, e);
+            }
+        }
+        "browseback" => {
+            // Replay the last browse callback so Back from detail view returns
+            // to the originating browse page instead of the root menu.
+            let cb_data = {
+                let s = state.lock().await;
+                s.last_browse_cb.get(&chat_id.to_string()).cloned()
+            };
+            match cb_data {
+                Some(cb) => {
+                    Box::pin(handle_model_callback(state, &cb, bot, chat_id, msg_id)).await;
+                    return;
+                }
+                None => {
+                    if let Err(e) = edit_to_menu(state, chat_id, bot, msg_id).await {
+                        log::error!("Failed to edit to menu: {}", e);
+                    }
+                }
             }
         }
         "select" | "s" => {
@@ -411,7 +438,7 @@ async fn edit_to_detail(
                 "🆓 Free".to_string()
             } else {
                 format!(
-                    "💲 {}/{} per token",
+                    "💲 {}/{} per 1M tokens",
                     prompt, completion
                 )
             };
@@ -443,7 +470,7 @@ async fn edit_to_detail(
     )]];
     rows.push(vec![InlineKeyboardButton::callback(
         "↩ Back",
-        "model:menu",
+        "model:browseback",
     )]);
 
     let keyboard = InlineKeyboardMarkup::new(rows);
