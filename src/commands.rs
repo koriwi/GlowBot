@@ -90,8 +90,10 @@ pub fn handle_command(
             if chat_id.starts_with('-') {
                 // Group chat
                 let chat = config.chat_config(chat_id);
+                let name_line = chat.name.as_ref().map(|n| format!("Name: {}\n", n)).unwrap_or_default();
                 format!(
-                    "Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
+                    "{}Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
+                    name_line,
                     chat_id,
                     model,
                     context_usage,
@@ -110,8 +112,10 @@ pub fn handle_command(
             } else {
                 // DM
                 let dm = config.dm_config(chat_id);
+                let name_line = dm.and_then(|d| d.name.as_ref()).map(|n| format!("Name: {}\n", n)).unwrap_or_default();
                 format!(
-                    "Chat ID: {}\nModel: {}\nContext usage: {}\nDM commands: {}\nDM system prompt: {}",
+                    "{}Chat ID: {}\nModel: {}\nContext usage: {}\nDM commands: {}\nDM system prompt: {}",
+                    name_line,
                     chat_id,
                     model,
                     context_usage,
@@ -264,6 +268,8 @@ mod tests {
         assert!(resp.contains("nobody")); // command whitelist empty = nobody
         // Group chat must not contain DM-specific fields
         assert!(!resp.contains("DM commands"));
+        // Name field should not appear when not set
+        assert!(!resp.contains("Name:"));
     }
 
     #[test]
@@ -289,6 +295,8 @@ mod tests {
         assert!(!resp.contains("Interaction mode"));
         assert!(!resp.contains("Interaction whitelist"));
         assert!(!resp.contains("Command whitelist"));
+        // Name field should not appear when not set
+        assert!(!resp.contains("Name:"));
     }
 
     #[test]
@@ -303,6 +311,37 @@ mod tests {
         assert!(resp.contains("DM commands: disabled (no DM config)"));
         assert!(resp.contains("DM system prompt: not set (no DM config)"));
         assert!(!resp.contains("Interaction mode"));
+        // Name field should not appear when not set
+        assert!(!resp.contains("Name:"));
+    }
+
+    #[test]
+    fn test_handle_status_with_name() {
+        let mut config = crate::config::basic_config();
+        config.openrouter.model = "default-model".into();
+
+        // Group chat with name
+        config.chats.insert(
+            "-123".into(),
+            crate::config::ChatConfig {
+                name: Some("Team Chat".into()),
+                ..Default::default()
+            },
+        );
+        let resp = handle_command(&Command::Status, &mut config, "-123", "1k/10k (10%)");
+        assert!(resp.contains("Name: Team Chat"));
+
+        // DM with name
+        config.dms.insert(
+            "123456".into(),
+            crate::config::DmConfig {
+                name: Some("Alice".into()),
+                commands_enabled: true,
+                ..Default::default()
+            },
+        );
+        let resp = handle_command(&Command::Status, &mut config, "123456", "2k/20k (10%)");
+        assert!(resp.contains("Name: Alice"));
     }
 
     #[test]

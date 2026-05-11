@@ -35,6 +35,9 @@ pub enum InteractionMode {
 /// Per-chat configuration override (groups only).
 #[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct ChatConfig {
+    /// Optional human-readable name for this chat (survives config updates).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// Optional model override for this chat.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -75,6 +78,9 @@ pub struct ChatConfig {
 /// Per-DM configuration override.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct DmConfig {
+    /// Optional human-readable name for this DM (survives config updates).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// Optional model override for this DM.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,

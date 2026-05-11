@@ -54,6 +54,7 @@ media_dir: "/media"                  # (default: /media)
 # Per-DM configuration overrides (keyed by user/chat ID, positive)
 dms:
   # "123456789":
+  #   name: "Alice"                    # optional, human-readable label (survives config updates)
   #   model: "anthropic/claude-haiku-4"
   #   commands_enabled: true
   #   system_prompt: "You are talking to the bot owner."
@@ -66,6 +67,7 @@ dms:
 # Group-specific overrides (keyed by Telegram chat ID, negative)
 chats:
   # "-1234567890":
+  #   name: "Team Chat"                 # optional, human-readable label (survives config updates)
   #   model: "openai/gpt-4o"
   #   interaction_mode: "every_message"    # "every_message" | "mention_only"
   #   interaction_whitelist: []            # user IDs; empty = everyone allowed
