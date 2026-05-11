@@ -281,7 +281,7 @@ async fn edit_to_browse(
     let mut nav_row: Vec<InlineKeyboardButton> = Vec::new();
     if clamped_page > 0 {
         let prev_cb = match provider {
-            Some(p) => format!("model:browse:{}:{}:{}", category, clamped_page - 1, p),
+            Some(p) => format!("model:browse:{}:{}:{}", category, p, clamped_page - 1),
             None => format!("model:browse:{}:{}", category, clamped_page - 1),
         };
         nav_row.push(InlineKeyboardButton::callback("◀ Prev", prev_cb));
@@ -294,7 +294,7 @@ async fn edit_to_browse(
     }
     if clamped_page + 1 < total_pages {
         let next_cb = match provider {
-            Some(p) => format!("model:browse:{}:{}:{}", category, clamped_page + 1, p),
+            Some(p) => format!("model:browse:{}:{}:{}", category, p, clamped_page + 1),
             None => format!("model:browse:{}:{}", category, clamped_page + 1),
         };
         nav_row.push(InlineKeyboardButton::callback("Next ▶", next_cb));
