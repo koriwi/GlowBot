@@ -27,6 +27,8 @@ pub enum Command {
     Models,
     /// /model_default (alias /model_reset) — reset the model to config default
     ModelDefault,
+    /// /model [model-id|:specifier] — set or view the model
+    Model(Option<String>),
 }
 
 /// Parse a Telegram message to see if it's a bot command.
@@ -58,6 +60,10 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "/config_schema" => Some(Command::ConfigSchema),
         "/models" => Some(Command::Models),
         "/model_default" | "/model_reset" => Some(Command::ModelDefault),
+        "/model" => {
+            let args = text.split_once(' ').map(|(_, a)| a.trim().to_string());
+            Some(Command::Model(args.filter(|a| !a.is_empty())))
+        }
         _ => None,
     }
 }
@@ -161,6 +167,7 @@ pub fn handle_command_with_model(
         Command::ConfigSchema => String::new(), // handled in handle_bot_command
         Command::Models => String::new(),   // handled in handle_bot_command
         Command::ModelDefault => String::new(), // handled in handle_bot_command
+        Command::Model(_) => String::new(),     // handled in handle_bot_command
     }
 }
 
@@ -254,8 +261,13 @@ mod tests {
         assert!(parse_command("Hello!").is_none());
         assert!(parse_command("").is_none());
         assert!(parse_command("   hi   ").is_none());
-        // /model, /mode, /reload are no longer commands
-        assert!(parse_command("/model gpt-4").is_none());
+        // /model is now a command
+        assert_eq!(parse_command("/model"), Some(Command::Model(None)));
+        assert_eq!(parse_command("/model gpt-4"), Some(Command::Model(Some("gpt-4".into()))));
+        assert_eq!(parse_command("/model :nitro"), Some(Command::Model(Some(":nitro".into()))));
+        assert_eq!(parse_command("/model foo/bar:nitro"), Some(Command::Model(Some("foo/bar:nitro".into()))));
+        assert_eq!(parse_command("/model@glowythebot :floor"), Some(Command::Model(Some(":floor".into()))));
+        // /mode and /reload are no longer commands
         assert!(parse_command("/mode every_message").is_none());
         assert!(parse_command("/reload").is_none());
     }

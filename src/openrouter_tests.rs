@@ -675,6 +675,21 @@ fn test_normalize_model_id() {
     assert_eq!(normalize_model_id("openai/o3-mini-high:nitro"), "openai/o3-mini-high");
 }
 
+#[test]
+fn test_apply_specifier() {
+    // No existing specifier — appends
+    assert_eq!(apply_specifier("openai/gpt-4o", "nitro"), "openai/gpt-4o:nitro");
+    assert_eq!(apply_specifier("deepseek/deepseek-chat", "floor"), "deepseek/deepseek-chat:floor");
+    assert_eq!(apply_specifier("google/gemini-2.5-pro", "free"), "google/gemini-2.5-pro:free");
+    // Replaces existing specifier
+    assert_eq!(apply_specifier("openai/gpt-4o:nitro", "floor"), "openai/gpt-4o:floor");
+    assert_eq!(apply_specifier("deepseek/deepseek-chat:floor", "nitro"), "deepseek/deepseek-chat:nitro");
+    assert_eq!(apply_specifier("openai/gpt-4o:free", "nitro"), "openai/gpt-4o:nitro");
+    // Replaces provider routing suffix
+    assert_eq!(apply_specifier("deepseek/deepseek-chat:deepseek", "free"), "deepseek/deepseek-chat:free");
+    assert_eq!(apply_specifier("openai/gpt-4o:openai", "nitro"), "openai/gpt-4o:nitro");
+}
+
 // ─── strip_orphaned_tool_results tests ─────────────────────────────
 
 fn tool_call(id: &str) -> ToolCall {

@@ -20,11 +20,30 @@ mod openrouter_client;
 pub(crate) use openrouter_client::truncate_str;
 pub use openrouter_client::OpenRouterClient;
 
+/// Known OpenRouter routing specifiers and their button labels.
+pub const SPECIFIER_BUTTONS: &[(&str, &str)] = &[
+    ("nitro", "🔼 :nitro"),
+    ("floor", "💰 :floor"),
+    ("free", "🆓 :free"),
+];
+
 /// Normalize an OpenRouter model ID by stripping the optional `:provider` routing suffix.
 /// The `/api/v1/models` endpoint returns IDs like `deepseek/deepseek-v4-pro`, but the config
 /// may specify `deepseek/deepseek-v4-pro:deepseek` to route to a specific provider.
 pub(crate) fn normalize_model_id(model: &str) -> &str {
     model.rsplit_once(':').map(|(base, _)| base).unwrap_or(model)
+}
+
+/// Apply a routing specifier (e.g. `nitro`, `floor`, `free`) to a model ID.
+/// Strips any existing trailing `:something` suffix and appends the new specifier.
+///
+/// Examples:
+/// - `apply_specifier("openai/gpt-4o", "nitro")` → `"openai/gpt-4o:nitro"`
+/// - `apply_specifier("openai/gpt-4o:nitro", "floor")` → `"openai/gpt-4o:floor"`
+/// - `apply_specifier("deepseek/deepseek-chat:deepseek", "free")` → `"deepseek/deepseek-chat:free"`
+pub fn apply_specifier(model: &str, specifier: &str) -> String {
+    let base = normalize_model_id(model);
+    format!("{}:{}", base, specifier)
 }
 
 /// An OpenRouter chat message.

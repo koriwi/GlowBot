@@ -185,6 +185,88 @@ pub(crate) async fn handle_bot_command_impl(
         return Ok(Some(format!("🔁 Model reset to config default: `{}`", model)));
     }
 
+    // /model [model-id|:specifier] — set model override, apply specifier, or show info
+    if let crate::commands::Command::Model(arg) = command {
+        match arg {
+            None => {
+                // No args: show current model info with specifier buttons
+                let bot = match tg_bot {
+                    Some(b) => b.clone(),
+                    None => {
+                        let (current, default) = {
+                            let s = state.lock().await;
+                            let cur = s.effective_model(chat_id);
+                            let def = s.config.model_for_chat(chat_id).to_string();
+                            (cur, def)
+                        };
+                        let has_override = {
+                            let s = state.lock().await;
+                            s.model_overrides.contains_key(chat_id)
+                        };
+                        let msg = format!(
+                            "🎯 Current model: `{}`{}\n📌 Config default: `{}`\n\nSet model: `/model <model-id>`\nSwitch routing: `/model :nitro` | `:floor` | `:free`",
+                            current,
+                            if has_override { " (override)" } else { "" },
+                            default
+                        );
+                        return Ok(Some(msg));
+                    }
+                };
+                let state_clone = Arc::clone(state);
+                let cid = chat_id.to_string();
+                tokio::spawn(async move {
+                    let _ = super::bot_models::send_model_info(&state_clone, &cid, bot).await;
+                });
+                return Ok(None);
+            }
+            Some(ref model_arg) if model_arg.starts_with(':') => {
+                // Specifier switch: apply :nitro, :floor, :free to current model
+                let specifier = &model_arg[1..]; // strip the leading ':'
+
+                // Validate specifier
+                let valid_specifiers: Vec<&str> = crate::openrouter::SPECIFIER_BUTTONS
+                    .iter()
+                    .map(|(s, _)| *s)
+                    .collect();
+                if !valid_specifiers.contains(&specifier) {
+                    let list = valid_specifiers
+                        .iter()
+                        .map(|s| format!("`:{}`", s))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Ok(Some(format!(
+                        "Unknown specifier `:{}`. Valid specifiers: {}",
+                        specifier, list
+                    )));
+                }
+
+                let new_model = {
+                    let s = state.lock().await;
+                    let current = s.effective_model(chat_id);
+                    crate::openrouter::apply_specifier(&current, specifier)
+                };
+                {
+                    let mut s = state.lock().await;
+                    s.model_overrides
+                        .insert(chat_id.to_string(), new_model.clone());
+                }
+                return Ok(Some(format!(
+                    "✅ Model set to `{}` (specifier `:{}` applied)",
+                    new_model, specifier
+                )));
+            }
+            Some(ref model_id) => {
+                // Direct model override
+                {
+                    let mut s = state.lock().await;
+                    s.model_overrides
+                        .insert(chat_id.to_string(), model_id.clone());
+                }
+                return Ok(Some(format!("✅ Model set to `{}`", model_id)));
+            }
+        }
+    }
+
     // /models — browse and switch models via inline keyboard
     if matches!(command, crate::commands::Command::Models) {
         let bot = match tg_bot {

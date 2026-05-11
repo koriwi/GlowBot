@@ -2736,6 +2736,138 @@ async fn test_effective_model_respects_override() {
 }
 
 #[tokio::test]
+async fn test_process_message_command_model_no_args() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/model", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    // Without tg_bot, should return text help
+    assert!(resp.contains("Current model"));
+    assert!(resp.contains("test/model"));
+    assert!(resp.contains("Set model"));
+    assert!(resp.contains("Switch routing"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_model_no_args_with_override() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    {
+        let mut s = bot.state.lock().await;
+        s.model_overrides.insert("-123".into(), "override/model:nitro".into());
+    }
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/model", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("override/model:nitro"));
+    assert!(resp.contains("override"));
+    assert!(resp.contains("test/model"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_model_specifier_nitro() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // Set current model with :free specifier
+    {
+        let mut s = bot.state.lock().await;
+        s.model_overrides.insert("-123".into(), "test/model:free".into());
+    }
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/model :nitro", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("Model set to"));
+    assert!(resp.contains("test/model:nitro"));
+    assert!(resp.contains(":nitro"));
+    // Verify override was applied
+    let s = bot.state.lock().await;
+    assert_eq!(s.model_overrides.get("-123").unwrap(), "test/model:nitro");
+}
+
+#[tokio::test]
+async fn test_process_message_command_model_specifier_floor() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/model :floor", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("Model set to"));
+    assert!(resp.contains("test/model:floor"));
+    let s = bot.state.lock().await;
+    assert_eq!(s.model_overrides.get("-123").unwrap(), "test/model:floor");
+}
+
+#[tokio::test]
+async fn test_process_message_command_model_specifier_free() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/model :free", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("test/model:free"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_model_specifier_invalid() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/model :fast", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("Unknown specifier"));
+    assert!(resp.contains(":nitro"));
+    assert!(resp.contains(":floor"));
+    assert!(resp.contains(":free"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_model_direct() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/model openai/gpt-4o", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("Model set to"));
+    assert!(resp.contains("openai/gpt-4o"));
+    let s = bot.state.lock().await;
+    assert_eq!(s.model_overrides.get("-123").unwrap(), "openai/gpt-4o");
+}
+
+#[tokio::test]
+async fn test_process_message_command_model_direct_with_specifier() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/model google/gemini-2.5-pro:nitro", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("Model set to"));
+    assert!(resp.contains("google/gemini-2.5-pro:nitro"));
+    let s = bot.state.lock().await;
+    assert_eq!(s.model_overrides.get("-123").unwrap(), "google/gemini-2.5-pro:nitro");
+}
+
+#[tokio::test]
+async fn test_process_message_command_model_unauthorized() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    // User 789 is not in the command whitelist
+    let result = bot
+        .process_message("-123", "789", "@testuser", "/model :nitro", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(resp.contains("not authorized"));
+}
+
+#[tokio::test]
 async fn test_read_config_tool_returns_yaml() {
     let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
     let state = bot.state.clone();

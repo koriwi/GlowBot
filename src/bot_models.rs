@@ -61,6 +61,42 @@ pub(crate) async fn send_model_menu(
     Ok(())
 }
 
+/// Send a model info message with specifier buttons (for /model without args).
+pub(crate) async fn send_model_info(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: &str,
+    bot: teloxide::Bot,
+) -> anyhow::Result<()> {
+    let chat = ChatId(chat_id.parse::<i64>()?);
+
+    let status_text = format_model_status(state, chat_id).await;
+    let help = "\nSet model: `/model <model-id>`\nSwitch routing:";
+    let text = format!("{}{}", status_text, help);
+
+    let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
+    let mut btn_row: Vec<InlineKeyboardButton> = Vec::new();
+    for (spec, label) in crate::openrouter::SPECIFIER_BUTTONS {
+        btn_row.push(InlineKeyboardButton::callback(
+            label.to_string(),
+            format!("model:spec:{}", spec),
+        ));
+    }
+    rows.push(btn_row);
+    rows.push(vec![InlineKeyboardButton::callback(
+        "🔍 Browse All Models",
+        "model:menu",
+    )]);
+
+    let keyboard = InlineKeyboardMarkup::new(rows);
+
+    bot.send_message(chat, text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(keyboard)
+        .await?;
+
+    Ok(())
+}
+
 /// Handle a model-related callback (called from main.rs callback handler).
 pub async fn handle_model_callback(
     state: &Arc<Mutex<BotState>>,
@@ -155,6 +191,14 @@ pub async fn handle_model_callback(
         "provider_list" => {
             let page = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
             let _ = edit_to_provider_list(state, chat_id, bot, msg_id, page).await;
+        }
+        "spec" => {
+            let specifier = parts.get(2).unwrap_or(&"");
+            if let Err(e) =
+                handle_spec_callback(state, chat_id, bot, msg_id, specifier).await
+            {
+                log::error!("Failed to handle spec callback '{}': {}", specifier, e);
+            }
         }
         _ => {}
     }
@@ -536,6 +580,61 @@ async fn select_model(
     let text = format!(
         "✅ *Model Selected*\n\n`{}`\n\nUse `/model\\_default` to reset to config default\\.",
         display_name
+    );
+
+    let keyboard = InlineKeyboardMarkup::new(vec![
+        vec![InlineKeyboardButton::callback("🔙 Back to Menu", "model:menu")],
+    ]);
+
+    bot.edit_message_text(chat_id, msg_id, text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(keyboard)
+        .await?;
+
+    Ok(())
+}
+
+/// Handle a specifier callback (model:spec:nitro, model:spec:floor, model:spec:free).
+/// Applies the given specifier to the current effective model and shows confirmation.
+async fn handle_spec_callback(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: ChatId,
+    bot: &teloxide::Bot,
+    msg_id: MessageId,
+    specifier: &str,
+) -> anyhow::Result<()> {
+    // Validate specifier
+    let valid: Vec<&str> = crate::openrouter::SPECIFIER_BUTTONS
+        .iter()
+        .map(|(s, _)| *s)
+        .collect();
+    if specifier.is_empty() || !valid.contains(&specifier) {
+        bot.edit_message_text(chat_id, msg_id, "Unknown specifier.")
+            .await?;
+        return Ok(());
+    }
+
+    let new_model = {
+        let s = state.lock().await;
+        let current = s.effective_model(&chat_id.to_string());
+        crate::openrouter::apply_specifier(&current, specifier)
+    };
+
+    {
+        let mut s = state.lock().await;
+        s.model_overrides
+            .insert(chat_id.to_string(), new_model.clone());
+    }
+
+    let spec_label = crate::openrouter::SPECIFIER_BUTTONS
+        .iter()
+        .find(|(s, _)| *s == specifier)
+        .map(|(_, label)| label.to_string())
+        .unwrap_or_else(|| format!(":{}", specifier));
+
+    let text = format!(
+        "✅ {}\n\n`{}`\n\nUse `/model_default` to reset to config default, or `/model` to change again.",
+        spec_label, new_model
     );
 
     let keyboard = InlineKeyboardMarkup::new(vec![
