@@ -475,8 +475,8 @@ async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::ty
 
     log::info!("Callback query received: data={}", data);
 
-    // Handle model browsing callbacks
-    if data.starts_with("model:") {
+    // Handle model browsing callbacks (model:, d:, s: prefixes)
+    if data.starts_with("model:") || data.starts_with("d:") || data.starts_with("s:") {
         let _ = tg_bot.answer_callback_query(&callback_id).await;
         if let Some(msg) = &cb.message {
             let state = {
