@@ -7,6 +7,30 @@ use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, MessageId, Par
 use tokio::sync::Mutex;
 
 const MODELS_PER_PAGE: usize = 6;
+/// Telegram's max callback data length in bytes.
+const MAX_CALLBACK_BYTES: usize = 64;
+
+/// Build a safe detail callback, shortening the prefix to `d:` if the full
+/// `model:detail:{id}` would exceed Telegram's 64-byte callback data limit.
+fn detail_cb(model_id: &str) -> String {
+    let full = format!("model:detail:{}", model_id);
+    if full.len() <= MAX_CALLBACK_BYTES {
+        full
+    } else {
+        format!("d:{}", model_id)
+    }
+}
+
+/// Build a safe select callback, shortening the prefix to `s:` if the full
+/// `model:select:{id}` would exceed Telegram's 64-byte callback data limit.
+fn select_cb(model_id: &str) -> String {
+    let full = format!("model:select:{}", model_id);
+    if full.len() <= MAX_CALLBACK_BYTES {
+        full
+    } else {
+        format!("s:{}", model_id)
+    }
+}
 
 /// Send the main model browse menu as a new message.
 pub(crate) async fn send_model_menu(
@@ -51,7 +75,9 @@ pub async fn handle_model_callback(
 
     match parts[1] {
         "menu" => {
-            let _ = edit_to_menu(state, chat_id, bot, msg_id).await;
+            if let Err(e) = edit_to_menu(state, chat_id, bot, msg_id).await {
+                log::error!("Failed to edit to menu: {}", e);
+            }
         }
         "browse" => {
             let category = parts.get(2).unwrap_or(&"free");
@@ -65,22 +91,35 @@ pub async fn handle_model_callback(
                 let pg = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
                 (None, pg)
             };
-            let _ = edit_to_browse(
+            if let Err(e) = edit_to_browse(
                 state, chat_id, bot, msg_id, category, page, provider.as_deref(),
             )
-            .await;
+            .await
+            {
+                log::error!("Failed to edit browse page {}: {}", page, e);
+            }
         }
-        "detail" => {
-            // Use splitn(3) to keep model IDs with colons intact
-            // (e.g. "google/gemma-4-31b-it:free")
-            let model_id = data.splitn(3, ':').nth(2).unwrap_or("");
+        "detail" | "d" => {
+            // Use splitn(3) for "model:detail:" (keeps model IDs with colons intact,
+            // e.g. "google/gemma-4-31b-it:free"). For short prefix "d:", use
+            // splitn(2).
+            let model_id = if parts[1] == "detail" {
+                data.splitn(3, ':').nth(2).unwrap_or("")
+            } else {
+                data.splitn(2, ':').nth(1).unwrap_or("")
+            };
             if let Err(e) = edit_to_detail(state, chat_id, bot, msg_id, model_id).await {
                 log::error!("Failed to edit to detail for model '{}': {}", model_id, e);
             }
         }
-        "select" => {
-            // Use splitn(3) to keep model IDs with colons intact
-            let model_id = data.splitn(3, ':').nth(2).unwrap_or("");
+        "select" | "s" => {
+            // Same split logic as detail: "model:select:" uses splitn(3),
+            // short prefix "s:" uses splitn(2).
+            let model_id = if parts[1] == "select" {
+                data.splitn(3, ':').nth(2).unwrap_or("")
+            } else {
+                data.splitn(2, ':').nth(1).unwrap_or("")
+            };
             if let Err(e) = select_model(state, chat_id, bot, msg_id, model_id).await {
                 log::error!("Failed to select model '{}': {}", model_id, e);
             }
@@ -273,7 +312,7 @@ async fn edit_to_browse(
         };
         rows.push(vec![InlineKeyboardButton::callback(
             label,
-            format!("model:detail:{}", m_id),
+            detail_cb(m_id),
         )]);
     }
 
@@ -399,7 +438,7 @@ async fn edit_to_detail(
 
     let mut rows = vec![vec![InlineKeyboardButton::callback(
         if is_selected { "✅ Selected" } else { "📌 Select Model" },
-        format!("model:select:{}", model_id),
+        select_cb(model_id),
     )]];
     rows.push(vec![InlineKeyboardButton::callback(
         "↩ Back",
@@ -472,5 +511,44 @@ async fn format_model_status(state: &Arc<Mutex<BotState>>, chat_id: &str) -> Str
             "🎯 *Current model:* `{}`\n\nBrowse models:",
             current
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detail_cb_short_id_uses_full_prefix() {
+        let id = "openai/gpt-4";
+        let cb = detail_cb(id);
+        assert_eq!(cb, "model:detail:openai/gpt-4");
+    }
+
+    #[test]
+    fn test_detail_cb_long_id_uses_short_prefix() {
+        // model:detail: is 13 chars, so an ID of 52+ chars triggers the short prefix
+        let id = "a".repeat(52);
+        let cb = detail_cb(&id);
+        assert!(cb.starts_with("d:"));
+        assert!(!cb.starts_with("model:detail:"));
+        assert!(cb.len() <= 64);
+    }
+
+    #[test]
+    fn test_select_cb_short_id_uses_full_prefix() {
+        let id = "openai/gpt-4";
+        let cb = select_cb(id);
+        assert_eq!(cb, "model:select:openai/gpt-4");
+    }
+
+    #[test]
+    fn test_select_cb_long_id_uses_short_prefix() {
+        // model:select: is 13 chars, so an ID of 52+ chars triggers the short prefix
+        let id = "a".repeat(52);
+        let cb = select_cb(&id);
+        assert!(cb.starts_with("s:"));
+        assert!(!cb.starts_with("model:select:"));
+        assert!(cb.len() <= 64);
     }
 }
