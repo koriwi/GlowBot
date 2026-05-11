@@ -362,9 +362,10 @@ async fn edit_to_browse(
         _ => "Models",
     };
 
+    let escaped_label = crate::escape_v2_safe(category_label);
     let text = format!(
         "*{}* \\({} models\\)",
-        category_label, total
+        escaped_label, total
     );
 
     bot.edit_message_text(chat_id, msg_id, text)
