@@ -2730,7 +2730,7 @@ async fn test_handle_config_callback_accept() {
 
     let data = format!("cfg:{}:accept", pending_id);
     let result =
-        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, &data).await;
+        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, &data, None).await;
 
     assert!(result.is_some());
     let (edit_text, followup) = result.unwrap();
@@ -2766,7 +2766,7 @@ async fn test_handle_config_callback_deny() {
 
     let data = format!("cfg:{}:deny", pending_id);
     let result =
-        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, &data).await;
+        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, &data, None).await;
 
     assert!(result.is_some());
     let (edit_text, followup) = result.unwrap();
@@ -2785,7 +2785,7 @@ async fn test_handle_config_callback_unknown_pending_id() {
 
     let data = "cfg:nonexistent:accept";
     let result =
-        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, data).await;
+        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, data, None).await;
 
     assert!(result.is_some());
     let (edit_text, followup) = result.unwrap();
@@ -2815,7 +2815,7 @@ async fn test_handle_config_callback_unknown_action() {
 
     let data = format!("cfg:{}:something_else", pending_id);
     let result =
-        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, &data).await;
+        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, &data, None).await;
 
     assert!(result.is_some());
     let (edit_text, _followup) = result.unwrap();
@@ -2828,7 +2828,7 @@ async fn test_handle_config_callback_non_cfg_prefix() {
     let state = bot.state.clone();
 
     let result =
-        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, "something_else")
+        super::bot_dispatch::bot_dispatch_config::handle_config_callback(&state, "something_else", None)
             .await;
 
     // Non-cfg callbacks return None (handled in main.rs)

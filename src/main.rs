@@ -495,7 +495,7 @@ async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::ty
     };
 
     let result = glowbot::bot::bot_dispatch::bot_dispatch_config::handle_config_callback(
-        &state, &data,
+        &state, &data, Some(&tg_bot),
     )
     .await;
 

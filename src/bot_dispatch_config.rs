@@ -156,6 +156,7 @@ pub(crate) async fn tool_edit_config(
 pub async fn handle_config_callback(
     state: &Arc<Mutex<BotState>>,
     data: &str,
+    tg_bot: Option<&teloxide::Bot>,
 ) -> Option<(String, Option<String>)> {
     // (edit_text, optional_followup_text_for_llm)
     let parts: Vec<&str> = data.split(':').collect();
@@ -207,6 +208,20 @@ pub async fn handle_config_callback(
                         "Config change accepted by user in chat {}. Restarting...",
                         pending.chat_id
                     );
+
+                    // Send a dedicated restart message to the chat
+                    if let Some(tg_bot) = tg_bot {
+                        let chat_id: ChatId = match pending.chat_id.parse::<i64>() {
+                            Ok(c) => ChatId(c),
+                            Err(_) => {
+                                log::error!("Invalid chat_id for restart notification: {}", pending.chat_id);
+                                ChatId(0)
+                            }
+                        };
+                        let _ = tg_bot
+                            .send_message(chat_id, "🔄 Restarting! Config has been applied, the bot will be back in a moment...")
+                            .await;
+                    }
 
                     // Schedule restart — spawn a task so we can first send the confirmation
                     tokio::spawn(async {
