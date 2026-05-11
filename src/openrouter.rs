@@ -311,6 +311,26 @@ impl ModelPricing {
     pub fn is_free(&self) -> bool {
         self.prompt == "0" && self.completion == "0"
     }
+
+    /// Format the prompt/completion prices per million tokens for display.
+    /// The API returns per-token prices like "0.00000015";
+    /// we scale by 1e6 to show meaningful per-million rates like "0.15/0.45".
+    pub fn format_per_million(&self) -> String {
+        let prompt: f64 = self.prompt.parse().unwrap_or(0.0);
+        let completion: f64 = self.completion.parse().unwrap_or(0.0);
+        format!(
+            "{}/{}",
+            trim_price(prompt * 1_000_000.0),
+            trim_price(completion * 1_000_000.0)
+        )
+    }
+}
+
+/// Format a price value: round to 4 decimal places, strip trailing zeros.
+fn trim_price(v: f64) -> String {
+    let s = format!("{:.4}", v);
+    let s = s.trim_end_matches('0');
+    s.trim_end_matches('.').to_string()
 }
 
 /// Model metadata from OpenRouter's /api/v1/models endpoint.

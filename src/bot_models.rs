@@ -417,8 +417,7 @@ async fn edit_to_detail(
             if m.name.is_empty() { m.id.clone() } else { m.name.clone() },
             m.context_length,
             m.pricing.is_free(),
-            m.pricing.prompt.clone(),
-            m.pricing.completion.clone(),
+            m.pricing.format_per_million(),
         )
     });
     let is_selected = s.model_overrides.get(&chat_id.to_string()).map(|m| m == model_id).unwrap_or(false);
@@ -426,7 +425,7 @@ async fn edit_to_detail(
     drop(s);
 
     let (display_name, context_len, pricing_text) = match model_data {
-        Some((name, ctx, is_free, prompt, completion)) => {
+        Some((name, ctx, is_free, formatted_pricing)) => {
             let ctx_str = if ctx == 0 {
                 "unknown".to_string()
             } else if ctx >= 1_000_000 {
@@ -437,10 +436,7 @@ async fn edit_to_detail(
             let pricing = if is_free {
                 "🆓 Free".to_string()
             } else {
-                format!(
-                    "💲 {}/{} per 1M tokens",
-                    prompt, completion
-                )
+                format!("💲 {} per 1M tokens", formatted_pricing)
             };
             (name, ctx_str, pricing)
         }
