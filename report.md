@@ -1,6 +1,8 @@
 # GlowBot Code Review Report
 
-Generated: 2026-05-12
+Generated: 2026-05-12 | Last updated: 2026-05-12
+
+**Resolved:** 2.5 (Heartbeat `/stop` signal)
 
 ---
 
@@ -158,13 +160,15 @@ If any thread panics while holding a `std::sync::Mutex`, the lock becomes **pois
 
 ---
 
-### 2.5 Heartbeat Tasks Ignore `/stop` Signal
+### 2.5 ~~Heartbeat Tasks Ignore `/stop` Signal~~ ✅ FIXED
 
 **File:** `src/bot_heartbeat.rs:19-24`
 
-`run_heartbeat_task` accepts no `stop_signals` parameter. Once a heartbeat task starts, it cannot be cancelled. The `run_chat_heartbeat` loop checks `has_pending_tasks` between iterations, but individual task processing within `run_heartbeat_task` has no cancellation mechanism.
+~~`run_heartbeat_task` accepts no `stop_signals` parameter. Once a heartbeat task starts, it cannot be cancelled. The `run_chat_heartbeat` loop checks `has_pending_tasks` between iterations, but individual task processing within `run_heartbeat_task` has no cancellation mechanism.~~
 
-**Recommendation:** Pass `stop_signals` to `run_heartbeat_task` and check it between tool rounds (same as `process_with_llm_impl`).
+**Resolution:** Added `stop_signals` parameter to `run_heartbeat_task` and `process_reminder_action`. Both functions now check `check_stopped()` between tool rounds and before processing each due reminder, matching the pattern used in `process_with_llm_impl`. Callers in `main.rs` (2 sites), `bot_commands.rs` (`/run`), and `bot_tests.rs` (4 tests) updated accordingly. (commit 74546d0)
+
+**Follow-up:** Extracted duplicated `check_stopped` closure into shared private `fn`. Merged 3 sequential `state.lock().await` blocks into 1 in both functions. (commit 12426cb)
 
 ---
 
