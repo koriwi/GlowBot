@@ -184,7 +184,10 @@ pub(crate) async fn tool_send_media(
         );
     }
     if let Some(bot) = tg_bot {
-        let chat = ChatId(chat_id.parse().unwrap_or_default());
+        let Ok(chat_id_i64) = chat_id.parse::<i64>() else {
+            return format!("Error: invalid chat_id '{}'", chat_id);
+        };
+        let chat = ChatId(chat_id_i64);
         let input = teloxide::types::InputFile::file(&full_path);
         let ext = full_path
             .extension()

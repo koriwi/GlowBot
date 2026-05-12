@@ -99,7 +99,10 @@ pub(crate) async fn dispatch_tool(
                 return "Error: text required".into();
             }
             if let Some(bot) = tg_bot {
-                let chat = ChatId(cid.parse().unwrap_or_default());
+                let Ok(chat_id_i64) = cid.parse::<i64>() else {
+                    return format!("Error: invalid chat_id '{}'", cid);
+                };
+                let chat = ChatId(chat_id_i64);
                 crate::bot_send::send_message(bot, chat, text).await;
                 "Message sent.".into()
             } else {

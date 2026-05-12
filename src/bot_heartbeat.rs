@@ -82,12 +82,16 @@ pub async fn run_heartbeat_task(
                 } else {
                     // Simple reminder: just send the description.
                     let msg = format!("⏰ Reminder: {}", reminder_desc);
-                    crate::bot_send::send_message(
-                        &tg_bot,
-                        teloxide::types::ChatId(cid.parse().unwrap_or_default()),
-                        &msg,
-                    )
-                    .await;
+                    if let Ok(cid_i64) = cid.parse::<i64>() {
+                        crate::bot_send::send_message(
+                            &tg_bot,
+                            teloxide::types::ChatId(cid_i64),
+                            &msg,
+                        )
+                        .await;
+                    } else {
+                        log::error!("Heartbeat: cannot parse chat_id '{}' as i64", cid);
+                    }
                 }
 
                 // Remove the fired reminder.
@@ -192,13 +196,17 @@ pub async fn run_heartbeat_task(
                     }
                     Err(e) => {
                         log::error!("Heartbeat LLM error: {}", e);
-                        let msg = format!("⚠️ Task '{}' failed: LLM error — {}", task_id, e);
-                        crate::bot_send::send_message(
-                            &tg_bot,
-                            teloxide::types::ChatId(cid.parse().unwrap_or_default()),
-                            &msg,
-                        )
-                        .await;
+                        if let Ok(cid_i64) = cid.parse::<i64>() {
+                            let msg = format!("⚠️ Task '{}' failed: LLM error — {}", task_id, e);
+                            crate::bot_send::send_message(
+                                &tg_bot,
+                                teloxide::types::ChatId(cid_i64),
+                                &msg,
+                            )
+                            .await;
+                        } else {
+                            log::error!("Heartbeat: cannot parse chat_id '{}' as i64", cid);
+                        }
                         break;
                     }
                 }
@@ -321,12 +329,16 @@ async fn process_reminder_action(
                         "⏰ Reminder: {}\n⚠️ Action failed: LLM error — {}",
                         description, e
                     );
-                    crate::bot_send::send_message(
-                        tg_bot,
-                        teloxide::types::ChatId(cid.parse().unwrap_or_default()),
-                        &msg,
-                    )
-                    .await;
+                    if let Ok(cid_i64) = cid.parse::<i64>() {
+                        crate::bot_send::send_message(
+                            tg_bot,
+                            teloxide::types::ChatId(cid_i64),
+                            &msg,
+                        )
+                        .await;
+                    } else {
+                        log::error!("Heartbeat: cannot parse chat_id '{}' as i64", cid);
+                    }
                     return;
                 }
             }

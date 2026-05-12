@@ -240,7 +240,11 @@ async fn handle_message(
         text.as_deref().unwrap_or("(media)")
     );
 
-    let chat = ChatId(chat_id.parse().unwrap_or_default());
+    let Ok(chat_id_i64) = chat_id.parse::<i64>() else {
+        log::error!("BUG: Telegram chat_id '{}' does not parse as i64", chat_id);
+        return;
+    };
+    let chat = ChatId(chat_id_i64);
 
     // Extract bot components
     let (state, git_repo, stop_signals) = {
