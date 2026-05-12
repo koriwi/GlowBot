@@ -69,6 +69,7 @@ async fn run_bot() -> anyhow::Result<()> {
     let http_client = reqwest_011::Client::builder()
         .tcp_keepalive(std::time::Duration::from_secs(15))
         .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(35))
         .build()
         .expect("Failed to build reqwest client for Telegram");
     let tg_bot = Bot::with_client(telegram_token, http_client);
