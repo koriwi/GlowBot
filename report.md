@@ -2,7 +2,7 @@
 
 Generated: 2026-05-12 | Last updated: 2026-05-12
 
-**Resolved:** 2.5 (Heartbeat `/stop` signal)
+**Resolved:** 1.2 (send_media path traversal), 1.3 (list_media symlink traversal), 2.3 (silent ChatId(0)), 2.4 (lock poisoning panics), 2.5 (heartbeat `/stop` signal)
 
 ---
 
@@ -22,31 +22,23 @@ The LLM can execute arbitrary bash commands via `bash -c`. The system prompt ins
 
 ---
 
-### 1.2 Path Traversal in `send_media` (CVSS: Medium)
+### 1.2 ~~Path Traversal in `send_media`~~ ✅ FIXED
 
 **File:** `src/bot_dispatch_media.rs:127-131`
 
-```rust
-let full_path = if std::path::Path::new(file_path).is_absolute() {
-    std::path::PathBuf::from(file_path)
-} else {
-    data_dir.join(file_path)
-};
-```
+~~Relative paths like `../../etc/passwd` are joined to `data_dir` without canonicalization. A path like `../../../proc/1/environ` from the LLM tool would resolve outside the data directory, allowing exfiltration of arbitrary files via Telegram.~~
 
-Relative paths like `../../etc/passwd` are joined to `data_dir` without canonicalization. A path like `../../../proc/1/environ` from the LLM tool would resolve outside the data directory, allowing exfiltration of arbitrary files via Telegram.
-
-**Recommendation:** Call `.canonicalize()` on the resolved path and verify it is inside `data_dir` (same pattern used correctly in `list_media`).
+**Resolution:** Added `.canonicalize()` on the resolved path with a prefix check against `data_dir` (canonicalized), consistent with the existing `list_media` pattern. (commit 7ad5dbb)
 
 ---
 
-### 1.3 Path Traversal via Symlinks in `list_media` (CVSS: Low)
+### 1.3 ~~Path Traversal via Symlinks in `list_media`~~ ✅ FIXED
 
 **File:** `src/bot_dispatch_media.rs:67-115`
 
-The `walk()` function uses `strip_prefix` to display relative paths but does not canonicalize directory entries. Symlinks inside the media directory could point outside it, and the walker would follow them (since `std::fs::read_dir` follows symlinks by default on most platforms).
+~~The `walk()` function uses `strip_prefix` to display relative paths but does not canonicalize directory entries. Symlinks inside the media directory could point outside it, and the walker would follow them.~~
 
-**Recommendation:** Prepend `std::fs::symlink_metadata` checks and skip symlinks, or canonicalize each path and verify it starts with the base.
+**Resolution:** Each walked path is now canonicalized and verified to start with the canonicalized base directory. (commit 7ad5dbb)
 
 ---
 
@@ -128,35 +120,28 @@ The `GitRepo` instance is not passed to the callback handler, so accepted config
 
 ---
 
-### 2.3 `ChatId(0)` Silently Created on Parse Failure
+### 2.3 ~~`ChatId(0)` Silently Created on Parse Failure~~ ✅ FIXED
 
 **File:** `src/main.rs:182`, `src/bot_heartbeat.rs:91`, `src/bot_dispatch_media.rs:139`, and others
 
-Multiple locations use:
+~~Multiple locations use `chat_id.parse().unwrap_or_default()`, silently creating `ChatId(0)` on parse failure. The error is swallowed, hiding the root cause.~~
 
-```rust
-let chat = ChatId(chat_id.parse().unwrap_or_default());
-```
-
-If `chat_id` can't be parsed as `i64`, this silently creates `ChatId(0)`, which is a valid Telegram API call that will either error or send to a nonexistent chat. The error is swallowed, hiding the root cause.
-
-**Recommendation:** Use `let chat = ChatId(chat_id.parse()?)` with proper error handling, or log a warning and return early on parse failure.
+**Resolution:** Replaced `unwrap_or_default()` with proper error handling at all 5 locations: `main.rs` logs + early returns, `bot_dispatch.rs` and `bot_dispatch_media.rs` return error strings to the LLM, `bot_heartbeat.rs` logs and skips/breaks/returns depending on context. (commit 51a4207)
 
 ---
 
-### 2.4 Lock Poisoning Panics on `unwrap()`
+### 2.4 ~~Lock Poisoning Panics on `unwrap()`~~ ✅ FIXED
 
-**File:** Throughout codebase (`main.rs`, `bot_pipeline.rs`, `bot_dispatch.rs`, `db.rs`, etc.)
+**File:** Throughout codebase
 
-Pattern used extensively:
+~~If any thread panics while holding a `std::sync::Mutex`, the lock becomes poisoned and all subsequent `.lock().unwrap()` calls panic, taking down the entire bot.~~
 
-```rust
-stop_signals.lock().unwrap()
-```
-
-If any thread panics while holding a `std::sync::Mutex`, the lock becomes **poisoned**, and all subsequent `.lock().unwrap()` calls will panic, taking down the entire bot. While tokio's `Mutex` doesn't poison, `std::sync::Mutex` (used for `stop_signals`, `chat_locks`, `Database.conn`, `McpClient.session_id`) does.
-
-**Recommendation:** Replace `std::sync::Mutex` in hot paths with tokio's Mutex (which doesn't poison), or recover gracefully from poisoning: `.lock().unwrap_or_else(|e| e.into_inner())`.
+**Resolution:**
+- `stop_signals` & `chat_locks`: `unwrap_or_else(|e| e.into_inner())` for graceful poisoning recovery
+- `Database.conn`: same recovery (10 sites across `db.rs`, `db_embeddings.rs`)
+- `McpClient.session_id`: converted from `std::sync::Mutex` to `tokio::sync::Mutex` (doesn't poison)
+- `MockLlmBackend` (test-only): `unwrap_or_else` recovery (6 sites)
+(commit 3891ea9, simplified in ee8c657)
 
 ---
 
@@ -487,14 +472,13 @@ While `detail_cb` and `select_cb` have tests, `format_model_status` (an async fu
 | Severity | Count | Key Issues |
 |----------|-------|------------|
 | **High** | 2 | Unbounded bash execution, SSRF via MCP |
-| **Medium** | 4 | Path traversal (send_media), lock poisoning panics, ChatId(0) silent failures, session ID race |
-| **Low** | 4 | Path traversal (list_media symlinks), git config mutation, token in logs, silent YAML parse failures |
+| **Medium** | 4 → 1 | ~~Path traversal (send_media)~~, ~~lock poisoning panics~~, ~~ChatId(0) silent failures~~, session ID race |
+| **Low** | 4 → 3 | ~~Path traversal (list_media symlinks)~~, git config mutation, token in logs, silent YAML parse failures |
 | **Code Smell** | 8 | File too large, duplicated code, mixed concerns, extreme loop limit, missing error handling |
 
-The most impactful fixes would be:
-1. Add path traversal protection to `send_media` (2.2)
-2. Add URL allowlist/denylist for MCP server calls (1.6)
-3. Fix `ChatId(0)` silent fallback pattern across the codebase (2.3)
-4. Replace `std::sync::Mutex` with non-poisoning alternatives in hot paths (2.4)
-5. Add `/stop` checking to heartbeat tasks (2.5)
-6. Reduce `max_tool_rounds` from 64 to a reasonable value (3.5)
+The most impactful **remaining** fixes would be:
+1. Add URL allowlist/denylist for MCP server calls (1.6)
+2. Reduce `max_tool_rounds` from 64 to a reasonable value (3.5)
+3. Fix MCP session ID race condition (2.6)
+4. Resolve silent YAML parse failures (3.8)
+5. Add overall timeout on message processing (4.4)
