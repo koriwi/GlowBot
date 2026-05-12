@@ -17,6 +17,20 @@ fn parse_chat_id(cid: &str) -> Option<ChatId> {
     }
 }
 
+fn check_stopped(
+    stop_signals: &std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>,
+    chat_id: &str,
+) -> bool {
+    if let Ok(signals) = stop_signals.lock() {
+        signals
+            .get(chat_id)
+            .map(|s| s.load(std::sync::atomic::Ordering::SeqCst))
+            .unwrap_or(false)
+    } else {
+        false
+    }
+}
+
 pub async fn run_heartbeat_task(
     state: Arc<Mutex<BotState>>,
     _git_repo: crate::git::GitRepo,
@@ -25,17 +39,6 @@ pub async fn run_heartbeat_task(
     tg_bot: teloxide::Bot,
 ) {
     let cid = chat_id.to_string();
-
-    let check_stopped = || -> bool {
-        if let Ok(signals) = stop_signals.lock() {
-            signals
-                .get(chat_id)
-                .map(|s| s.load(std::sync::atomic::Ordering::SeqCst))
-                .unwrap_or(false)
-        } else {
-            false
-        }
-    };
 
     let mut tried_this_cycle: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -75,10 +78,10 @@ pub async fn run_heartbeat_task(
                 cid,
                 due.len()
             );
-            drop(s); // release lock before async operations
+            drop(s);
 
             for reminder in due {
-                if check_stopped() {
+                if check_stopped(&stop_signals, &cid) {
                     break;
                 }
 
@@ -94,7 +97,6 @@ pub async fn run_heartbeat_task(
                 );
 
                 if let Some(action) = reminder_action {
-                    // Run the LLM agent to perform the action.
                     process_reminder_action(
                         &state,
                         &stop_signals,
@@ -107,7 +109,6 @@ pub async fn run_heartbeat_task(
                     )
                     .await;
                 } else {
-                    // Simple reminder: just send the description.
                     let msg = format!("⏰ Reminder: {}", reminder_desc);
                     if let Some(chat) = parse_chat_id(&cid) {
                         crate::bot_send::send_message(&tg_bot, chat, &msg).await;
@@ -165,37 +166,28 @@ pub async fn run_heartbeat_task(
             date = date,
         );
 
-        let (system_prompt, model) = {
+        let (system_prompt, model, tools, context_limit) = {
             let s = state.lock().await;
             let base = s.assemble_system_prompt(&cid, true, "");
             let model = s.effective_model(&cid);
-            (base, model)
-        };
-
-        let tools = {
-            let s = state.lock().await;
             let bash_enabled = s.config.is_bash_enabled(&cid);
-            s.build_tools(bash_enabled, &cid)
-        };
-
-        let context_limit = {
-            let s = state.lock().await;
-            s.model_metadata
+            let tools = s.build_tools(bash_enabled, &cid);
+            let ctx = s.model_metadata
                 .get(crate::openrouter::normalize_model_id(&model))
                 .map(|m| m.context_length)
-                .unwrap_or(0)
+                .unwrap_or(0);
+            (base, model, tools, ctx)
         };
 
         let system_msg = ChatMessage::system(&system_prompt);
         let mut turn_messages = vec![ChatMessage::user(&task_header)];
 
         for _ in 0..10 {
-            if check_stopped() {
+            if check_stopped(&stop_signals, &cid) {
                 log::info!("Heartbeat chat {}: stopped before LLM round", cid);
                 break;
             }
 
-            // Build trimmed request using the same logic as the regular pipeline
             let (request_messages, _) = crate::openrouter::build_trimmed_request(
                 context_limit,
                 &[system_msg.clone()],
@@ -274,16 +266,6 @@ async fn process_reminder_action(
 ) {
     let cid = chat_id.to_string();
 
-    let check_stopped = || -> bool {
-        if let Ok(signals) = stop_signals.lock() {
-            signals
-                .get(chat_id)
-                .map(|s| s.load(std::sync::atomic::Ordering::SeqCst))
-                .unwrap_or(false)
-        } else {
-            false
-        }
-    };
     let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let reminder_header = format!(
         "## Reminder Triggered\n\
@@ -301,32 +283,24 @@ async fn process_reminder_action(
         date = date,
     );
 
-    let (system_prompt, model) = {
+    let (system_prompt, model, tools, context_limit) = {
         let s = state.lock().await;
         let base = s.assemble_system_prompt(&cid, true, "");
         let model = s.effective_model(&cid);
-        (base, model)
-    };
-
-    let tools = {
-        let s = state.lock().await;
         let bash_enabled = s.config.is_bash_enabled(&cid);
-        s.build_tools(bash_enabled, &cid)
-    };
-
-    let context_limit = {
-        let s = state.lock().await;
-        s.model_metadata
+        let tools = s.build_tools(bash_enabled, &cid);
+        let ctx = s.model_metadata
             .get(crate::openrouter::normalize_model_id(&model))
             .map(|m| m.context_length)
-            .unwrap_or(0)
+            .unwrap_or(0);
+        (base, model, tools, ctx)
     };
 
     let system_msg = ChatMessage::system(&system_prompt);
     let mut turn_messages = vec![ChatMessage::user(&reminder_header)];
 
     for _ in 0..10 {
-        if check_stopped() {
+        if check_stopped(stop_signals, &cid) {
             log::info!(
                 "Heartbeat reminder {}: stopped before LLM round",
                 reminder_id
