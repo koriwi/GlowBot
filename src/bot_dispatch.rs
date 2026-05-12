@@ -246,55 +246,74 @@ pub(crate) async fn dispatch_tool(
             let tool_name = name.to_string();
             let mut args_clone = args.clone();
             let result = {
-                let s = state.lock().await;
-                // Workaround for Playwright MCP server bug: the server
-                // doesn't respect the output dir for named fullpage
-                // screenshots, so we prepend the pw-media path here.
-                // The tool uses either "name" or "filename" as the
-                // parameter for the output filename.
-                if tool_name.contains("screenshot") {
-                    for key in &["filename", "name"] {
-                        if let Some(name_val) = args_clone.get(*key).and_then(|v| v.as_str()) {
-                            if !name_val.is_empty() && !name_val.starts_with('/') && !name_val.contains('/') {
-                                let media_dir = &s.config.media_dir;
-                                args_clone[*key] =
-                                    serde_json::json!(format!("{}/pw-media/{}", media_dir, name_val));
-                                break;
-                            }
+                // Phase 1: under state lock — get server name, per-server lock, blacklist check
+                let (srv_name, server_lock, blacklisted) = {
+                    let mut s = state.lock().await;
+                    let tool_idx = s
+                        .mcp_tools
+                        .iter()
+                        .position(|t| format!("mcp_{}_{}", t.server_name, t.name) == tool_name);
+                    match tool_idx {
+                        Some(idx) => {
+                            let srv = s.mcp_tools[idx].server_name.clone();
+                            let blacklisted = !s.config.is_mcp_server_allowed(chat_id, &srv);
+                            let server_lock = s
+                                .mcp_server_locks
+                                .entry(srv.clone())
+                                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                                .clone();
+                            (srv, server_lock, blacklisted)
                         }
+                        None => return format!("MCP tool not found: {}", tool_name),
                     }
+                };
+                if blacklisted {
+                    return format!("MCP tool blacklisted for this chat: {}", tool_name);
                 }
-                // Defense in depth: also check the blacklist at dispatch time
-                let tool_idx = s
-                    .mcp_tools
-                    .iter()
-                    .position(|t| format!("mcp_{}_{}", t.server_name, t.name) == tool_name);
-                match tool_idx.map(|idx| (idx, s.config.is_mcp_server_allowed(chat_id, &s.mcp_tools[idx].server_name))) {
-                    Some((_, false)) => {
-                        format!("MCP tool blacklisted for this chat: {}", tool_name)
-                    }
-                    Some((idx, true)) => {
-                        let mut tc = s.mcp_tools[idx].clone();
-                        let server = tc.server_name.clone();
-                        drop(s);
-                        let result = crate::mcp::invoke_tool(&mut tc, &args_clone).await;
-                        // After invoke_tool may have updated session_id via re-init.
-                        // Propagate to ALL tools from the same server so subsequent
-                        // calls don't each need their own re-initialization.
-                        let mut s = state.lock().await;
-                        if tc.session_id.is_some() {
-                            for t in &mut s.mcp_tools {
-                                if t.server_name == server {
-                                    t.session_id = tc.session_id.clone();
+                // Phase 2: hold per-server lock for the entire invoke+propagate sequence.
+                // This serializes all calls to the same MCP server so that session
+                // re-initialization and propagation is atomic per server. No other
+                // request for this server can read stale session_id while we re-init.
+                let _server_guard = server_lock.lock().await;
+                // Phase 3: under state lock — get tool, apply screenshot workaround, clone
+                let (mut tc, server_name) = {
+                    let s = state.lock().await;
+                    let tool_idx = s
+                        .mcp_tools
+                        .iter()
+                        .position(|t| format!("mcp_{}_{}", t.server_name, t.name) == tool_name)
+                        .expect("tool vanished between lock acquisitions");
+                    // Workaround for Playwright MCP server bug: the server
+                    // doesn't respect the output dir for named fullpage
+                    // screenshots, so we prepend the pw-media path here.
+                    if tool_name.contains("screenshot") {
+                        for key in &["filename", "name"] {
+                            if let Some(name_val) = args_clone.get(*key).and_then(|v| v.as_str()) {
+                                if !name_val.is_empty() && !name_val.starts_with('/') && !name_val.contains('/') {
+                                    let media_dir = &s.config.media_dir;
+                                    args_clone[*key] =
+                                        serde_json::json!(format!("{}/pw-media/{}", media_dir, name_val));
+                                    break;
                                 }
                             }
                         }
-                        result
                     }
-                    None => {
-                        format!("MCP tool not found: {}", tool_name)
+                    let tc = s.mcp_tools[tool_idx].clone();
+                    let server_name = tc.server_name.clone();
+                    (tc, server_name)
+                };
+                // Phase 4: invoke (outside both locks so HTTP calls don't block other operations)
+                let result = crate::mcp::invoke_tool(&mut tc, &args_clone).await;
+                // Phase 5: under state lock — propagate updated session_id, if any
+                if tc.session_id.is_some() {
+                    let mut s = state.lock().await;
+                    for t in &mut s.mcp_tools {
+                        if t.server_name == server_name {
+                            t.session_id = tc.session_id.clone();
+                        }
                     }
                 }
+                result
             };
             result
         }

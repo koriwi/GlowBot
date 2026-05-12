@@ -76,6 +76,7 @@ impl GlowBot {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
         };
 
         Ok(Self {

@@ -2,7 +2,7 @@
 
 Generated: 2026-05-12 | Last updated: 2026-05-12
 
-**Resolved:** 1.2 (send_media path traversal), 1.3 (list_media symlink traversal), 2.3 (silent ChatId(0)), 2.4 (lock poisoning panics), 2.5 (heartbeat `/stop` signal)
+**Resolved:** 1.2 (send_media path traversal), 1.3 (list_media symlink traversal), 2.3 (silent ChatId(0)), 2.4 (lock poisoning panics), 2.5 (heartbeat `/stop` signal), 2.6 (MCP session ID race condition)
 
 ---
 
@@ -157,21 +157,28 @@ The `GitRepo` instance is not passed to the callback handler, so accepted config
 
 ---
 
-### 2.6 MCP Session ID Race Condition
+### 2.6 ~~MCP Session ID Race Condition~~ ✅ FIXED
 
 **File:** `src/bot_dispatch.rs:290-315`
 
-When `invoke_tool` re-initializes a session (updates `tc.session_id`), the code propagates it to all tools from the same server. But between the re-init and propagation under the `state.lock()`:
+~~When `invoke_tool` re-initializes a session (updates `tc.session_id`), the code propagates it to all tools from the same server. But between the re-init and propagation under the `state.lock()`:~~
 
-1. Tool A fails with SessionNotFound
-2. Tool A re-initializes → gets new session ID S1
-3. Another concurrent request to the same server's Tool B happens
-4. Tool B uses the stale session ID
-5. Tool A propagates S1 under the lock
+~~1. Tool A fails with SessionNotFound~~
+~~2. Tool A re-initializes → gets new session ID S1~~
+~~3. Another concurrent request to the same server's Tool B happens~~
+~~4. Tool B uses the stale session ID~~
+~~5. Tool A propagates S1 under the lock~~
 
-The lock ordering (drop before reinit, acquire after) creates a window where concurrent tool calls see stale state.
+~~The lock ordering (drop before reinit, acquire after) creates a window where concurrent tool calls see stale state.~~
 
-**Recommendation:** Do the session re-init atomically under the state lock, or use per-server session mutexes.
+**Resolution:** Added `mcp_server_locks: HashMap<String, Arc<tokio::sync::Mutex<()>>>` to `BotState`. All MCP tool dispatch now follows a 5-phase protocol:
+1. Under state lock: get server name + blacklist check + get/create per-server mutex
+2. Acquire per-server mutex (serializes all calls to the same server)
+3. Under state lock: get tool, apply screenshot workaround, clone
+4. Outside both locks: invoke (HTTP calls don't block other operations)
+5. Under state lock: propagate updated session_id
+
+The per-server mutex in Phase 2 ensures no other request from the same server can read stale session_id between re-initialization and propagation.
 
 ---
 
@@ -472,13 +479,13 @@ While `detail_cb` and `select_cb` have tests, `format_model_status` (an async fu
 | Severity | Count | Key Issues |
 |----------|-------|------------|
 | **High** | 2 | Unbounded bash execution, SSRF via MCP |
-| **Medium** | 4 → 1 | ~~Path traversal (send_media)~~, ~~lock poisoning panics~~, ~~ChatId(0) silent failures~~, session ID race |
+| **Medium** | 4 → 0 | ~~Path traversal (send_media)~~, ~~lock poisoning panics~~, ~~ChatId(0) silent failures~~, ~~session ID race~~ |
 | **Low** | 4 → 3 | ~~Path traversal (list_media symlinks)~~, git config mutation, token in logs, silent YAML parse failures |
 | **Code Smell** | 8 | File too large, duplicated code, mixed concerns, extreme loop limit, missing error handling |
 
 The most impactful **remaining** fixes would be:
 1. Add URL allowlist/denylist for MCP server calls (1.6)
 2. Reduce `max_tool_rounds` from 64 to a reasonable value (3.5)
-3. Fix MCP session ID race condition (2.6)
-4. Resolve silent YAML parse failures (3.8)
-5. Add overall timeout on message processing (4.4)
+3. Resolve silent YAML parse failures (3.8)
+4. Add overall timeout on message processing (4.4)
+5. Fix git config mutation (1.4)

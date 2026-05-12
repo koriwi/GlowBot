@@ -48,6 +48,11 @@ pub struct BotState {
     /// Per-chat last browse callback data, used for "Back" navigation
     /// from the model detail view back to the originating browse page.
     pub last_browse_cb: HashMap<String, String>,
+    /// Per-server mutexes for MCP tool calls. Acquired before any MCP
+    /// tool invocation to serialize calls per server, preventing session
+    /// ID race conditions when a re-initialization updates the shared
+    /// session_id across all tools from that server.
+    pub mcp_server_locks: HashMap<String, Arc<tokio::sync::Mutex<()>>>,
 }
 
 impl BotState {

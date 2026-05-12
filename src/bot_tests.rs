@@ -1110,6 +1110,7 @@ async fn test_dispatch_send_message_empty_text() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1143,6 +1144,7 @@ async fn test_dispatch_send_message_no_tg_bot() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1176,6 +1178,7 @@ async fn test_dispatch_send_media_empty_file_path() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1209,6 +1212,7 @@ async fn test_dispatch_send_media_file_not_found() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1244,6 +1248,7 @@ async fn test_dispatch_send_media_no_tg_bot() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1278,6 +1283,7 @@ async fn test_dispatch_send_media_original_quality() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1316,6 +1322,7 @@ fn setup_state_with_media_dir(media_dir: &std::path::Path) -> Arc<Mutex<BotState
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     state
 }
@@ -1461,6 +1468,7 @@ async fn test_dispatch_bash_empty_command() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1495,6 +1503,7 @@ async fn test_dispatch_bash_disabled() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1532,6 +1541,7 @@ async fn test_dispatch_read_memory_missing() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1565,6 +1575,7 @@ async fn test_dispatch_update_memory_no_fields() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1598,6 +1609,7 @@ async fn test_dispatch_add_task_empty() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1631,6 +1643,7 @@ async fn test_dispatch_list_tasks_non_empty() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     // Add a task first
     dispatch_tool(
@@ -1666,6 +1679,7 @@ async fn test_dispatch_remove_task_empty_and_not_found() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1708,6 +1722,7 @@ async fn test_dispatch_create_skill_validation() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1741,6 +1756,7 @@ async fn test_dispatch_read_skill_not_found() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1774,6 +1790,7 @@ async fn test_dispatch_update_skill_not_found() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -1807,6 +1824,7 @@ async fn test_dispatch_unknown_tool() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "narnia", &serde_json::json!({}), None).await;
     assert!(out.contains("Unknown tool"));
@@ -1833,6 +1851,7 @@ async fn test_dispatch_mcp_tool_not_found() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "mcp_no_no", &serde_json::json!({}), None).await;
     assert!(out.contains("MCP tool not found"));
@@ -1859,6 +1878,7 @@ async fn test_get_recent_messages_empty_history() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2235,6 +2255,7 @@ fn test_context_usage_formatting() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     };
     // No context cached, no usage -> no token data yet
     assert_eq!(state.context_usage("-123"), "no token data yet");
@@ -2286,6 +2307,7 @@ async fn test_dispatch_search_conversations_no_model() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2316,6 +2338,7 @@ async fn test_dispatch_search_conversations_empty_query() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2346,6 +2369,7 @@ async fn test_dispatch_search_conversations_no_results() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2393,6 +2417,7 @@ async fn test_dispatch_search_conversations_with_results() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2428,6 +2453,7 @@ async fn test_dispatch_search_conversations_embedding_error() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2463,6 +2489,7 @@ async fn test_dispatch_generate_image_no_model() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -2497,6 +2524,7 @@ async fn test_dispatch_generate_image_empty_prompt() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            mcp_server_locks: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
