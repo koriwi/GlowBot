@@ -4,6 +4,7 @@ use crate::llm::LlmBackend;
 use crate::openrouter::{ModelInfo, Usage};
 use crate::skills::Skill;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 /// A pending config change awaiting user approval via inline keyboard.
@@ -48,6 +49,9 @@ pub struct BotState {
     /// Per-chat last browse callback data, used for "Back" navigation
     /// from the model detail view back to the originating browse page.
     pub last_browse_cb: HashMap<String, String>,
+    /// Global shutdown flag. Set when a config change is accepted; all
+    /// worker tasks should finish their current work and let the process exit.
+    pub shutdown_requested: Arc<AtomicBool>,
 }
 
 impl BotState {

@@ -223,15 +223,29 @@ pub async fn handle_config_callback(
                             .await;
                     }
 
-                    // Schedule restart — spawn a task so we can first send the confirmation
-                    tokio::spawn(async {
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        log::info!("Exiting for restart after config change.");
-                        std::process::exit(0);
-                    });
+                    // Set the global shutdown flag — in-flight work finishes naturally,
+                    // then the polling loop exits and the process terminates.
+                    {
+                        let s = state.lock().await;
+                        s.shutdown_requested.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
+
+                    // Send "waiting" message to the chat where the accept was clicked
+                    if let Some(tg_bot) = tg_bot {
+                        let chat_id: ChatId = match pending.chat_id.parse::<i64>() {
+                            Ok(c) => ChatId(c),
+                            Err(_) => {
+                                log::error!("Invalid chat_id for restart notification: {}", pending.chat_id);
+                                ChatId(0)
+                            }
+                        };
+                        let _ = tg_bot
+                            .send_message(chat_id, "🔄 Waiting for things to finish before restarting...")
+                            .await;
+                    }
 
                     Some((
-                        "✅ *Config Change Applied*\n\nThe bot is restarting to pick up the new configuration.".into(),
+                        "✅ *Config Change Applied*\n\nWaiting for in-flight tasks to finish before restarting...".into(),
                         None,
                     ))
                 }

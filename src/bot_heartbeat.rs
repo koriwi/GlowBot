@@ -103,7 +103,19 @@ pub async fn run_heartbeat_task(
         }
     }
 
+    // Check for shutdown before processing any tasks
+    if state.lock().await.shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+        log::info!("Heartbeat chat {}: shutdown requested, stopping", cid);
+        return;
+    }
+
     loop {
+        // Check for shutdown before each task
+        if state.lock().await.shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+            log::info!("Heartbeat chat {}: shutdown requested, stopping mid-cycle", cid);
+            return;
+        }
+
         let (task_id, task_desc) = {
             let s = state.lock().await;
             let list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
@@ -245,6 +257,12 @@ async fn process_reminder_action(
     history: &[ChatMessage],
     tg_bot: &teloxide::Bot,
 ) {
+    // Check for shutdown before processing reminder
+    if state.lock().await.shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+        log::info!("Reminder action: shutdown requested, skipping reminder '{}'", reminder_id);
+        return;
+    }
+
     let cid = chat_id.to_string();
     let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let reminder_header = format!(

@@ -114,11 +114,26 @@ async fn run_bot() -> anyhow::Result<()> {
 
     // Manual polling loop to handle both Message and CallbackQuery updates.
     // Wrapped in a restart loop to survive network timeouts/disconnects.
+    // Also checks the global shutdown flag — when set (e.g. after a config change
+    // accept), the loop drains the current update batch and exits cleanly.
+    let shutdown_flag = {
+        let b = bot.lock().await;
+        let s = b.state.lock().await;
+        s.shutdown_requested.clone()
+    };
+
     'polling: loop {
+        // If shutdown was requested since we started the last iteration, exit now.
+        if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            log::info!("Shutdown requested, stopping polling loop");
+            break 'polling;
+        }
+
         let poll_bot = tg_bot.clone();
         let poll_bot_inner = Arc::clone(&bot);
         let poll_username = bot_username.clone();
         let poll_locks = Arc::clone(&chat_locks);
+        let poll_shutdown = shutdown_flag.clone();
 
         let handle = tokio::spawn(async move {
             let mut offset: i32 = 0;
@@ -163,6 +178,13 @@ async fn run_bot() -> anyhow::Result<()> {
                                 _ => {}
                             }
                         }
+
+                        // After processing a batch of updates, check if shutdown
+                        // was requested. If so, exit the polling loop cleanly.
+                        if poll_shutdown.load(std::sync::atomic::Ordering::SeqCst) {
+                            log::info!("Shutdown requested, polling loop exiting");
+                            return;
+                        }
                     }
                     Err(e) => {
                         consecutive_errors += 1;
@@ -189,6 +211,11 @@ async fn run_bot() -> anyhow::Result<()> {
 
         match handle.await {
             Ok(()) => {
+                // Check if the task exited due to shutdown or unexpectedly.
+                if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                    log::info!("Shutdown complete, exiting main loop");
+                    break 'polling;
+                }
                 log::error!("Polling loop exited unexpectedly, restarting in 5s");
             }
             Err(e) => {
@@ -202,6 +229,7 @@ async fn run_bot() -> anyhow::Result<()> {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 
+    log::info!("GlowBot shutting down.");
     Ok(())
 }
 
@@ -343,6 +371,15 @@ async fn run_heartbeat_loop(bot: Arc<Mutex<GlowBot>>, tg_bot: Bot) {
         Arc::new(tokio::sync::Mutex::new(HashSet::new()));
 
     loop {
+        // Check for global shutdown before each heartbeat cycle
+        {
+            let inner = bot.lock().await;
+            if inner.state.lock().await.shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                log::info!("Heartbeat loop: shutdown requested, exiting");
+                return;
+            }
+        }
+
         // --- Scan for due reminders (fires even without heartbeat enabled) ---
         let reminder_chats: Vec<String> = {
             let inner = bot.lock().await;

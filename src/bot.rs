@@ -21,6 +21,7 @@ pub use self::bot_state::{BotState, PendingConfigChange, PendingModelChange};
 use crate::skills::load_all_skills;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -76,6 +77,7 @@ impl GlowBot {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
         };
 
         Ok(Self {
@@ -183,6 +185,10 @@ impl GlowBot {
             let s = self.state.lock().await;
             s.db.clone()
         };
+        let shutdown_flag = {
+            let s = self.state.lock().await;
+            s.shutdown_requested.clone()
+        };
 
         tokio::spawn(async move {
             let unembedded = match db.find_unembedded_messages() {
@@ -206,6 +212,12 @@ impl GlowBot {
             let chunker =
                 |t: &str| self::bot_pipeline::chunk_for_embedding(t, max_chars, allow_split);
             for (idx, (msg_id, text)) in unembedded.iter().enumerate() {
+                // Check for shutdown before each message
+                if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                    log::info!("Embedding backfill: shutdown requested, stopping ({} of {} done)", idx, total);
+                    return;
+                }
+
                 for chunk in &chunker(text) {
                     let text_preview: String = chunk.chars().take(80).collect();
                     match client.embeddings(&model, chunk).await {
