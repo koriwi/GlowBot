@@ -28,6 +28,11 @@ pub struct Database {
 }
 
 impl Database {
+    /// Lock the connection, recovering from poison if a previous holder panicked.
+    fn lock_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Open (or create) the database at the given path and run migrations.
     ///
     /// Uses `sqldiff --schema` to diff a reference database (built from
@@ -70,7 +75,7 @@ impl Database {
         limit: usize,
         since: Option<i64>,
     ) -> anyhow::Result<Vec<ChatMessage>> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.lock_conn();
 
         let sql = if since.is_some() {
             "SELECT role, content, reasoning, name, tool_calls, tool_call_id
@@ -139,7 +144,7 @@ impl Database {
         chat_id: &str,
         messages: &[ChatMessage],
     ) -> anyhow::Result<Vec<i64>> {
-        let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut conn = self.lock_conn();
         let tx = conn.transaction()?;
         let now = chrono::Utc::now().timestamp();
 
@@ -178,7 +183,7 @@ impl Database {
 
     /// Delete all messages for a given chat (e.g. on `/clear`).
     pub fn clear_messages(&self, chat_id: &str) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.lock_conn();
         conn.execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])?;
         Ok(())
     }
@@ -186,7 +191,7 @@ impl Database {
     /// Set the "forget" cutoff timestamp for a chat. Messages with `created_at <= cutoff_at`
     /// are excluded from future `load_messages` calls when `since` is provided.
     pub fn set_cutoff(&self, chat_id: &str, cutoff_at: i64) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.lock_conn();
         conn.execute(
             "INSERT INTO chat_cutoffs (chat_id, cutoff_at) VALUES (?1, ?2)
              ON CONFLICT(chat_id) DO UPDATE SET cutoff_at = ?2",
@@ -197,7 +202,7 @@ impl Database {
 
     /// Get the cutoff timestamp for a chat, if set.
     pub fn get_cutoff(&self, chat_id: &str) -> anyhow::Result<Option<i64>> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.lock_conn();
         let mut stmt = conn.prepare("SELECT cutoff_at FROM chat_cutoffs WHERE chat_id = ?1")?;
         let result = stmt
             .query_row(params![chat_id], |row| row.get(0))

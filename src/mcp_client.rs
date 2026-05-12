@@ -237,14 +237,14 @@ impl McpClient {
 
     /// Discover tools from the server.
     /// Parse tool entries from a `tools/list` response result into McpTool structs.
-pub(super) fn parse_tools_from_result(&self, result: &serde_json::Value, session_id: Option<&str>) -> Vec<McpTool> {
+    pub(super) fn parse_tools_from_result(&self, result: &serde_json::Value, session_id: Option<&str>) -> Vec<McpTool> {
         let tools_array = result
             .get("tools")
             .and_then(|t| t.as_array())
             .cloned()
             .unwrap_or_default();
 
-        let session_id = session_id.map(|s| s.to_string()).clone();
+        let session_id = session_id.map(|s| s.to_string());
         tools_array
             .into_iter()
             .filter_map(|t| {

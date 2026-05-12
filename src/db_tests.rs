@@ -538,7 +538,7 @@ fn test_load_messages_with_since_filters_correctly() {
 
     // Manually set created_at to distinct values so we can test filtering
     {
-        let conn = db.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = db.lock_conn();
         conn.execute("UPDATE messages SET created_at = 100 WHERE rowid = 1", [])
             .unwrap();
         conn.execute("UPDATE messages SET created_at = 200 WHERE rowid = 2", [])

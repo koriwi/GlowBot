@@ -62,12 +62,24 @@ pub mod mock {
             }
         }
 
+        fn lock_responses(&self) -> std::sync::MutexGuard<'_, Vec<ChatCompletionResponse>> {
+            self.responses.lock().unwrap_or_else(|e| e.into_inner())
+        }
+
+        fn lock_embeddings(&self) -> std::sync::MutexGuard<'_, Vec<Vec<f32>>> {
+            self.embedding_responses.lock().unwrap_or_else(|e| e.into_inner())
+        }
+
+        fn check_error(&self) -> bool {
+            *self.should_error.lock().unwrap_or_else(|e| e.into_inner())
+        }
+
         pub fn add_response(&self, response: ChatCompletionResponse) {
-            self.responses.lock().unwrap_or_else(|e| e.into_inner()).push(response);
+            self.lock_responses().push(response);
         }
 
         pub fn add_embedding(&self, embedding: Vec<f32>) {
-            self.embedding_responses.lock().unwrap_or_else(|e| e.into_inner()).push(embedding);
+            self.lock_embeddings().push(embedding);
         }
 
         pub fn set_error(&self, error: bool) {
@@ -87,10 +99,10 @@ pub mod mock {
             &self,
             _request: &ChatCompletionRequest,
         ) -> anyhow::Result<ChatCompletionResponse> {
-            if *self.should_error.lock().unwrap_or_else(|e| e.into_inner()) {
+            if self.check_error() {
                 return Err(anyhow::anyhow!("Mock LLM error"));
             }
-            let mut responses = self.responses.lock().unwrap_or_else(|e| e.into_inner());
+            let mut responses = self.lock_responses();
             if responses.is_empty() {
                 // Return a simple text response
                 Ok(ChatCompletionResponse {
@@ -112,10 +124,10 @@ pub mod mock {
         }
 
         async fn embeddings(&self, _model: &str, _input: &str) -> anyhow::Result<Vec<f32>> {
-            if *self.should_error.lock().unwrap_or_else(|e| e.into_inner()) {
+            if self.check_error() {
                 return Err(anyhow::anyhow!("Mock embedding error"));
             }
-            let mut embeddings = self.embedding_responses.lock().unwrap_or_else(|e| e.into_inner());
+            let mut embeddings = self.lock_embeddings();
             if embeddings.is_empty() {
                 Ok(vec![0.1, 0.2, 0.3, 0.4])
             } else {

@@ -4,6 +4,22 @@ use crate::openrouter::{ChatContent, ContentPart};
 use super::Database;
 
 impl Database {
+    /// Extract readable text from a serialised ChatContent JSON string.
+    fn text_from_content_json(content_json: &str) -> Option<String> {
+        let text = match serde_json::from_str::<ChatContent>(content_json) {
+            Ok(ChatContent::Text(t)) => t,
+            Ok(ChatContent::Parts(parts)) => parts
+                .iter()
+                .filter_map(|p| match p {
+                    ContentPart::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
+            Err(_) => return None,
+        };
+        if text.is_empty() { None } else { Some(text) }
+    }
     /// Pack a slice of f32 values into a little-endian byte blob.
     pub fn pack_embedding(embedding: &[f32]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(embedding.len() * 4);
@@ -27,7 +43,7 @@ impl Database {
         embedding: &[f32],
         model: &str,
     ) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.lock_conn();
         let blob = Self::pack_embedding(embedding);
         let now = chrono::Utc::now().timestamp();
         conn.execute(
@@ -40,7 +56,7 @@ impl Database {
 
     /// Delete embeddings where the model doesn't match (e.g. after config change).
     pub fn cleanup_mismatched_embeddings(&self, model: &str) -> anyhow::Result<usize> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.lock_conn();
         let count = conn.execute(
             "DELETE FROM message_embeddings WHERE model != ?1",
             params![model],
@@ -51,7 +67,7 @@ impl Database {
     /// Find message IDs that have no embedding (for backfill).
     /// Returns (message_id, text_content) pairs.
     pub fn find_unembedded_messages(&self) -> anyhow::Result<Vec<(i64, String)>> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT m.id, m.content
              FROM messages m
@@ -67,19 +83,7 @@ impl Database {
         let mut results = Vec::new();
         for row in rows {
             let (id, content_json) = row?;
-            let text = match serde_json::from_str::<ChatContent>(&content_json) {
-                Ok(ChatContent::Text(t)) => t,
-                Ok(ChatContent::Parts(parts)) => parts
-                    .iter()
-                    .map(|p| match p {
-                        ContentPart::Text { text } => text.clone(),
-                        _ => String::new(),
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" "),
-                Err(_) => continue,
-            };
-            if !text.is_empty() {
+            if let Some(text) = Self::text_from_content_json(&content_json) {
                 results.push((id, text));
             }
         }
@@ -95,7 +99,7 @@ impl Database {
         model: &str,
         limit: usize,
     ) -> anyhow::Result<Vec<(i64, f32, String)>> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.lock_conn();
 
         // Load only the N newest embeddings for this chat (by message_id DESC)
         let mut stmt = conn.prepare(
@@ -127,21 +131,9 @@ impl Database {
         let mut scored: Vec<(i64, f32, String)> = Vec::new();
         for row in rows {
             let raw = row?;
-            let text = match serde_json::from_str::<ChatContent>(&raw.content_json) {
-                Ok(ChatContent::Text(t)) => t,
-                Ok(ChatContent::Parts(parts)) => parts
-                    .iter()
-                    .map(|p| match p {
-                        ContentPart::Text { text } => text.clone(),
-                        _ => String::new(),
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" "),
-                Err(_) => continue,
-            };
-            if text.is_empty() {
+            let Some(text) = Self::text_from_content_json(&raw.content_json) else {
                 continue;
-            }
+            };
 
             let stored_vec = Self::unpack_embedding(&raw.embedding_blob);
             if stored_vec.len() != query_embedding.len() {
