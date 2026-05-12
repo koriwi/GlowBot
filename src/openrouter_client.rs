@@ -3,12 +3,15 @@ use super::{
 };
 
 /// Truncate a string to `max_len` characters, appending "..." if truncated.
+/// Whitespace is trimmed first so binary/whitespace-heavy bodies don't
+/// produce empty log lines.
 pub(crate) fn truncate_str(s: &str, max_len: usize) -> String {
-    let char_count = s.chars().count();
+    let trimmed = s.trim();
+    let char_count = trimmed.chars().count();
     if char_count <= max_len {
-        s.to_string()
+        trimmed.to_string()
     } else {
-        format!("{}...", s.chars().take(max_len).collect::<String>())
+        format!("{}...", trimmed.chars().take(max_len).collect::<String>())
     }
 }
 
@@ -136,6 +139,12 @@ impl OpenRouterClient {
                 truncate_str(&body_text, 500)
             )
         })?;
+        if completion.choices.is_empty() {
+            log::warn!(
+                "OpenRouter returned 200 OK but with empty choices (likely a provider error wrapped by OpenRouter). Body: {}",
+                truncate_str(&body_text, 500)
+            );
+        }
         Ok(completion)
     }
 }

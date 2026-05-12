@@ -181,6 +181,17 @@ fn test_chat_completion_response_deserialization() {
 }
 
 #[test]
+fn test_chat_completion_response_missing_choices() {
+    // OpenRouter sometimes returns error responses without a `choices` field.
+    let json = serde_json::json!({
+        "error": {"message": "Provider returned error", "code": 400}
+    });
+    let resp: ChatCompletionResponse = serde_json::from_value(json).unwrap();
+    assert!(resp.choices.is_empty());
+    assert!(resp.usage.is_none());
+}
+
+#[test]
 fn test_chat_completion_response_with_tool_calls() {
     let json = serde_json::json!({
         "choices": [{
@@ -319,6 +330,41 @@ fn test_deserialize_usage() {
     assert_eq!(u.prompt_tokens, 1234);
     assert_eq!(u.completion_tokens, 56);
     assert_eq!(u.total_tokens, 1290);
+}
+
+#[test]
+fn test_deserialize_usage_floats() {
+    // Some OpenRouter providers emit token counts as floats (e.g. 10813.44).
+    let json = serde_json::json!({
+        "prompt_tokens": 10813.44,
+        "completion_tokens": 289.0,
+        "total_tokens": 11102.44
+    });
+    let u: Usage = serde_json::from_value(json).unwrap();
+    assert_eq!(u.prompt_tokens, 10813);
+    assert_eq!(u.completion_tokens, 289);
+    assert_eq!(u.total_tokens, 11102);
+}
+
+#[test]
+fn test_deserialize_usage_null_fields() {
+    let json = serde_json::json!({
+        "prompt_tokens": null,
+        "completion_tokens": 42,
+        "total_tokens": 42
+    });
+    let u: Usage = serde_json::from_value(json).unwrap();
+    assert_eq!(u.prompt_tokens, 0);
+    assert_eq!(u.completion_tokens, 42);
+}
+
+#[test]
+fn test_deserialize_usage_missing_fields() {
+    let json = serde_json::json!({});
+    let u: Usage = serde_json::from_value(json).unwrap();
+    assert_eq!(u.prompt_tokens, 0);
+    assert_eq!(u.completion_tokens, 0);
+    assert_eq!(u.total_tokens, 0);
 }
 
 #[test]
@@ -661,6 +707,15 @@ fn test_truncate_str() {
     assert_eq!(truncate_str("", 5), "");
     // Multi-byte boundary: takes first 3 chars, not bytes
     assert_eq!(truncate_str("héllo world", 3), "hél...");
+}
+
+#[test]
+fn test_truncate_str_trims_whitespace() {
+    // Prevents empty log lines when the body is mostly whitespace
+    // (e.g. binary image data interpreted as string).
+    assert_eq!(truncate_str("  \n  \n  ", 5), "");
+    assert_eq!(truncate_str("\n\n  hello  \n", 5), "hello");
+    assert_eq!(truncate_str("  \n  abcdefgh  \n", 5), "abcde...");
 }
 
 #[test]

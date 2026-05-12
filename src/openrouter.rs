@@ -298,11 +298,57 @@ pub struct ImageConfig {
 }
 
 /// Token usage from a chat completion response.
-#[derive(Debug, Deserialize, Default, Clone)]
+/// Uses `deserialize_u64_flexible` so both integers (12345) and
+/// floating-point values (10813.44) from OpenRouter providers are accepted.
+#[derive(Debug, Default, Clone)]
 pub struct Usage {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
     pub total_tokens: u64,
+}
+
+impl<'de> serde::Deserialize<'de> for Usage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            #[serde(default, deserialize_with = "deserialize_u64_flexible")]
+            prompt_tokens: u64,
+            #[serde(default, deserialize_with = "deserialize_u64_flexible")]
+            completion_tokens: u64,
+            #[serde(default, deserialize_with = "deserialize_u64_flexible")]
+            total_tokens: u64,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        Ok(Usage {
+            prompt_tokens: raw.prompt_tokens,
+            completion_tokens: raw.completion_tokens,
+            total_tokens: raw.total_tokens,
+        })
+    }
+}
+
+/// Helper: deserialize a `u64` from a JSON value that may be either
+/// an integer or a floating-point number (some OpenRouter providers
+/// emit token counts as floats, e.g. 10813.44).
+fn deserialize_u64_flexible<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(deserializer)?;
+    match v {
+        serde_json::Value::Number(n) => n
+            .as_u64()
+            .or_else(|| n.as_f64().map(|f| f as u64))
+            .ok_or_else(|| serde::de::Error::custom(format!("cannot convert number to u64: {}", n))),
+        serde_json::Value::Null => Ok(0),
+        _ => Err(serde::de::Error::custom(format!(
+            "expected number, got {}",
+            v
+        ))),
+    }
 }
 
 /// Model architecture metadata from OpenRouter's /api/v1/models endpoint.
@@ -386,8 +432,11 @@ impl ModelInfo {
 }
 
 /// A response from OpenRouter's chat completions API.
+/// `choices` defaults to empty vec so error responses that omit the field
+/// (e.g. provider-level errors wrapped by OpenRouter) don't break deserialization.
 #[derive(Debug, Deserialize, Default)]
 pub struct ChatCompletionResponse {
+    #[serde(default)]
     pub choices: Vec<Choice>,
     #[serde(default)]
     pub usage: Option<Usage>,
