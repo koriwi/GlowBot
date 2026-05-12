@@ -173,8 +173,8 @@ pub(crate) async fn tool_send_media(
         Err(e) => return format!("Error: cannot resolve path '{}': {}", file_path, e),
     };
     let media_base = std::path::PathBuf::from(&media_dir);
-    let media_base = media_base.canonicalize().unwrap_or_else(|_| media_base.clone());
-    let data_base = data_dir.canonicalize().unwrap_or_else(|_| data_dir.clone());
+    let media_base = media_base.canonicalize().unwrap_or(media_base);
+    let data_base = data_dir.canonicalize().unwrap_or(data_dir);
     if !full_path.starts_with(&data_base) && !full_path.starts_with(&media_base) {
         return format!(
             "Error: file path '{}' resolves outside allowed directories (data: {}, media: {})",

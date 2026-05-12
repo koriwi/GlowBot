@@ -257,7 +257,7 @@ async fn handle_message(
     };
 
     // /stop bypasses the per-chat lock: just set the stop signal and return
-    if text.as_deref().map(|t| t.trim() == "/stop").unwrap_or(false) {
+    if text.as_deref().is_some_and(|t| t.trim() == "/stop") {
         if let Ok(signals) = stop_signals.lock() {
             if let Some(signal) = signals.get(&chat_id) {
                 signal.store(true, std::sync::atomic::Ordering::SeqCst);

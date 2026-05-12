@@ -42,7 +42,6 @@ pub(crate) fn log_tool_call_to(
             f.write_all(line.as_bytes())
         });
 
-    // Emit a warning when tools return errors, info otherwise
     let is_error = result.starts_with("Error")
         || result.contains("parse error")
         || result.contains("HTTP")

@@ -2,12 +2,19 @@ use super::bot_dispatch::dispatch_tool_calls;
 use super::BotState;
 use crate::openrouter::{ChatCompletionRequest, ChatMessage};
 use std::sync::Arc;
+use teloxide::types::ChatId;
 use tokio::sync::Mutex;
 
-/// Run a heartbeat background task for a chat. Uses the state directly.
-/// Each task is processed at most once per cycle. We iterate through
-/// all tasks, skipping any already handled this cycle. The loop exits
-/// when every remaining task has been tried.
+fn parse_chat_id(cid: &str) -> Option<ChatId> {
+    match cid.parse::<i64>() {
+        Ok(id) => Some(ChatId(id)),
+        Err(_) => {
+            log::error!("Heartbeat: cannot parse chat_id '{}' as i64", cid);
+            None
+        }
+    }
+}
+
 pub async fn run_heartbeat_task(
     state: Arc<Mutex<BotState>>,
     _git_repo: crate::git::GitRepo,
@@ -82,15 +89,8 @@ pub async fn run_heartbeat_task(
                 } else {
                     // Simple reminder: just send the description.
                     let msg = format!("⏰ Reminder: {}", reminder_desc);
-                    if let Ok(cid_i64) = cid.parse::<i64>() {
-                        crate::bot_send::send_message(
-                            &tg_bot,
-                            teloxide::types::ChatId(cid_i64),
-                            &msg,
-                        )
-                        .await;
-                    } else {
-                        log::error!("Heartbeat: cannot parse chat_id '{}' as i64", cid);
+                    if let Some(chat) = parse_chat_id(&cid) {
+                        crate::bot_send::send_message(&tg_bot, chat, &msg).await;
                     }
                 }
 
@@ -196,16 +196,9 @@ pub async fn run_heartbeat_task(
                     }
                     Err(e) => {
                         log::error!("Heartbeat LLM error: {}", e);
-                        if let Ok(cid_i64) = cid.parse::<i64>() {
+                        if let Some(chat) = parse_chat_id(&cid) {
                             let msg = format!("⚠️ Task '{}' failed: LLM error — {}", task_id, e);
-                            crate::bot_send::send_message(
-                                &tg_bot,
-                                teloxide::types::ChatId(cid_i64),
-                                &msg,
-                            )
-                            .await;
-                        } else {
-                            log::error!("Heartbeat: cannot parse chat_id '{}' as i64", cid);
+                            crate::bot_send::send_message(&tg_bot, chat, &msg).await;
                         }
                         break;
                     }
@@ -329,15 +322,8 @@ async fn process_reminder_action(
                         "⏰ Reminder: {}\n⚠️ Action failed: LLM error — {}",
                         description, e
                     );
-                    if let Ok(cid_i64) = cid.parse::<i64>() {
-                        crate::bot_send::send_message(
-                            tg_bot,
-                            teloxide::types::ChatId(cid_i64),
-                            &msg,
-                        )
-                        .await;
-                    } else {
-                        log::error!("Heartbeat: cannot parse chat_id '{}' as i64", cid);
+                    if let Some(chat) = parse_chat_id(&cid) {
+                        crate::bot_send::send_message(tg_bot, chat, &msg).await;
                     }
                     return;
                 }
