@@ -61,7 +61,7 @@ pub(crate) async fn process_with_llm_impl(
 
     // Set up stop signal for this chat (clear any previous signal)
     {
-        let mut signals = stop_signals.lock().unwrap();
+        let mut signals = stop_signals.lock().unwrap_or_else(|e| e.into_inner());
         signals
             .entry(chat_id.to_string())
             .or_insert_with(|| Arc::new(std::sync::atomic::AtomicBool::new(false)))

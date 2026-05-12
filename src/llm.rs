@@ -63,15 +63,15 @@ pub mod mock {
         }
 
         pub fn add_response(&self, response: ChatCompletionResponse) {
-            self.responses.lock().unwrap().push(response);
+            self.responses.lock().unwrap_or_else(|e| e.into_inner()).push(response);
         }
 
         pub fn add_embedding(&self, embedding: Vec<f32>) {
-            self.embedding_responses.lock().unwrap().push(embedding);
+            self.embedding_responses.lock().unwrap_or_else(|e| e.into_inner()).push(embedding);
         }
 
         pub fn set_error(&self, error: bool) {
-            *self.should_error.lock().unwrap() = error;
+            *self.should_error.lock().unwrap_or_else(|e| e.into_inner()) = error;
         }
     }
 
@@ -87,10 +87,10 @@ pub mod mock {
             &self,
             _request: &ChatCompletionRequest,
         ) -> anyhow::Result<ChatCompletionResponse> {
-            if *self.should_error.lock().unwrap() {
+            if *self.should_error.lock().unwrap_or_else(|e| e.into_inner()) {
                 return Err(anyhow::anyhow!("Mock LLM error"));
             }
-            let mut responses = self.responses.lock().unwrap();
+            let mut responses = self.responses.lock().unwrap_or_else(|e| e.into_inner());
             if responses.is_empty() {
                 // Return a simple text response
                 Ok(ChatCompletionResponse {
@@ -112,10 +112,10 @@ pub mod mock {
         }
 
         async fn embeddings(&self, _model: &str, _input: &str) -> anyhow::Result<Vec<f32>> {
-            if *self.should_error.lock().unwrap() {
+            if *self.should_error.lock().unwrap_or_else(|e| e.into_inner()) {
                 return Err(anyhow::anyhow!("Mock embedding error"));
             }
-            let mut embeddings = self.embedding_responses.lock().unwrap();
+            let mut embeddings = self.embedding_responses.lock().unwrap_or_else(|e| e.into_inner());
             if embeddings.is_empty() {
                 Ok(vec![0.1, 0.2, 0.3, 0.4])
             } else {

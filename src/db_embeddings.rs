@@ -27,7 +27,7 @@ impl Database {
         embedding: &[f32],
         model: &str,
     ) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let blob = Self::pack_embedding(embedding);
         let now = chrono::Utc::now().timestamp();
         conn.execute(
@@ -40,7 +40,7 @@ impl Database {
 
     /// Delete embeddings where the model doesn't match (e.g. after config change).
     pub fn cleanup_mismatched_embeddings(&self, model: &str) -> anyhow::Result<usize> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let count = conn.execute(
             "DELETE FROM message_embeddings WHERE model != ?1",
             params![model],
@@ -51,7 +51,7 @@ impl Database {
     /// Find message IDs that have no embedding (for backfill).
     /// Returns (message_id, text_content) pairs.
     pub fn find_unembedded_messages(&self) -> anyhow::Result<Vec<(i64, String)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare(
             "SELECT m.id, m.content
              FROM messages m
@@ -95,7 +95,7 @@ impl Database {
         model: &str,
         limit: usize,
     ) -> anyhow::Result<Vec<(i64, f32, String)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         // Load only the N newest embeddings for this chat (by message_id DESC)
         let mut stmt = conn.prepare(

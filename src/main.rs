@@ -274,7 +274,7 @@ async fn handle_message(
 
     // Acquire per-chat lock for normal message processing
     let chat_lock = {
-        let mut locks = chat_locks.lock().unwrap();
+        let mut locks = chat_locks.lock().unwrap_or_else(|e| e.into_inner());
         locks
             .entry(chat_id.clone())
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))

@@ -2,6 +2,7 @@ use crate::config::McpServer;
 use super::McpTool;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 /// The JSON-RPC request body for MCP.
 #[derive(Debug, Serialize)]
@@ -32,7 +33,7 @@ pub(crate) struct McpClient {
     server: McpServer,
     http: reqwest::Client,
     request_id: std::sync::atomic::AtomicU64,
-    pub(crate) session_id: std::sync::Mutex<Option<String>>,
+    pub(crate) session_id: Mutex<Option<String>>,
 }
 
 impl McpClient {
@@ -41,7 +42,7 @@ impl McpClient {
             server,
             http: reqwest::Client::new(),
             request_id: std::sync::atomic::AtomicU64::new(1),
-            session_id: std::sync::Mutex::new(None),
+            session_id: Mutex::new(None),
         }
     }
 
@@ -90,7 +91,7 @@ impl McpClient {
 
         // Include session ID for streamable transport
         if self.server.transport == "streamable" {
-            if let Some(ref sid) = *self.session_id.lock().unwrap() {
+            if let Some(ref sid) = *self.session_id.lock().await {
                 log::debug!("MCP '{}': using session id {}", self.server.name, sid);
                 req = req.header("Mcp-Session-Id", sid);
             }
@@ -198,7 +199,7 @@ impl McpClient {
                         if let Some(sid) =
                             headers.get("mcp-session-id").and_then(|v| v.to_str().ok())
                         {
-                            *self.session_id.lock().unwrap() = Some(sid.to_string());
+                            *self.session_id.lock().await = Some(sid.to_string());
                             log::info!(
                                 "MCP '{}': session established (protocol {}, session={})",
                                 self.server.name,
@@ -236,14 +237,14 @@ impl McpClient {
 
     /// Discover tools from the server.
     /// Parse tool entries from a `tools/list` response result into McpTool structs.
-pub(super) fn parse_tools_from_result(&self, result: &serde_json::Value) -> Vec<McpTool> {
+pub(super) fn parse_tools_from_result(&self, result: &serde_json::Value, session_id: Option<&str>) -> Vec<McpTool> {
         let tools_array = result
             .get("tools")
             .and_then(|t| t.as_array())
             .cloned()
             .unwrap_or_default();
 
-        let session_id = self.session_id.lock().unwrap().clone();
+        let session_id = session_id.map(|s| s.to_string()).clone();
         tools_array
             .into_iter()
             .filter_map(|t| {
@@ -297,7 +298,8 @@ pub(super) fn parse_tools_from_result(&self, result: &serde_json::Value) -> Vec<
             );
             let result = self.rpc_call("tools/list", params).await?;
 
-            let page_tools = self.parse_tools_from_result(&result);
+            let sid = self.session_id.lock().await.clone();
+            let page_tools = self.parse_tools_from_result(&result, sid.as_deref());
             log::debug!(
                 "MCP '{}': page {} returned {} tools",
                 self.server.name,

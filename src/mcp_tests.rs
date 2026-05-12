@@ -47,7 +47,7 @@ async fn test_mcp_client_initialize_success() {
     let client = McpClient::new(test_server(&mock.uri()));
     client.initialize().await.unwrap();
 
-    let sid = client.session_id.lock().unwrap().clone();
+    let sid = client.session_id.lock().await.clone();
     assert_eq!(sid, Some("sess123".to_string()));
 }
 
@@ -618,7 +618,7 @@ fn test_parse_tools_missing_description() {
             {"name": "no-desc", "inputSchema": {"type": "object"}}
         ]
     });
-    let tools = client.parse_tools_from_result(&result);
+    let tools = client.parse_tools_from_result(&result, None);
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name, "no-desc");
     assert_eq!(tools[0].description, "");
@@ -632,7 +632,7 @@ fn test_parse_tools_missing_input_schema() {
             {"name": "no-schema", "description": "just a tool"}
         ]
     });
-    let tools = client.parse_tools_from_result(&result);
+    let tools = client.parse_tools_from_result(&result, None);
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name, "no-schema");
     assert_eq!(tools[0].input_schema, serde_json::json!({}));
@@ -646,7 +646,7 @@ fn test_parse_tools_missing_both_optional_fields() {
             {"name": "bare-minimum"}
         ]
     });
-    let tools = client.parse_tools_from_result(&result);
+    let tools = client.parse_tools_from_result(&result, None);
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name, "bare-minimum");
     assert_eq!(tools[0].description, "");

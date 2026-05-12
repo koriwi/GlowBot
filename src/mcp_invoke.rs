@@ -143,7 +143,7 @@ pub(crate) async fn reinitialize_mcp_session(tool: &McpTool) -> Option<String> {
         return None;
     }
 
-    let sid = client.session_id.lock().unwrap().clone();
+    let sid = client.session_id.lock().await.clone();
     sid
 }
 
