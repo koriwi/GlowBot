@@ -26,7 +26,12 @@ pub(crate) async fn tool_list_media(
 ) -> String {
     let subpath = args["subpath"].as_str().unwrap_or("");
     let media_dir = { state.lock().await.config.media_dir.clone() };
+    // Canonicalize base early so all containment checks below are anchored
+    // against the real path (resolves symlinks, normalizes trailing slashes, etc.).
+    // If canonicalize fails (e.g. directory doesn't exist yet), fall back to the
+    // raw path — the walk will still canonicalize individual entries.
     let base = std::path::PathBuf::from(&media_dir);
+    let base = base.canonicalize().unwrap_or_else(|_| base.clone());
     let target = if subpath.is_empty() {
         base.clone()
     } else {
@@ -82,16 +87,22 @@ pub(crate) async fn tool_list_media(
             if *overflow {
                 return;
             }
-            let rel = path.strip_prefix(base).unwrap_or(&path);
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("???");
-            if path.is_dir() {
+            // Canonicalize every entry to resolve symlinks and prevent traversal
+            // outside the base directory. Entries that escape are silently skipped.
+            let canonical = match path.canonicalize() {
+                Ok(p) if p.starts_with(base) => p,
+                _ => continue,
+            };
+            let rel = canonical.strip_prefix(base).unwrap_or(&canonical);
+            let name = canonical.file_name().and_then(|n| n.to_str()).unwrap_or("???");
+            if canonical.is_dir() {
                 if entries.len() >= max {
                     *overflow = true;
                     return;
                 }
                 entries.push(format!("{}📁 {}/", prefix, name));
                 walk(
-                    &path,
+                    &canonical,
                     base,
                     &format!("{}  ", prefix),
                     entries,
@@ -103,7 +114,7 @@ pub(crate) async fn tool_list_media(
                     *overflow = true;
                     return;
                 }
-                let size = std::fs::metadata(&path).ok().map(|m| m.len()).unwrap_or(0);
+                let size = std::fs::metadata(&canonical).ok().map(|m| m.len()).unwrap_or(0);
                 entries.push(format!(
                     "{}📄 {} ({})",
                     prefix,
@@ -142,14 +153,35 @@ pub(crate) async fn tool_send_media(
     }
     let caption = args["caption"].as_str().unwrap_or("");
     let original_quality = args["original_quality"].as_bool().unwrap_or(false);
-    let data_dir = { state.lock().await.data_dir.clone() };
-    let full_path = if std::path::Path::new(file_path).is_absolute() {
+    let (data_dir, media_dir) = {
+        let s = state.lock().await;
+        (s.data_dir.clone(), s.config.media_dir.clone())
+    };
+    let resolved = if std::path::Path::new(file_path).is_absolute() {
         std::path::PathBuf::from(file_path)
     } else {
         data_dir.join(file_path)
     };
-    if !full_path.exists() {
-        return format!("Error: file not found: {}", full_path.display());
+    if !resolved.exists() {
+        return format!("Error: file not found: {}", resolved.display());
+    }
+    // Canonicalize to resolve symlinks and prevent path traversal.
+    // Only allow files inside data_dir or media_dir (the two user-accessible
+    // directories). Everything else is rejected.
+    let full_path = match resolved.canonicalize() {
+        Ok(p) => p,
+        Err(e) => return format!("Error: cannot resolve path '{}': {}", file_path, e),
+    };
+    let media_base = std::path::PathBuf::from(&media_dir);
+    let media_base = media_base.canonicalize().unwrap_or_else(|_| media_base.clone());
+    let data_base = data_dir.canonicalize().unwrap_or_else(|_| data_dir.clone());
+    if !full_path.starts_with(&data_base) && !full_path.starts_with(&media_base) {
+        return format!(
+            "Error: file path '{}' resolves outside allowed directories (data: {}, media: {})",
+            file_path,
+            data_base.display(),
+            media_base.display()
+        );
     }
     if let Some(bot) = tg_bot {
         let chat = ChatId(chat_id.parse().unwrap_or_default());
