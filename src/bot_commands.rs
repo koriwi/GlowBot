@@ -286,10 +286,11 @@ pub(crate) async fn handle_bot_command_impl(
         if let Some(bot) = tg_bot {
             let state_clone = Arc::clone(state);
             let git_clone = _git_repo.clone();
+            let stop_clone = Arc::clone(stop_signals);
             let cid = chat_id.to_string();
             let tg_clone = bot.clone();
             tokio::spawn(async move {
-                crate::bot::run_heartbeat_task(state_clone, git_clone, &cid, tg_clone).await;
+                crate::bot::run_heartbeat_task(state_clone, git_clone, stop_clone, &cid, tg_clone).await;
             });
             return Ok(Some("🔄 Running task agent for this chat now...".into()));
         }

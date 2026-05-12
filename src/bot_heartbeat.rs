@@ -1,6 +1,8 @@
 use super::bot_dispatch::dispatch_tool_calls;
 use super::BotState;
 use crate::openrouter::{ChatCompletionRequest, ChatMessage};
+use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use teloxide::types::ChatId;
 use tokio::sync::Mutex;
@@ -18,10 +20,23 @@ fn parse_chat_id(cid: &str) -> Option<ChatId> {
 pub async fn run_heartbeat_task(
     state: Arc<Mutex<BotState>>,
     _git_repo: crate::git::GitRepo,
+    stop_signals: Arc<std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>>,
     chat_id: &str,
     tg_bot: teloxide::Bot,
 ) {
     let cid = chat_id.to_string();
+
+    let check_stopped = || -> bool {
+        if let Ok(signals) = stop_signals.lock() {
+            signals
+                .get(chat_id)
+                .map(|s| s.load(std::sync::atomic::Ordering::SeqCst))
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    };
+
     let mut tried_this_cycle: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Load conversation history once per heartbeat cycle, using the configured
@@ -63,6 +78,10 @@ pub async fn run_heartbeat_task(
             drop(s); // release lock before async operations
 
             for reminder in due {
+                if check_stopped() {
+                    break;
+                }
+
                 let reminder_id = reminder.id.clone();
                 let reminder_desc = reminder.description.clone();
                 let reminder_action = reminder.action.clone();
@@ -78,6 +97,7 @@ pub async fn run_heartbeat_task(
                     // Run the LLM agent to perform the action.
                     process_reminder_action(
                         &state,
+                        &stop_signals,
                         &cid,
                         &reminder_id,
                         &reminder_desc,
@@ -170,6 +190,11 @@ pub async fn run_heartbeat_task(
         let mut turn_messages = vec![ChatMessage::user(&task_header)];
 
         for _ in 0..10 {
+            if check_stopped() {
+                log::info!("Heartbeat chat {}: stopped before LLM round", cid);
+                break;
+            }
+
             // Build trimmed request using the same logic as the regular pipeline
             let (request_messages, _) = crate::openrouter::build_trimmed_request(
                 context_limit,
@@ -239,6 +264,7 @@ pub async fn run_heartbeat_task(
 /// Runs the LLM agent to perform the action, then the caller removes the reminder.
 async fn process_reminder_action(
     state: &Arc<tokio::sync::Mutex<BotState>>,
+    stop_signals: &Arc<std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>>,
     chat_id: &str,
     reminder_id: &str,
     description: &str,
@@ -247,6 +273,17 @@ async fn process_reminder_action(
     tg_bot: &teloxide::Bot,
 ) {
     let cid = chat_id.to_string();
+
+    let check_stopped = || -> bool {
+        if let Ok(signals) = stop_signals.lock() {
+            signals
+                .get(chat_id)
+                .map(|s| s.load(std::sync::atomic::Ordering::SeqCst))
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    };
     let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let reminder_header = format!(
         "## Reminder Triggered\n\
@@ -289,6 +326,14 @@ async fn process_reminder_action(
     let mut turn_messages = vec![ChatMessage::user(&reminder_header)];
 
     for _ in 0..10 {
+        if check_stopped() {
+            log::info!(
+                "Heartbeat reminder {}: stopped before LLM round",
+                reminder_id
+            );
+            break;
+        }
+
         let (request_messages, _) = crate::openrouter::build_trimmed_request(
             context_limit,
             &[system_msg.clone()],

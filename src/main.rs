@@ -377,11 +377,11 @@ async fn run_heartbeat_loop(bot: Arc<Mutex<GlowBot>>, tg_bot: Bot) {
                 let active_clone = Arc::clone(&active);
                 let cid = chat_id.clone();
                 tokio::spawn(async move {
-                    let (state, git_repo) = {
+                    let (state, git_repo, stop_signals) = {
                         let inner = bot_clone.lock().await;
-                        (inner.state.clone(), inner.git_repo.clone())
+                        (inner.state.clone(), inner.git_repo.clone(), inner.stop_signals.clone())
                     };
-                    glowbot::bot::run_heartbeat_task(state, git_repo, &cid, tg_clone.clone()).await;
+                    glowbot::bot::run_heartbeat_task(state, git_repo, stop_signals, &cid, tg_clone.clone()).await;
                     active_clone.lock().await.remove(&chat_id);
                 });
             }
@@ -450,12 +450,12 @@ async fn run_chat_heartbeat(
             break;
         }
 
-        let (state, git_repo) = {
+        let (state, git_repo, stop_signals) = {
             let inner = bot.lock().await;
-            (inner.state.clone(), inner.git_repo.clone())
+            (inner.state.clone(), inner.git_repo.clone(), inner.stop_signals.clone())
         };
 
-        glowbot::bot::run_heartbeat_task(state, git_repo, &chat_id, tg_bot.clone()).await;
+        glowbot::bot::run_heartbeat_task(state, git_repo, stop_signals, &chat_id, tg_bot.clone()).await;
 
         // After running tasks, check if there are any tasks remaining.
         // If the task list is empty, exit the loop so the chat becomes

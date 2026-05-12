@@ -1936,7 +1936,7 @@ async fn test_heartbeat_no_tasks() {
     let mock_llm = Arc::new(MockLlmBackend::new());
     let bot = GlowBot::new_with_llm(&data_dir, mock_llm).await.unwrap();
     let tg_bot = teloxide::Bot::new("ignored");
-    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), bot.stop_signals.clone(), "-123", tg_bot).await;
 }
 
 #[tokio::test]
@@ -1994,7 +1994,7 @@ async fn test_heartbeat_completes_task() {
     });
 
     let tg_bot = teloxide::Bot::new("ignored");
-    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), bot.stop_signals.clone(), "-123", tg_bot).await;
 
     let list = crate::tasks::TaskList::load(&data_dir.join("chats"), "-123").unwrap_or_default();
     assert!(list.tasks.is_empty());
@@ -2021,7 +2021,7 @@ async fn test_heartbeat_llm_error() {
     mock_llm.set_error(true);
 
     let tg_bot = teloxide::Bot::new("ignored");
-    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), bot.stop_signals.clone(), "-123", tg_bot).await;
 
     // task should still be there after error
     let list = crate::tasks::TaskList::load(&data_dir.join("chats"), "-123").unwrap_or_default();
@@ -2101,7 +2101,7 @@ async fn test_heartbeat_two_tasks_first_uncompleted() {
     });
 
     let tg_bot = teloxide::Bot::new("ignored");
-    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), "-123", tg_bot).await;
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), bot.stop_signals.clone(), "-123", tg_bot).await;
 
     let list = crate::tasks::TaskList::load(&data_dir.join("chats"), "-123").unwrap_or_default();
     assert_eq!(list.tasks.len(), 1, "task one should still be pending");
