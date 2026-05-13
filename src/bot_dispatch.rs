@@ -42,11 +42,9 @@ pub(crate) fn log_tool_call_to(
             f.write_all(line.as_bytes())
         });
 
-    let is_error = result.starts_with("Error")
-        || result.contains("parse error")
-        || result.contains("HTTP")
-        || result.contains("request failed")
-        || result.contains("RPC error");
+    let is_error = ["Error", "parse error", "HTTP", "request failed", "RPC error"]
+        .iter()
+        .any(|pat| result.contains(pat));
     if is_error {
         log::warn!(
             "tool {} error (args: {}): {}",
@@ -243,7 +241,6 @@ pub(crate) async fn dispatch_tool(
             bot_dispatch_skills::tool_update_skill(state, args).await
         }
         name if name.starts_with("mcp_") => {
-            let tool_name = name.to_string();
             let mut args_clone = args.clone();
             {
                 // Phase 1: under state lock — look up tool, check blacklist, clone, get per-server lock.
@@ -252,14 +249,14 @@ pub(crate) async fn dispatch_tool(
                     let idx = s
                         .mcp_tools
                         .iter()
-                        .position(|t| format!("mcp_{}_{}", t.server_name, t.name) == tool_name);
+                        .position(|t| format!("mcp_{}_{}", t.server_name, t.name) == name);
                     let idx = match idx {
                         Some(i) => i,
-                        None => return format!("MCP tool not found: {}", tool_name),
+                        None => return format!("MCP tool not found: {}", name),
                     };
                     let srv = s.mcp_tools[idx].server_name.clone();
-                    if !s.config.is_mcp_server_allowed(chat_id, &srv) {
-                        return format!("MCP tool blacklisted for this chat: {}", tool_name);
+                    if !s.config.is_mcp_server_allowed(&cid, &srv) {
+                        return format!("MCP tool blacklisted for this chat: {}", name);
                     }
                     let server_lock = s
                         .mcp_server_locks
@@ -269,7 +266,7 @@ pub(crate) async fn dispatch_tool(
                     // Workaround for Playwright MCP server bug: the server
                     // doesn't respect the output dir for named fullpage
                     // screenshots, so we prepend the pw-media path here.
-                    if tool_name.contains("screenshot") {
+                    if name.contains("screenshot") {
                         for key in &["filename", "name"] {
                             if let Some(name_val) = args_clone.get(*key).and_then(|v| v.as_str()) {
                                 if !name_val.is_empty()

@@ -2,6 +2,12 @@ use crate::config::McpServer;
 use super::McpTool;
 use super::mcp_client::{JsonRpcRequest, JsonRpcResponse, McpClient};
 
+/// Truncate a response body to 500 chars for log/error messages.
+fn preview(body: &str) -> &str {
+    let end = body.char_indices().take(500).last().map(|(i, c)| i + c.len_utf8()).unwrap_or(body.len());
+    &body[..end.min(body.len())]
+}
+
 /// Invoke an MCP tool over HTTP once (no session recovery).
 pub(crate) async fn invoke_tool_once(tool: &McpTool, arguments: &serde_json::Value) -> String {
     let tool_label = format!("mcp_{}_{}", tool.server_name, tool.name);
@@ -46,15 +52,15 @@ pub(crate) async fn invoke_tool_once(tool: &McpTool, arguments: &serde_json::Val
             let status = response.status();
             let body_text = response.text().await.unwrap_or_default();
             if !status.is_success() {
-                let preview: String = body_text.chars().take(500).collect();
+                let short = preview(&body_text);
                 log::warn!(
                     "{} HTTP {} from {}: {}",
                     tool_label,
                     status.as_u16(),
                     tool.server_url,
-                    preview
+                    short
                 );
-                return format!("{} HTTP {}: {}", tool_label, status.as_u16(), preview);
+                return format!("{} HTTP {}: {}", tool_label, status.as_u16(), short);
             }
             match serde_json::from_str::<JsonRpcResponse>(&body_text) {
                 Ok(rpc) => {
@@ -67,18 +73,18 @@ pub(crate) async fn invoke_tool_once(tool: &McpTool, arguments: &serde_json::Val
                     }
                 }
                 Err(e) => {
-                    let preview: String = body_text.chars().take(500).collect();
+                    let short = preview(&body_text);
                     log::warn!(
                         "{} failed to parse response ({} bytes) from {}: {} | body: {}",
                         tool_label,
                         body_text.len(),
                         tool.server_url,
                         e,
-                        preview
+                        short
                     );
                     format!(
                         "{} parse error: {} | body (first 500 chars): {}",
-                        tool_label, e, preview
+                        tool_label, e, short
                     )
                 }
             }
@@ -159,8 +165,9 @@ pub(crate) async fn invoke_tool_impl(
     let result = invoke_tool_once(tool, arguments).await;
 
     // Detect stale session: HTTP 500 with "Session not found" (session expired server-side)
+    let result_lower = result.to_lowercase();
     let is_session_lost =
-        result.contains("HTTP 500") && result.to_lowercase().contains("session not found");
+        result_lower.contains("http 500") && result_lower.contains("session not found");
 
     if is_session_lost {
         // Serialize re-initialization per server to avoid double re-inits.
@@ -177,7 +184,6 @@ pub(crate) async fn invoke_tool_impl(
             tool.name
         );
 
-        // Reborrow as immutable for the reinit call
         if let Some(new_session_id) = reinitialize_mcp_session(&*tool).await {
             tool.session_id = Some(new_session_id);
             log::info!(
