@@ -192,25 +192,17 @@ async fn test_process_message_command_tools_with_mcp() {
     {
         let mut s = bot.state.lock().await;
         s.mcp_tools = vec![
-            crate::mcp::McpTool {
+            crate::mcp::McpToolInfo {
                 server_name: "test-server".into(),
                 name: "greet".into(),
                 description: "Say hello".into(),
                 input_schema: serde_json::json!({}),
-                server_url: "http://localhost:9999".into(),
-                api_key: None,
-                session_id: None,
-                transport: "streamable".into(),
             },
-            crate::mcp::McpTool {
+            crate::mcp::McpToolInfo {
                 server_name: "test-server".into(),
                 name: "calculate".into(),
                 description: "Do math".into(),
                 input_schema: serde_json::json!({}),
-                server_url: "http://localhost:9999".into(),
-                api_key: None,
-                session_id: None,
-                transport: "streamable".into(),
             },
         ];
         s.config.mcp_servers = vec![crate::config::McpServer {

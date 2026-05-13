@@ -21,7 +21,7 @@ async fn test_dispatch_search_conversations_no_model() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -52,7 +52,7 @@ async fn test_dispatch_search_conversations_empty_query() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -83,7 +83,7 @@ async fn test_dispatch_search_conversations_no_results() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -131,7 +131,7 @@ async fn test_dispatch_search_conversations_with_results() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -167,7 +167,7 @@ async fn test_dispatch_search_conversations_embedding_error() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -203,7 +203,7 @@ async fn test_dispatch_generate_image_no_model() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -238,7 +238,7 @@ async fn test_dispatch_generate_image_empty_prompt() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,

@@ -310,7 +310,7 @@ fn test_context_usage_formatting() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     };
     // No context cached, no usage -> no token data yet
     assert_eq!(state.context_usage("-123"), "no token data yet");

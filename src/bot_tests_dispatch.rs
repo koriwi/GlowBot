@@ -185,15 +185,11 @@ async fn test_build_tools_includes_mcp() {
     assert!(tools.iter().any(|t| t.function.name == "bash"));
 
     // Add a fake MCP tool
-    state.mcp_tools.push(crate::mcp::McpTool {
+    state.mcp_tools.push(crate::mcp::McpToolInfo {
         server_name: "test-srv".into(),
         name: "test_tool".into(),
         description: "A test".into(),
         input_schema: serde_json::json!({"type": "object"}),
-        server_url: "https://example.com".into(),
-        api_key: None,
-        session_id: None,
-        transport: "streamable".into(),
     });
 
     let tools = state.build_tools(true, "-123");
@@ -225,15 +221,11 @@ async fn test_build_tools_mcp_blacklist() {
     let mut state = bot.state.lock().await;
 
     // Add a fake MCP tool
-    state.mcp_tools.push(crate::mcp::McpTool {
+    state.mcp_tools.push(crate::mcp::McpToolInfo {
         server_name: "test-srv".into(),
         name: "test_tool".into(),
         description: "A test".into(),
         input_schema: serde_json::json!({"type": "object"}),
-        server_url: "https://example.com".into(),
-        api_key: None,
-        session_id: None,
-        transport: "streamable".into(),
     });
 
     // Chat "-456" has the server blacklisted — MCP tool should be excluded

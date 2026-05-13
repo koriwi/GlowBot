@@ -19,7 +19,7 @@ async fn test_dispatch_add_task_empty() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -53,7 +53,7 @@ async fn test_dispatch_list_tasks_non_empty() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     // Add a task first
     dispatch_tool(
@@ -89,7 +89,7 @@ async fn test_dispatch_remove_task_empty_and_not_found() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -132,7 +132,7 @@ async fn test_dispatch_create_skill_validation() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -166,7 +166,7 @@ async fn test_dispatch_read_skill_not_found() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -200,7 +200,7 @@ async fn test_dispatch_update_skill_not_found() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -234,7 +234,7 @@ async fn test_dispatch_unknown_tool() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "narnia", &serde_json::json!({}), None).await;
     assert!(out.contains("Unknown tool"));
@@ -261,7 +261,7 @@ async fn test_dispatch_mcp_tool_not_found() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(&state, "-123", "mcp_no_no", &serde_json::json!({}), None).await;
     assert!(out.contains("MCP tool not found"));
@@ -288,7 +288,7 @@ async fn test_get_recent_messages_empty_history() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,

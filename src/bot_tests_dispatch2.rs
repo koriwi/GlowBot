@@ -21,7 +21,7 @@ async fn test_dispatch_send_message_empty_text() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -55,7 +55,7 @@ async fn test_dispatch_send_message_no_tg_bot() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -89,7 +89,7 @@ async fn test_dispatch_send_media_empty_file_path() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -123,7 +123,7 @@ async fn test_dispatch_send_media_file_not_found() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -159,7 +159,7 @@ async fn test_dispatch_send_media_no_tg_bot() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -194,7 +194,7 @@ async fn test_dispatch_send_media_original_quality() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -233,7 +233,7 @@ fn setup_state_with_media_dir(media_dir: &std::path::Path) -> Arc<Mutex<BotState
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     state
 }
@@ -379,7 +379,7 @@ async fn test_dispatch_bash_empty_command() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -414,7 +414,7 @@ async fn test_dispatch_bash_disabled() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -452,7 +452,7 @@ async fn test_dispatch_read_memory_missing() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,
@@ -486,7 +486,7 @@ async fn test_dispatch_update_memory_no_fields() {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
+            _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
     let out = dispatch_tool(
         &state,

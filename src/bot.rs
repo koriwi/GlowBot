@@ -49,7 +49,8 @@ impl GlowBot {
         }
 
         // Discover MCP server tools
-        let mcp_tools = crate::mcp::discover_all(&config.mcp_servers).await?;
+        let (mcp_services, mcp_tools) =
+            crate::mcp::discover_all(&config.mcp_servers).await?;
         if !mcp_tools.is_empty() {
             log::info!(
                 "Loaded {} MCP tools from {} server(s)",
@@ -57,6 +58,10 @@ impl GlowBot {
                 config.mcp_servers.len()
             );
         }
+        let mcp_peers: std::collections::HashMap<_, _> = mcp_services
+            .iter()
+            .map(|c| (c.server_name.clone(), c.peer()))
+            .collect();
 
         let schema_dir = std::env::var("GLOWBOT_SCHEMA_DIR")
             .map(std::path::PathBuf::from)
@@ -69,6 +74,8 @@ impl GlowBot {
             data_dir: data_dir.to_path_buf(),
             db: Database::new(&data_dir.join("conversations.db"), &schema_dir)?,
             mcp_tools,
+            _mcp_services: mcp_services,
+            mcp_peers,
             model_metadata: HashMap::new(),
             model_order: Vec::new(),
             last_usage: HashMap::new(),
@@ -76,7 +83,6 @@ impl GlowBot {
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
             last_browse_cb: HashMap::new(),
-            mcp_server_locks: HashMap::new(),
         };
 
         Ok(Self {

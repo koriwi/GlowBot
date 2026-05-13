@@ -1,7 +1,7 @@
 use super::BotState;
 use crate::config::McpServer;
 use crate::git::GitRepo;
-use crate::mcp::McpTool;
+use crate::mcp::McpToolInfo;
 use crate::openrouter::{OpenRouterClient, ToolDefinition};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -351,9 +351,9 @@ pub(crate) async fn handle_bot_command_impl(
 /// Format the /tools command output: MCP server summary at top, then grouped tool list.
 fn format_tools_output(
     builtin_tools: &[ToolDefinition],
-    mcp_tools: &[&McpTool],
-    all_mcp_tools: &[McpTool],
-    mcp_blacklisted: &[&McpTool],
+    mcp_tools: &[&McpToolInfo],
+    all_mcp_tools: &[McpToolInfo],
+    mcp_blacklisted: &[&McpToolInfo],
     mcp_servers: &[McpServer],
 ) -> String {
     let mut out = String::new();
