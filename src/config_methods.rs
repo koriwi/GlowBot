@@ -131,6 +131,22 @@ impl Config {
             .or(self.openrouter.image_gen_model.as_deref())
     }
 
+    /// Get the effective advice model for a chat.
+    /// For DMs, checks the `dms` entry first. Returns None if no advice model is configured anywhere.
+    pub fn advice_model_for_chat(&self, chat_id: &str) -> Option<&str> {
+        if !chat_id.starts_with('-') {
+            if let Some(dm) = self.dms.get(chat_id) {
+                if dm.advice_model.is_some() {
+                    return dm.advice_model.as_deref();
+                }
+            }
+        }
+        self.chats
+            .get(chat_id)
+            .and_then(|c| c.advice_model.as_deref())
+            .or(self.openrouter.advice_model.as_deref())
+    }
+
     /// Get the effective heartbeat interval for a chat (global default if not overridden).
     /// Returns None if disabled (set to 0).
     /// For DMs, checks the `dms` entry first.
@@ -184,6 +200,7 @@ pub(crate) fn basic_config() -> Config {
             audio_fallback_model: None,
             image_gen_model: None,
             embedding_model: None,
+            advice_model: None,
         },
         conversation: ConversationConfig::default(),
         db: DatabaseConfig::default(),

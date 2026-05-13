@@ -73,6 +73,9 @@ pub struct ChatConfig {
     /// Override the global image generation model for this chat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_gen_model: Option<String>,
+    /// Override the global advice model for this chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advice_model: Option<String>,
 }
 
 /// Per-DM configuration override.
@@ -106,6 +109,9 @@ pub struct DmConfig {
     /// Override the global image generation model for this DM.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_gen_model: Option<String>,
+    /// Override the global advice model for this DM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advice_model: Option<String>,
 }
 
 /// Database-related configuration.
@@ -134,6 +140,18 @@ pub struct ConversationConfig {
     /// Set to `Some(0)` to give heartbeat tasks no conversation history.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub heartbeat_recent_messages_window_size: Option<usize>,
+    /// Number of recent messages (including tool calls and results) sent to the advice model
+    /// when the LLM calls the `ask_advisor` tool. Default: 5.
+    #[serde(default = "default_advice_recent_messages_window_size")]
+    pub advice_recent_messages_window_size: usize,
+    /// Whether to include reasoning/thinking blocks from assistant messages when
+    /// sending conversation context to the advice model. Default: false.
+    #[serde(default)]
+    pub advice_include_reasoning: bool,
+}
+
+fn default_advice_recent_messages_window_size() -> usize {
+    5
 }
 
 impl Default for ConversationConfig {
@@ -142,6 +160,8 @@ impl Default for ConversationConfig {
             recent_messages_window_size: default_recent_messages_window_size(),
             include_reasoning: false,
             heartbeat_recent_messages_window_size: None,
+            advice_recent_messages_window_size: default_advice_recent_messages_window_size(),
+            advice_include_reasoning: false,
         }
     }
 }
@@ -201,6 +221,11 @@ pub struct OpenRouterConfig {
     /// Example: "openai/text-embedding-3-small"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding_model: Option<String>,
+    /// Model used for the `ask_advisor` tool. When set, the LLM can call this tool
+    /// to query a larger/smarter model for advice. When None, the tool is disabled.
+    /// No default — must be explicitly configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advice_model: Option<String>,
 }
 
 /// Global application configuration.

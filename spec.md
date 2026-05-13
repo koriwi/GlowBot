@@ -47,12 +47,15 @@ telegram_token: "..."
 # OpenRouter
 openrouter_api_key: "..."
 openrouter_default_model: "anthropic/claude-sonnet-4"
+openrouter_advice_model: "openai/gpt-4o"   # optional; when set enables ask_advisor tool
 
 # Conversation context settings
 conversation:
   recent_messages_window_size: 20   # number of recent messages (default: 20)
   include_reasoning: false           # include LLM reasoning/thinking in next requests (default: false)
   heartbeat_recent_messages_window_size: 10   # optional — conversation history messages for heartbeat tasks; falls back to recent_messages_window_size if unset; 0 = no history
+  advice_recent_messages_window_size: 5   # number of recent messages sent to advice model via ask_advisor (default: 5)
+  advice_include_reasoning: false         # include reasoning blocks in advice model context (default: false)
 
 # Database settings
 db:
@@ -71,6 +74,7 @@ dms:
     system_prompt: ""                    # optional per-DM system prompt
     heartbeat_interval_minutes: 30
     bash_enabled: true
+    advice_model: "openai/gpt-4o"   # optional, override global advice model
 
 # Group-specific overrides (keyed by Telegram chat ID, negative)
 chats:
@@ -80,6 +84,7 @@ chats:
     interaction_whitelist: []            # user IDs; empty = everyone allowed
     commands_enabled: false               # whether bot commands are enabled
     system_prompt: ""                    # optional per-chat system prompt
+    advice_model: "openai/gpt-4o"        # optional, override global advice model
 ```
 
 `/commands` at runtime can modify settings for the active chat (if commands are enabled for that chat).
@@ -147,10 +152,11 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
   - **`create_reminder`, `list_reminders`, `remove_reminder`** — manage time-based reminders. See §4.7a.
   - **`get_model_info`** — returns current model, base model, specifier, config default, override status, available specifiers, and cached metadata (context length, pricing).
   - **`propose_model_change`** — proposes a model change to the user with Accept/Deny buttons. Takes `model_id` and/or `specifier`. If accepted, the model is temporarily switched (persists until `/model_default` resets it).
+  - **`ask_advisor`** — calls a separate, larger/smarter advice model for a second opinion. Enabled only when `openrouter.advice_model` is configured (no default). Takes `query` (string). Sends recent conversation messages (controlled by `conversation.advice_recent_messages_window_size`) plus the query to the advice model and returns its response.
   - **`read_config_schema`** — returns the JSON Schema for all config types.
   - **`read_config`** — returns the current config as YAML.
   - **`edit_config`** — proposes config changes via Accept/Deny dialog.
-  - **`send_message`** — send a plain text message to the current chat. **Only exposed during heartbeat/background task processing**; normal conversation relies on the assistant reply being sent automatically. The agent uses this sparingly (at most once per task) to report completion or deliver results that the user explicitly requested.
+  - **`send_message`** — send a plain text message to the current chat. Always exposed — in normal conversations it's for headsup/intermediate messages (used sparingly); in heartbeat tasks for completion reports.
   - **`get_recent_messages`** — returns the last N messages from the conversation history. The bot does NOT automatically send past messages — only the current user message is included in each request. The LLM must call this tool when it needs context from earlier in the conversation.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
 
@@ -478,6 +484,7 @@ Whitelists contain Telegram user IDs.
 - [x] Typing indicator while LLM is processing
 - [x] MarkdownV2 rendering via `telegram-markdown-v2` crate with plain text fallback
 - [x] Media ingest: images and audio (native multimodal or fallback conversion)
+- [x] `ask_advisor` tool — optional second-opinion from a larger/smarter model via `openrouter.advice_model` config
 
 ### Explicitly out of scope for v1
 

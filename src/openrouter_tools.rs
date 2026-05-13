@@ -83,11 +83,13 @@ pub(crate) fn update_memory_tool_definition() -> ToolDefinition {
 /// When `model` is Some, adds the search_conversations RAG tool.
 /// `media_dir` is the configured media directory path, shown in the send_media description.
 /// `image_gen_model` enables the `generate_image` tool.
+/// `advice_model` enables the `ask_advisor` tool.
 pub fn all_tool_definitions(
     include_bash: bool,
     embedding_model: Option<&str>,
     media_dir: &str,
     image_gen_model: Option<&str>,
+    advice_model: Option<&str>,
 ) -> Vec<ToolDefinition> {
     let mut tools = vec![
         read_memory_tool_definition(),
@@ -113,6 +115,9 @@ pub fn all_tool_definitions(
     tools.push(send_media_tool_definition(media_dir));
     if image_gen_model.is_some() {
         tools.push(generate_image_tool_definition(media_dir));
+    }
+    if advice_model.is_some() {
+        tools.push(ask_advisor_tool_definition(advice_model.unwrap()));
     }
     if include_bash {
         tools.insert(0, bash_tool_definition());
@@ -604,6 +609,34 @@ pub(crate) fn get_model_info_tool_definition() -> ToolDefinition {
                 "type": "object",
                 "properties": {},
                 "required": []
+            }),
+        },
+    }
+}
+
+/// The ask_advisor tool definition.
+/// When an advice model is configured, the LLM can call this tool to get a second opinion
+/// from a larger/smarter model. The tool sends the query plus recent conversation context
+/// to the advice model and returns its response.
+pub(crate) fn ask_advisor_tool_definition(advice_model: &str) -> ToolDefinition {
+    let desc = format!(
+        "Ask for a second opinion or advice from a more capable model ({}). Use this when you need deeper analysis, a second perspective, or want to leverage a larger model's reasoning on a complex question. Provide a clear, self-contained query and optionally specify how many recent messages of conversation context to include.",
+        advice_model
+    );
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "ask_advisor".into(),
+            description: desc,
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The question or problem to ask the advisor model. Be clear and self-contained."
+                    }
+                },
+                "required": ["query"]
             }),
         },
     }

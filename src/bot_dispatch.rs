@@ -350,6 +350,103 @@ pub(crate) async fn dispatch_tool(
         "propose_model_change" => {
             bot_dispatch_model::tool_propose_model_change(state, &cid, args, tg_bot).await
         }
+        "ask_advisor" => {
+            let query = args["query"].as_str().unwrap_or("");
+            if query.is_empty() {
+                return "Error: query required".into();
+            }
+
+            // Get advice model, window size, and reasoning setting from config
+            let (advice_model, window_size, include_reasoning, db) = {
+                let s = state.lock().await;
+                let advice_model = match s.config.advice_model_for_chat(&cid) {
+                    Some(m) => m.to_string(),
+                    None => return "Error: advice model not configured — the ask_advisor tool is disabled.".into(),
+                };
+                let window_size = s.config.conversation.advice_recent_messages_window_size;
+                let include_reasoning = s.config.conversation.advice_include_reasoning;
+                let db = s.db.clone();
+                (advice_model, window_size, include_reasoning, db)
+            };
+
+            // Load recent messages from the conversation (limited by advice window size)
+            let recent_messages = if window_size > 0 {
+                match db.load_messages(&cid, window_size, None) {
+                    Ok(msgs) => msgs,
+                    Err(e) => {
+                        log::error!("ask_advisor: failed to load messages: {}", e);
+                        vec![]
+                    }
+                }
+            } else {
+                vec![]
+            };
+
+            // Build messages for the advice model
+            let mut advice_messages: Vec<ChatMessage> = vec![
+                ChatMessage::system(
+                    "You are an advisor model. A smaller/cheaper AI model is asking for your help \
+                     with a question in an ongoing conversation. Below is the recent conversation \
+                     history, followed by the specific question. Respond helpfully with your best \
+                     analysis, opinion, or recommendation. Be concise and direct — the original \
+                     model will relay your response to the user."
+                ),
+            ];
+
+            for msg in &recent_messages {
+                // Skip reasoning unless configured to include it
+                let reasoning = if include_reasoning {
+                    msg.reasoning.clone()
+                } else {
+                    None
+                };
+                advice_messages.push(ChatMessage {
+                    role: msg.role.clone(),
+                    content: msg.content.clone(),
+                    name: msg.name.clone(),
+                    tool_calls: msg.tool_calls.clone(),
+                    tool_call_id: msg.tool_call_id.clone(),
+                    reasoning,
+                });
+            }
+
+            advice_messages.push(ChatMessage::user(&format!(
+                "Here is my question. Please give me your best analysis and advice:\n\n{}",
+                query
+            )));
+
+            // Call the advice model via the LLM backend
+            let request = crate::openrouter::ChatCompletionRequest {
+                model: advice_model,
+                messages: advice_messages,
+                tools: None,
+                tool_choice: None,
+                modalities: None,
+                image_config: None,
+            };
+
+            let llm = { state.lock().await.llm.clone() };
+            match llm.chat_completion(&request).await {
+                Ok(resp) => {
+                    let text = resp
+                        .choices
+                        .into_iter()
+                        .next()
+                        .and_then(|c| c.message.content)
+                        .unwrap_or_default();
+                    // Include usage info if available
+                    let usage_info = match &resp.usage {
+                        Some(u) if u.total_tokens > 0 => {
+                            format!("\n\n[Advisor model usage: {} prompt + {} completion = {} total tokens]",
+                                u.prompt_tokens, u.completion_tokens, u.total_tokens)
+                        }
+                        _ => String::new(),
+                    };
+                    format!("Advisor response:\n{}{}", text, usage_info)
+                }
+                Err(e) => format!("Error calling advisor model: {}", e),
+            }
+        }
         "search_conversations" => {
             let query = args["query"].as_str().unwrap_or("");
             if query.is_empty() {

@@ -16,12 +16,17 @@ openrouter:
   # Embedding model for conversation vector search (RAG) — disabled by default.
   # When set, every message is embedded and stored. Example: "openai/text-embedding-3-small"
   # embedding_model: "openai/text-embedding-3-small"
+  # Advice model for the ask_advisor tool — when set, the LLM can call a larger/smarter
+  # model for advice. No default — tool is disabled when not configured.
+  # advice_model: "openai/gpt-4o"
 
 # Conversation context settings
 conversation:
   recent_messages_window_size: 20    # number of recent messages loaded from DB as context (default: 20)
   include_reasoning: false           # include model's reasoning/thinking in subsequent requests (default: false)
   # heartbeat_recent_messages_window_size: 10  # optional — number of recent messages loaded as context for heartbeat tasks; when unset falls back to recent_messages_window_size; set to 0 for no history (default: unset)
+  advice_recent_messages_window_size: 5   # number of recent messages sent to advice model via ask_advisor (default: 5)
+  advice_include_reasoning: false         # include reasoning blocks when sending context to advice model (default: false)
 
 # Database settings
 db:
@@ -63,6 +68,7 @@ dms:
   #   image_fallback_model: "openai/gpt-4o"   # optional, override global image fallback model
   #   audio_fallback_model: "google/gemini-2.5-flash"  # optional, override global audio fallback model
   #   image_gen_model: "black-forest-labs/flux-1.1-pro"  # optional, override global image gen model
+  #   advice_model: "openai/gpt-4o"          # optional, override global advice model
 
 # Group-specific overrides (keyed by Telegram chat ID, negative)
 chats:
@@ -78,4 +84,5 @@ chats:
   #   image_fallback_model: "openai/gpt-4o"  # optional, override global image fallback model
   #   audio_fallback_model: "google/gemini-2.5-flash"  # optional, override global audio fallback model
   #   image_gen_model: "black-forest-labs/flux-1.1-pro"  # optional, override global image gen model
+  #   advice_model: "openai/gpt-4o"      # optional, override global advice model
   #   mcp_blacklist: []                    # optional, MCP server names to exclude for this chat (e.g. ["homeassistant"])
