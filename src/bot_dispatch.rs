@@ -247,7 +247,7 @@ pub(crate) async fn dispatch_tool(
             let mut args_clone = args.clone();
             let result = {
                 // Phase 1: under state lock — get server name, per-server lock, blacklist check
-                let (srv_name, server_lock, blacklisted) = {
+                let (_srv_name, server_lock, blacklisted) = {
                     let mut s = state.lock().await;
                     let tool_idx = s
                         .mcp_tools
@@ -270,12 +270,8 @@ pub(crate) async fn dispatch_tool(
                 if blacklisted {
                     return format!("MCP tool blacklisted for this chat: {}", tool_name);
                 }
-                // Phase 2: hold per-server lock for the entire invoke+propagate sequence.
-                // This serializes all calls to the same MCP server so that session
-                // re-initialization and propagation is atomic per server. No other
-                // request for this server can read stale session_id while we re-init.
-                let _server_guard = server_lock.lock().await;
-                // Phase 3: under state lock — get tool, apply screenshot workaround, clone
+                // Phase 2: under state lock — get tool, apply screenshot workaround, clone.
+                // Per-server lock is NOT held here — normal tool calls are fully concurrent.
                 let (mut tc, server_name) = {
                     let s = state.lock().await;
                     let tool_idx = s
@@ -302,9 +298,12 @@ pub(crate) async fn dispatch_tool(
                     let server_name = tc.server_name.clone();
                     (tc, server_name)
                 };
-                // Phase 4: invoke (outside both locks so HTTP calls don't block other operations)
-                let result = crate::mcp::invoke_tool(&mut tc, &args_clone).await;
-                // Phase 5: under state lock — propagate updated session_id, if any
+                // Phase 3: invoke (outside state lock so HTTP calls don't block other ops).
+                // The per-server lock is passed through but only acquired inside
+                // invoke_tool_impl during the rare session re-init path.
+                let result =
+                    crate::mcp::invoke_tool_impl(&mut tc, &args_clone, Some(&server_lock)).await;
+                // Phase 4: under state lock — propagate updated session_id, if any
                 if tc.session_id.is_some() {
                     let mut s = state.lock().await;
                     for t in &mut s.mcp_tools {

@@ -151,6 +151,17 @@ pub(crate) async fn reinitialize_mcp_session(tool: &McpTool) -> Option<String> {
 /// On HTTP 500 "Session not found", automatically re-initializes the session,
 /// updates `tool.session_id` in place, and retries once.
 pub async fn invoke_tool(tool: &mut McpTool, arguments: &serde_json::Value) -> String {
+    invoke_tool_impl(tool, arguments, None).await
+}
+
+/// Internal implementation with optional per-server lock for session re-init serialization.
+/// When `server_lock` is provided, it is only acquired during session re-initialization
+/// (not during normal tool calls), preventing thundering-herd re-inits on session expiry.
+pub async fn invoke_tool_impl(
+    tool: &mut McpTool,
+    arguments: &serde_json::Value,
+    server_lock: Option<&tokio::sync::Mutex<()>>,
+) -> String {
     let result = invoke_tool_once(tool, arguments).await;
 
     // Detect stale session: HTTP 500 with "Session not found" (session expired server-side)
@@ -158,6 +169,14 @@ pub async fn invoke_tool(tool: &mut McpTool, arguments: &serde_json::Value) -> S
         result.contains("HTTP 500") && result.to_lowercase().contains("session not found");
 
     if is_session_lost {
+        // Serialize re-initialization per server to avoid double re-inits.
+        // Normal tool calls never touch this lock — only the rare re-init path does.
+        let _guard = if let Some(lock) = server_lock {
+            Some(lock.lock().await)
+        } else {
+            None
+        };
+
         log::info!(
             "MCP session expired for {}/{}, attempting re-initialization",
             tool.server_name,

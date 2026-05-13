@@ -171,14 +171,11 @@ The `GitRepo` instance is not passed to the callback handler, so accepted config
 
 ~~The lock ordering (drop before reinit, acquire after) creates a window where concurrent tool calls see stale state.~~
 
-**Resolution:** Added `mcp_server_locks: HashMap<String, Arc<tokio::sync::Mutex<()>>>` to `BotState`. All MCP tool dispatch now follows a 5-phase protocol:
-1. Under state lock: get server name + blacklist check + get/create per-server mutex
-2. Acquire per-server mutex (serializes all calls to the same server)
-3. Under state lock: get tool, apply screenshot workaround, clone
-4. Outside both locks: invoke (HTTP calls don't block other operations)
-5. Under state lock: propagate updated session_id
+**Resolution:** Added `mcp_server_locks: HashMap<String, Arc<tokio::sync::Mutex<()>>>` to `BotState`. The per-server lock is **only acquired during session re-initialization** (inside `invoke_tool_impl`), not during normal tool calls:
+- Normal tool calls: fully concurrent across all chats — no blocking
+- Session re-init: serialized per server to prevent thundering-herd re-inits on session expiry
 
-The per-server mutex in Phase 2 ensures no other request from the same server can read stale session_id between re-initialization and propagation.
+The race itself is harmless (both calls succeed on retry, just double re-init). This fix prevents the double re-init while keeping normal tool calls unblocked.
 
 ---
 
