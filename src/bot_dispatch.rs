@@ -245,65 +245,56 @@ pub(crate) async fn dispatch_tool(
         name if name.starts_with("mcp_") => {
             let tool_name = name.to_string();
             let mut args_clone = args.clone();
-            let result = {
-                // Phase 1: under state lock — get server name, per-server lock, blacklist check
-                let (_srv_name, server_lock, blacklisted) = {
+            {
+                // Phase 1: under state lock — look up tool, check blacklist, clone, get per-server lock.
+                let (mut tc, server_name, server_lock) = {
                     let mut s = state.lock().await;
-                    let tool_idx = s
+                    let idx = s
                         .mcp_tools
                         .iter()
                         .position(|t| format!("mcp_{}_{}", t.server_name, t.name) == tool_name);
-                    match tool_idx {
-                        Some(idx) => {
-                            let srv = s.mcp_tools[idx].server_name.clone();
-                            let blacklisted = !s.config.is_mcp_server_allowed(chat_id, &srv);
-                            let server_lock = s
-                                .mcp_server_locks
-                                .entry(srv.clone())
-                                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-                                .clone();
-                            (srv, server_lock, blacklisted)
-                        }
+                    let idx = match idx {
+                        Some(i) => i,
                         None => return format!("MCP tool not found: {}", tool_name),
+                    };
+                    let srv = s.mcp_tools[idx].server_name.clone();
+                    if !s.config.is_mcp_server_allowed(chat_id, &srv) {
+                        return format!("MCP tool blacklisted for this chat: {}", tool_name);
                     }
-                };
-                if blacklisted {
-                    return format!("MCP tool blacklisted for this chat: {}", tool_name);
-                }
-                // Phase 2: under state lock — get tool, apply screenshot workaround, clone.
-                // Per-server lock is NOT held here — normal tool calls are fully concurrent.
-                let (mut tc, server_name) = {
-                    let s = state.lock().await;
-                    let tool_idx = s
-                        .mcp_tools
-                        .iter()
-                        .position(|t| format!("mcp_{}_{}", t.server_name, t.name) == tool_name)
-                        .expect("tool vanished between lock acquisitions");
+                    let server_lock = s
+                        .mcp_server_locks
+                        .entry(srv.clone())
+                        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                        .clone();
                     // Workaround for Playwright MCP server bug: the server
                     // doesn't respect the output dir for named fullpage
                     // screenshots, so we prepend the pw-media path here.
                     if tool_name.contains("screenshot") {
                         for key in &["filename", "name"] {
                             if let Some(name_val) = args_clone.get(*key).and_then(|v| v.as_str()) {
-                                if !name_val.is_empty() && !name_val.starts_with('/') && !name_val.contains('/') {
-                                    let media_dir = &s.config.media_dir;
-                                    args_clone[*key] =
-                                        serde_json::json!(format!("{}/pw-media/{}", media_dir, name_val));
+                                if !name_val.is_empty()
+                                    && !name_val.starts_with('/')
+                                    && !name_val.contains('/')
+                                {
+                                    args_clone[*key] = serde_json::json!(format!(
+                                        "{}/pw-media/{}",
+                                        s.config.media_dir,
+                                        name_val
+                                    ));
                                     break;
                                 }
                             }
                         }
                     }
-                    let tc = s.mcp_tools[tool_idx].clone();
+                    let tc = s.mcp_tools[idx].clone();
                     let server_name = tc.server_name.clone();
-                    (tc, server_name)
+                    (tc, server_name, server_lock)
                 };
-                // Phase 3: invoke (outside state lock so HTTP calls don't block other ops).
-                // The per-server lock is passed through but only acquired inside
-                // invoke_tool_impl during the rare session re-init path.
+                // Phase 2: invoke outside state lock (HTTP calls don't block other ops).
+                // Per-server lock passed through but only acquired during session re-init.
                 let result =
                     crate::mcp::invoke_tool_impl(&mut tc, &args_clone, Some(&server_lock)).await;
-                // Phase 4: under state lock — propagate updated session_id, if any
+                // Phase 3: under state lock — propagate updated session_id, if any.
                 if tc.session_id.is_some() {
                     let mut s = state.lock().await;
                     for t in &mut s.mcp_tools {
@@ -313,8 +304,7 @@ pub(crate) async fn dispatch_tool(
                     }
                 }
                 result
-            };
-            result
+            }
         }
         "get_recent_messages" => {
             let count = args["count"].as_i64().unwrap_or(10) as usize;

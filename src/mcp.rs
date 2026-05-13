@@ -3,7 +3,8 @@ pub(crate) mod mcp_client;
 #[path = "mcp_invoke.rs"]
 mod mcp_invoke;
 
-pub use self::mcp_invoke::{discover_all, invoke_tool, invoke_tool_impl};
+pub use self::mcp_invoke::{discover_all, invoke_tool};
+pub(crate) use self::mcp_invoke::invoke_tool_impl;
 
 /// A tool discovered from an MCP server.
 #[derive(Debug, Clone)]

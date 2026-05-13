@@ -122,8 +122,6 @@ pub(crate) async fn reinitialize_mcp_session(tool: &McpTool) -> Option<String> {
     };
 
     let client = McpClient::new(server);
-
-    // Step 1: initialize (protocol negotiation + session capture)
     if let Err(e) = client.initialize().await {
         log::warn!(
             "MCP session re-init initialize failed for {}: {}",
@@ -132,8 +130,6 @@ pub(crate) async fn reinitialize_mcp_session(tool: &McpTool) -> Option<String> {
         );
         return None;
     }
-
-    // Step 2: notifications/initialized
     if let Err(e) = client.rpc_call("notifications/initialized", None).await {
         log::warn!(
             "MCP session re-init notifications/initialized failed for {}: {}",
@@ -142,7 +138,6 @@ pub(crate) async fn reinitialize_mcp_session(tool: &McpTool) -> Option<String> {
         );
         return None;
     }
-
     let sid = client.session_id.lock().await.clone();
     sid
 }
@@ -154,10 +149,9 @@ pub async fn invoke_tool(tool: &mut McpTool, arguments: &serde_json::Value) -> S
     invoke_tool_impl(tool, arguments, None).await
 }
 
-/// Internal implementation with optional per-server lock for session re-init serialization.
-/// When `server_lock` is provided, it is only acquired during session re-initialization
-/// (not during normal tool calls), preventing thundering-herd re-inits on session expiry.
-pub async fn invoke_tool_impl(
+/// Implementation with optional per-server lock for session re-init serialization.
+/// The lock is only acquired during session recovery, never during normal calls.
+pub(crate) async fn invoke_tool_impl(
     tool: &mut McpTool,
     arguments: &serde_json::Value,
     server_lock: Option<&tokio::sync::Mutex<()>>,
