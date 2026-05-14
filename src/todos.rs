@@ -89,6 +89,27 @@ impl TodoList {
     pub fn has_todos(&self) -> bool {
         !self.todos.is_empty()
     }
+
+    /// Return todos for display: all incomplete + at most `max_done` most recently
+    /// completed ones (by updated_at). This keeps the list tidy while still allowing
+    /// undo of accidental "mark done" clicks.
+    pub fn display_items(&self, max_done: usize) -> Vec<&Todo> {
+        let mut displayed: Vec<&Todo> = Vec::new();
+        let mut completed: Vec<&Todo> = Vec::new();
+        for t in &self.todos {
+            if t.completed {
+                completed.push(t);
+            } else {
+                displayed.push(t);
+            }
+        }
+        // Show the most recently updated completed ones last
+        let mut sorted_completed = completed;
+        sorted_completed.sort_by_key(|t| &t.updated_at);
+        let take = sorted_completed.len().min(max_done);
+        displayed.extend(sorted_completed.iter().rev().take(take).rev());
+        displayed
+    }
 }
 
 #[cfg(test)]
@@ -162,6 +183,52 @@ mod tests {
         let chats_dir = dir.path().join("chats");
         let list = TodoList::load(&chats_dir, "-none").unwrap();
         assert!(list.todos.is_empty());
+    }
+
+    #[test]
+    fn test_display_items_limits_completed() {
+        let mut list = TodoList::default();
+        let id1 = list.add("one");
+        let id2 = list.add("two");
+        let id3 = list.add("three");
+        let id4 = list.add("four");
+        let id5 = list.add("five");
+        // Mark all as done
+        list.toggle(&id1);
+        list.toggle(&id2);
+        list.toggle(&id3);
+        list.toggle(&id4);
+        list.toggle(&id5);
+        // Only last 3 should show
+        let items = list.display_items(3);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].id, id3);
+        assert_eq!(items[1].id, id4);
+        assert_eq!(items[2].id, id5);
+    }
+
+    #[test]
+    fn test_display_items_mixed() {
+        let mut list = TodoList::default();
+        let id1 = list.add("a");
+        let id2 = list.add("b");
+        let id3 = list.add("c");
+        list.toggle(&id2); // b is done
+        // a (incomplete), c (incomplete), b (completed, last 3)
+        let items = list.display_items(3);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].id, id1);
+        assert_eq!(items[1].id, id3);
+        assert_eq!(items[2].id, id2);
+    }
+
+    #[test]
+    fn test_display_items_no_completed() {
+        let mut list = TodoList::default();
+        list.add("a");
+        list.add("b");
+        let items = list.display_items(3);
+        assert_eq!(items.len(), 2);
     }
 
     #[test]

@@ -28,12 +28,14 @@ pub async fn send_todos_message(
     let (text, has_items) = {
         let s = state.lock().await;
         let list = TodoList::load(&s.chats_dir(), chat_id).unwrap_or_default();
-        let has = !list.todos.is_empty();
+        let items = list.display_items(3);
+        let has = !items.is_empty();
+        let total = list.todos.len();
         let text = if !has {
             "No todos for this chat.".to_string()
         } else if details {
-            let mut lines = vec![format!("*{} todo(s) (detailed):*", list.todos.len())];
-            for (i, t) in list.todos.iter().enumerate() {
+            let mut lines = vec![format!("*{} todo(s) (detailed):*", total)];
+            for (i, t) in items.iter().enumerate() {
                 let status = if t.completed { "✅" } else { "⬜" };
                 let updated = t.updated_at.as_deref().unwrap_or("never");
                 lines.push(format!(
@@ -48,8 +50,8 @@ pub async fn send_todos_message(
             }
             lines.join("\n")
         } else {
-            let mut lines = vec![format!("*{} todo(s):*", list.todos.len())];
-            for (i, t) in list.todos.iter().enumerate() {
+            let mut lines = vec![format!("*{} todo(s):*", total)];
+            for (i, t) in items.iter().enumerate() {
                 let status = if t.completed { "✅" } else { "⬜" };
                 lines.push(format!("{}. {} {}", i + 1, status, t.description));
             }
