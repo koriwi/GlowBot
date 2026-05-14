@@ -2,7 +2,7 @@
 
 #[test]
 fn test_pack_unpack_roundtrip() {
-    let original = vec![1.0f32, -0.5, 0.25, 3.14];
+    let original = vec![1.0f32, -0.5, 0.25, std::f32::consts::PI];
     let blob = Database::pack_embedding(&original);
     assert_eq!(blob.len(), original.len() * 4);
     let unpacked = Database::unpack_embedding(&blob);
