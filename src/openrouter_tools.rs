@@ -105,6 +105,10 @@ pub fn all_tool_definitions(
         create_reminder_tool_definition(),
         list_reminders_tool_definition(),
         remove_reminder_tool_definition(),
+        create_todo_tool_definition(),
+        list_todos_tool_definition(),
+        edit_todo_tool_definition(),
+        delete_todo_tool_definition(),
         get_recent_messages_tool_definition(),
         send_message_tool_definition(),
     ];
@@ -372,6 +376,93 @@ pub(crate) fn remove_reminder_tool_definition() -> ToolDefinition {
                     "id": {
                         "type": "string",
                         "description": "The ID of the reminder to remove (from list_reminders)."
+                    }
+                },
+                "required": ["id"]
+            }),
+        },
+    }
+}
+
+/// The create_todo tool definition.
+pub(crate) fn create_todo_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "create_todo".into(),
+            description: "Add a todo item to the user's todo list. Use this when a user asks to remember something, track a task, or add something to their todo list. The todo is for the human to complete — not for the bot.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "The todo item description. Be clear and specific about what needs to be done."
+                    }
+                },
+                "required": ["description"]
+            }),
+        },
+    }
+}
+
+/// The list_todos tool definition.
+pub(crate) fn list_todos_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "list_todos".into(),
+            description: "List all todos for this chat, showing their ID, description, completed status, and timestamps. Use this to show the user what's on their todo list.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+    }
+}
+
+/// The edit_todo tool definition.
+pub(crate) fn edit_todo_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "edit_todo".into(),
+            description: "Edit an existing todo item by its UUID. You can update the description or toggle its completed status. Use this when the user wants to modify a todo, mark it as done, or mark it as not done.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "The UUID of the todo to edit (from list_todos)."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional: new description for the todo. If omitted, the description is unchanged."
+                    },
+                    "completed": {
+                        "type": "boolean",
+                        "description": "Optional: set completed status. true = mark as done, false = mark as not done. If omitted, the status is unchanged."
+                    }
+                },
+                "required": ["id"]
+            }),
+        },
+    }
+}
+
+/// The delete_todo tool definition.
+pub(crate) fn delete_todo_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "delete_todo".into(),
+            description: "Delete a todo item by its UUID. Use this when the user wants to remove a todo completely (as opposed to marking it completed).".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "The UUID of the todo to delete (from list_todos)."
                     }
                 },
                 "required": ["id"]

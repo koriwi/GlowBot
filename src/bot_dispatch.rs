@@ -286,6 +286,84 @@ pub(crate) async fn dispatch_tool(
                 None => format!("MCP server '{}' is not connected", server_name),
             }
         }
+        "create_todo" => {
+            let d = args["description"].as_str().unwrap_or("");
+            if d.is_empty() {
+                return "Error: description required".into();
+            }
+            let s = state.lock().await;
+            let mut list =
+                crate::todos::TodoList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            let id = list.add(d);
+            let _ = list.save(&s.chats_dir(), &cid);
+            format!("Todo created: {} — {}", id, d)
+        }
+        "list_todos" => {
+            let s = state.lock().await;
+            let list = crate::todos::TodoList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            if list.todos.is_empty() {
+                "No todos yet.".into()
+            } else {
+                serde_json::to_string_pretty(&list.todos).unwrap_or_default()
+            }
+        }
+        "edit_todo" => {
+            let id = args["id"].as_str().unwrap_or("");
+            if id.is_empty() {
+                return "Error: id required".into();
+            }
+            let new_desc = args["description"].as_str();
+            let set_completed = args.get("completed").and_then(|v| v.as_bool());
+
+            if new_desc.is_none() && set_completed.is_none() {
+                return "Error: at least one of 'description' or 'completed' must be provided".into();
+            }
+
+            let s = state.lock().await;
+            let mut list =
+                crate::todos::TodoList::load(&s.chats_dir(), &cid).unwrap_or_default();
+
+            let mut result_parts: Vec<String> = Vec::new();
+
+            if let Some(desc) = new_desc {
+                if desc.is_empty() {
+                    return "Error: description must not be empty".into();
+                }
+                if list.edit(id, desc) {
+                    result_parts.push(format!("description updated to '{}'", desc));
+                } else {
+                    return format!("Todo '{}' not found.", id);
+                }
+            }
+
+            if set_completed.is_some() {
+                match list.toggle(id) {
+                    Some(new_status) => {
+                        let status_word = if new_status { "completed" } else { "not completed" };
+                        result_parts.push(format!("marked as {}", status_word));
+                    }
+                    None => return format!("Todo '{}' not found.", id),
+                }
+            }
+
+            let _ = list.save(&s.chats_dir(), &cid);
+            format!("Todo '{}': {}", id, result_parts.join(", "))
+        }
+        "delete_todo" => {
+            let id = args["id"].as_str().unwrap_or("");
+            if id.is_empty() {
+                return "Error: id required".into();
+            }
+            let s = state.lock().await;
+            let mut list =
+                crate::todos::TodoList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            if list.remove(id) {
+                let _ = list.save(&s.chats_dir(), &cid);
+                format!("Todo '{}' deleted. {} remaining.", id, list.todos.len())
+            } else {
+                format!("Todo '{}' not found.", id)
+            }
+        }
         "get_recent_messages" => {
             let count = args["count"].as_i64().unwrap_or(10) as usize;
             let count = count.clamp(1, 50);

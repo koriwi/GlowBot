@@ -20,20 +20,20 @@ fn test_generate_image_tool_definition() {
 
 #[test]
 fn test_all_tool_definitions_with_image_gen_model() {
-    // With image_gen_model, without bash, without embedding: 17 base + generate_image + 3 config + 2 model tools = 23
+    // With image_gen_model, without bash, without embedding: 21 base + generate_image + 3 config + 2 model tools = 27
     let tools = all_tool_definitions(false, None, "/media", Some("black-forest-labs/flux-1.1-pro"), None);
-    assert_eq!(tools.len(), 23);
+    assert_eq!(tools.len(), 27);
     assert!(tools.iter().any(|t| t.function.name == "generate_image"));
 
-    // With image_gen_model, with bash, without embedding: 17 base + generate_image + bash + 3 config + 2 model tools = 24
+    // With image_gen_model, with bash, without embedding: 21 base + generate_image + bash + 3 config + 2 model tools = 28
     let tools = all_tool_definitions(true, None, "/media", Some("black-forest-labs/flux-1.1-pro"), None);
-    assert_eq!(tools.len(), 24);
+    assert_eq!(tools.len(), 28);
     assert_eq!(tools[0].function.name, "bash");
     assert!(tools.iter().any(|t| t.function.name == "generate_image"));
 
     // Without image_gen_model: generate_image is excluded
     let tools = all_tool_definitions(true, None, "/media", None, None);
-    assert_eq!(tools.len(), 23);
+    assert_eq!(tools.len(), 27);
     assert!(!tools.iter().any(|t| t.function.name == "generate_image"));
 }
 
@@ -149,19 +149,19 @@ fn test_ask_advisor_tool_definition() {
 
 #[test]
 fn test_all_tool_definitions_with_advice_model() {
-    // Without bash, without embedding, with advice_model: base 22 + advice = 23
+    // Without bash, without embedding, with advice_model: base 26 + advice = 27
     let tools = all_tool_definitions(false, None, "/media", None, Some("openai/gpt-4o"));
-    assert_eq!(tools.len(), 23);
+    assert_eq!(tools.len(), 27);
     assert!(tools.iter().any(|t| t.function.name == "ask_advisor"));
 
-    // With bash, without embedding, with advice_model: base 23 + advice = 24
+    // With bash, without embedding, with advice_model: base 27 + advice = 28
     let tools = all_tool_definitions(true, None, "/media", None, Some("openai/gpt-4o"));
-    assert_eq!(tools.len(), 24);
+    assert_eq!(tools.len(), 28);
     assert!(tools.iter().any(|t| t.function.name == "ask_advisor"));
     assert!(tools.iter().any(|t| t.function.name == "bash"));
 
     // Without advice_model: tool is excluded
     let tools = all_tool_definitions(true, None, "/media", None, None);
-    assert_eq!(tools.len(), 23);
+    assert_eq!(tools.len(), 27);
     assert!(!tools.iter().any(|t| t.function.name == "ask_advisor"));
 }

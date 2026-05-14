@@ -150,6 +150,7 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
   - `update_skill` – update an existing skill (name, description?, body?). Triggers reload.
   - **`add_task`, `list_tasks`, `remove_task`** — manage the chat's task list.
   - **`create_reminder`, `list_reminders`, `remove_reminder`** — manage time-based reminders. See §4.7a.
+  - **`create_todo`, `list_todos`, `edit_todo`, `delete_todo`** — manage the human todo list. See §4.7b.
   - **`get_model_info`** — returns current model, base model, specifier, config default, override status, available specifiers, and cached metadata (context length, pricing).
   - **`propose_model_change`** — proposes a model change to the user with Accept/Deny buttons. Takes `model_id` and/or `specifier`. If accepted, the model is temporarily switched (persists until `/model_default` resets it).
   - **`ask_advisor`** — calls a separate, larger/smarter advice model for a second opinion. Enabled only when `openrouter.advice_model` is configured (no default). Takes `query` (string). Sends recent conversation messages (controlled by `conversation.advice_recent_messages_window_size`) plus the query to the advice model and returns its response.
@@ -325,6 +326,24 @@ Reminders fire at a **specific time** (ISO 8601 timestamp), unlike tasks which a
 
 ---
 
+### 4.7b Todo List
+
+A human-focused todo list — simple items the user wants to remember or track. Unlike tasks (which the bot works on autonomously) or reminders (which fire at a specific time), todos are just a checklist for the human.
+
+**How it works:**
+- The LLM calls `create_todo(description)` to add an item.
+- `list_todos()` returns all todos with their UUIDs, descriptions, completed status, and timestamps.
+- `edit_todo(id, description?, completed?)` updates a todo — change the description or toggle done/not done.
+- `delete_todo(id)` removes a todo permanently (distinct from marking as completed).
+- Users can list todos via the `/todos` command.
+- Data is stored per-chat in `chats/<chat_id>/todos.yaml` (YAML, same pattern as `tasks.yaml`).
+
+**Tools:** `create_todo`, `list_todos`, `edit_todo`, `delete_todo`.
+
+**Command:** `/todos` — lists all todos for the current chat with completion status (✅ / ⬜).
+
+---
+
 ### 4.8 Memory System
 
 #### Short-term (conversation context)
@@ -421,6 +440,7 @@ Commands are Telegram bot commands (`/command`) used for control and settings. *
 | `/models` | Browse and temporarily switch models via inline keyboard | command whitelist |
 | `/model_default` | Reset temporary model override to config default (alias: `/model_reset`) | command whitelist |
 | `/tasks` | List all pending tasks for this chat | command whitelist |
+| `/todos` | List all human todos for this chat | command whitelist |
 | `/reminders` | List all pending reminders for this chat | command whitelist |
 | `/run` | Trigger the task agent to run immediately for this chat | command whitelist |
 | `/new` | Reset conversation context — stores a cutoff timestamp; only messages after this point are included in future context | command whitelist |
@@ -449,7 +469,7 @@ Command whitelist: enabled
 | Whitelist | Default | Controls |
 |-----------|---------|----------|
 | `interaction_whitelist` | Empty = **everyone** | Who the bot talks to / responds to |
-| `commands_enabled` | `false` | Whether bot commands (`/status`, `/stop`, `/tasks`, `/run`) work |
+| `commands_enabled` | `false` | Whether bot commands (`/status`, `/stop`, `/tasks`, `/todos`, `/run`) work |
 
 Whitelists contain Telegram user IDs.
 
@@ -470,6 +490,7 @@ Whitelists contain Telegram user IDs.
 - [x] MCP server integration for external tool discovery
 - [x] Heartbeat task system with autonomous background agents
 - [x] Reminders system — time-based triggers with optional LLM actions, independent of heartbeat
+- [x] Human todo list — per-chat checklist with create/list/edit/delete tools and `/todos` command
 - [x] Per-user `.md` memory with YAML frontmatter, freeform body
 - [x] Memory frontmatter injected into system prompt; full file readable via tools
 - [x] `/status`, `/tasks`, `/stop` commands

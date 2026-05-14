@@ -62,6 +62,22 @@ pub(crate) async fn handle_bot_command_impl(
         return Ok(Some(response));
     }
 
+    if matches!(command, crate::commands::Command::Todos) {
+        let s = state.lock().await;
+        let list = crate::todos::TodoList::load(&s.chats_dir(), chat_id).unwrap_or_default();
+        let response = if list.todos.is_empty() {
+            "No todos for this chat.".to_string()
+        } else {
+            let mut lines = vec![format!("*{} todo(s):*", list.todos.len())];
+            for (i, t) in list.todos.iter().enumerate() {
+                let status = if t.completed { "✅" } else { "⬜" };
+                lines.push(format!("{}. {} `{}` — {}", i + 1, status, t.id, t.description));
+            }
+            lines.join("\n")
+        };
+        return Ok(Some(response));
+    }
+
     if matches!(command, crate::commands::Command::Reminders) {
         let s = state.lock().await;
         let list =

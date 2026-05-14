@@ -9,6 +9,8 @@ pub enum Command {
     Stop,
     /// /tasks
     Tasks,
+    /// /todos — human todo list
+    Todos,
     /// /reminders — list pending reminders
     Reminders,
     /// /run — trigger heartbeat/task agent immediately
@@ -51,6 +53,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "/status" => Some(Command::Status),
         "/stop" => Some(Command::Stop),
         "/tasks" => Some(Command::Tasks),
+        "/todos" => Some(Command::Todos),
         "/reminders" => Some(Command::Reminders),
         "/run" => Some(Command::Run),
         "/new" => Some(Command::New),
@@ -158,6 +161,7 @@ pub fn handle_command_with_model(
         }
         Command::Stop => "Stop command received.".to_string(),
         Command::Tasks => String::new(),     // handled in handle_bot_command
+        Command::Todos => String::new(),     // handled in handle_bot_command
         Command::Reminders => String::new(), // handled in handle_bot_command
         Command::Run => String::new(),   // handled in handle_bot_command
         Command::New => String::new(),   // handled in handle_bot_command
@@ -186,7 +190,13 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_command_todos() {
+        assert_eq!(parse_command("/todos"), Some(Command::Todos));
+    }
+
+    #[test]
     fn test_parse_command_strips_botname_suffix() {
+        assert_eq!(parse_command("/todos@glowythebot"), Some(Command::Todos));
         assert_eq!(parse_command("/tasks@glowythebot"), Some(Command::Tasks));
         assert_eq!(parse_command("/reminders@glowythebot"), Some(Command::Reminders));
         assert_eq!(parse_command("/status@otherbot"), Some(Command::Status));

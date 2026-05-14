@@ -14,6 +14,7 @@ pub mod skills;
 pub mod reminders;
 pub mod system_prompt;
 pub mod tasks;
+pub mod todos;
 
 pub use bot::GlowBot;
 pub use config::Config;

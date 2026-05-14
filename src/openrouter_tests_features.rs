@@ -2,25 +2,25 @@
 
 #[test]
 fn test_all_tool_definitions_with_embedding_model() {
-    // With bash + embedding: 17 base + bash + search_conversations + 3 config + 2 model tools = 24
+    // With bash + embedding: 21 base + bash + search_conversations + 3 config + 2 model tools = 28
     let tools = all_tool_definitions(true, Some("openai/text-embedding-3-small"), "/media", None, None);
-    assert_eq!(tools.len(), 24);
+    assert_eq!(tools.len(), 28);
     assert_eq!(tools[0].function.name, "bash");
     assert!(tools
         .iter()
         .any(|t| t.function.name == "search_conversations"));
 
-    // Without bash, with embedding: 17 base + search_conversations + 3 config + 2 model tools = 23
+    // Without bash, with embedding: 21 base + search_conversations + 3 config + 2 model tools = 27
     let tools = all_tool_definitions(false, Some("openai/text-embedding-3-small"), "/media", None, None);
-    assert_eq!(tools.len(), 23);
+    assert_eq!(tools.len(), 27);
     assert!(tools
         .iter()
         .any(|t| t.function.name == "search_conversations"));
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
 
-    // Without embedding model, without bash: 17 base + 3 config + 2 model tools = 22
+    // Without embedding model, without bash: 21 base + 3 config + 2 model tools = 26
     let tools = all_tool_definitions(false, None, "/media", None, None);
-    assert_eq!(tools.len(), 22);
+    assert_eq!(tools.len(), 26);
     assert!(!tools
         .iter()
         .any(|t| t.function.name == "search_conversations"));
