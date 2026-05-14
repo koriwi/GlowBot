@@ -339,3 +339,154 @@ fn test_context_usage_formatting() {
     assert_eq!(state.context_usage("-123"), "37k/150k (25%)");
 }
 
+// ─── reminder heartbeat tests ──────────────────────────────────
+
+#[tokio::test]
+async fn test_heartbeat_reminder_fires_no_action() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone())
+        .await
+        .unwrap();
+
+    // Add a due reminder (trigger_at in the past)
+    let past = chrono::Utc::now() - chrono::Duration::minutes(5);
+    let past_str = past.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let mut list = crate::reminders::ReminderList::default();
+    let reminder_id = list.add("Test reminder", &past_str, None);
+    list.save(&data_dir.join("chats"), "-123").unwrap();
+
+    // Verify the reminder is due
+    {
+        let s = bot.state.lock().await;
+        assert!(s.has_due_reminders("-123"));
+    }
+
+    let tg_bot = teloxide::Bot::new("ignored");
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), bot.stop_signals.clone(), "-123", tg_bot).await;
+
+    // Reminder should be removed after firing
+    let list = crate::reminders::ReminderList::load(&data_dir.join("chats"), "-123")
+        .unwrap_or_default();
+    assert!(list.reminders.is_empty(), "reminder should be removed: {:?}", list.reminders);
+    let _ = reminder_id;
+}
+
+#[tokio::test]
+async fn test_heartbeat_reminder_with_action() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone())
+        .await
+        .unwrap();
+
+    // Add a due reminder with an action
+    let past = chrono::Utc::now() - chrono::Duration::minutes(5);
+    let past_str = past.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let mut list = crate::reminders::ReminderList::default();
+    list.add("Action reminder", &past_str, Some("Look up user info"));
+    list.save(&data_dir.join("chats"), "-123").unwrap();
+
+    // LLM returns a simple text response (no tool calls needed)
+    mock_llm.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Action completed!".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+                reasoning: None,
+            ..Default::default()
+            },
+            finish_reason: Some("stop".into()),
+        }],
+        ..Default::default()
+    });
+
+    let tg_bot = teloxide::Bot::new("ignored");
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), bot.stop_signals.clone(), "-123", tg_bot).await;
+
+    // Reminder should be removed after processing
+    let list = crate::reminders::ReminderList::load(&data_dir.join("chats"), "-123")
+        .unwrap_or_default();
+    assert!(list.reminders.is_empty());
+}
+
+#[tokio::test]
+async fn test_heartbeat_no_due_reminders() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
+    let mock_llm = Arc::new(MockLlmBackend::new());
+    let bot = GlowBot::new_with_llm(&data_dir, mock_llm.clone())
+        .await
+        .unwrap();
+
+    // Add a future reminder (not due yet)
+    let future = chrono::Utc::now() + chrono::Duration::hours(1);
+    let future_str = future.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let mut list = crate::reminders::ReminderList::default();
+    list.add("Future reminder", &future_str, None);
+    list.save(&data_dir.join("chats"), "-123").unwrap();
+
+    // Verify no due reminders
+    {
+        let s = bot.state.lock().await;
+        assert!(!s.has_due_reminders("-123"));
+    }
+
+    let tg_bot = teloxide::Bot::new("ignored");
+    run_heartbeat_task(bot.state.clone(), bot.git_repo.clone(), bot.stop_signals.clone(), "-123", tg_bot).await;
+
+    // Future reminder should still be there
+    let list = crate::reminders::ReminderList::load(&data_dir.join("chats"), "-123")
+        .unwrap_or_default();
+    assert_eq!(list.reminders.len(), 1);
+}
+
+#[tokio::test]
+async fn test_has_due_reminders() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("glowbot_data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    crate::config::basic_config()
+        .save(&data_dir.join("config.yaml"))
+        .unwrap();
+    let bot = GlowBot::new_with_llm(
+        &data_dir,
+        Arc::new(MockLlmBackend::new()),
+    )
+    .await
+    .unwrap();
+
+    // No reminders yet
+    {
+        let s = bot.state.lock().await;
+        assert!(!s.has_due_reminders("-123"));
+    }
+
+    // Add a due reminder
+    let past = chrono::Utc::now() - chrono::Duration::minutes(5);
+    let past_str = past.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let mut list = crate::reminders::ReminderList::default();
+    list.add("test", &past_str, None);
+    list.save(&data_dir.join("chats"), "-123").unwrap();
+
+    {
+        let s = bot.state.lock().await;
+        assert!(s.has_due_reminders("-123"));
+    }
+}
+
