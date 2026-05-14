@@ -518,6 +518,22 @@ async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::ty
         return;
     }
 
+    // Handle todo callbacks (todo:menu:N, todo:toggle:UUID, todo:close)
+    if data.starts_with("todo:") {
+        let _ = tg_bot.answer_callback_query(&callback_id).await;
+        if let Some(msg) = &cb.message {
+            let state = {
+                let bot_inner = bot.lock().await;
+                bot_inner.state.clone()
+            };
+            glowbot::bot::bot_todos::handle_todo_callback(
+                &state, &data, &callback_id, &tg_bot, msg.chat().id, msg.id(),
+            )
+            .await;
+        }
+        return;
+    }
+
     // Only handle config approval callbacks for now
     if !data.starts_with("cfg:") {
         // Silently ignore noop callbacks (page indicators) and unknown callbacks

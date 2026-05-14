@@ -64,6 +64,20 @@ pub(crate) async fn handle_bot_command_impl(
 
     if matches!(command, crate::commands::Command::Todos(_)) {
         let details = matches!(command, crate::commands::Command::Todos(true));
+        // If we have a tg_bot, use inline keyboard buttons
+        if let Some(bot) = tg_bot {
+            let state_clone = Arc::clone(state);
+            let cid = chat_id.to_string();
+            let tg_clone = bot.clone();
+            tokio::spawn(async move {
+                crate::bot::bot_todos::send_todos_message(
+                    &state_clone, &cid, details, &tg_clone,
+                )
+                .await;
+            });
+            return Ok(None);
+        }
+        // Fallback: plain text (no tg_bot available)
         let s = state.lock().await;
         let list = crate::todos::TodoList::load(&s.chats_dir(), chat_id).unwrap_or_default();
         let response = if list.todos.is_empty() {

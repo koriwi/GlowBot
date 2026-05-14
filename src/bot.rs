@@ -7,6 +7,8 @@ use crate::llm::LlmBackend;
 mod bot_commands;
 #[path = "bot_models.rs"]
 pub mod bot_models;
+#[path = "bot_todos.rs"]
+pub mod bot_todos;
 #[path = "bot_dispatch.rs"]
 pub mod bot_dispatch;
 #[path = "bot_heartbeat.rs"]
