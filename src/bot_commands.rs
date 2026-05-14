@@ -62,16 +62,28 @@ pub(crate) async fn handle_bot_command_impl(
         return Ok(Some(response));
     }
 
-    if matches!(command, crate::commands::Command::Todos) {
+    if matches!(command, crate::commands::Command::Todos(_)) {
+        let details = matches!(command, crate::commands::Command::Todos(true));
         let s = state.lock().await;
         let list = crate::todos::TodoList::load(&s.chats_dir(), chat_id).unwrap_or_default();
         let response = if list.todos.is_empty() {
             "No todos for this chat.".to_string()
+        } else if details {
+            let mut lines = vec![format!("*{} todo(s) (detailed):*", list.todos.len())];
+            for (i, t) in list.todos.iter().enumerate() {
+                let status = if t.completed { "✅" } else { "⬜" };
+                let updated = t.updated_at.as_deref().unwrap_or("never");
+                lines.push(format!(
+                    "{}. {} `{}` — {}\n   Created: {} | Updated: {}",
+                    i + 1, status, t.id, t.description, t.created_at, updated
+                ));
+            }
+            lines.join("\n")
         } else {
             let mut lines = vec![format!("*{} todo(s):*", list.todos.len())];
             for (i, t) in list.todos.iter().enumerate() {
                 let status = if t.completed { "✅" } else { "⬜" };
-                lines.push(format!("{}. {} `{}` — {}", i + 1, status, t.id, t.description));
+                lines.push(format!("{}. {} {}", i + 1, status, t.description));
             }
             lines.join("\n")
         };

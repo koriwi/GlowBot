@@ -335,12 +335,12 @@ A human-focused todo list — simple items the user wants to remember or track. 
 - `list_todos()` returns all todos with their UUIDs, descriptions, completed status, and timestamps.
 - `edit_todo(id, description?, completed?)` updates a todo — change the description or toggle done/not done.
 - `delete_todo(id)` removes a todo permanently (distinct from marking as completed).
-- Users can list todos via the `/todos` command.
+- Users can list todos via the `/todos` command. `/todos details` shows full details (UUIDs, timestamps).
 - Data is stored per-chat in `chats/<chat_id>/todos.yaml` (YAML, same pattern as `tasks.yaml`).
 
 **Tools:** `create_todo`, `list_todos`, `edit_todo`, `delete_todo`.
 
-**Command:** `/todos` — lists all todos for the current chat with completion status (✅ / ⬜).
+**Command:** `/todos` — lists all todos for the current chat with completion status (✅ / ⬜). `/todos details` — full detail view with UUIDs, created/updated timestamps.
 
 ---
 
