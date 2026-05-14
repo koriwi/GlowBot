@@ -78,20 +78,20 @@ async fn run_bot() -> anyhow::Result<()> {
 
     // Register slash commands with Telegram so they show in the menu and autocomplete
     let commands = vec![
-        BotCommand::new("status", "Show current config for this chat"),
-        BotCommand::new("model", "Set or view the current model"),
-        BotCommand::new("models", "Browse and temporarily switch models"),
-        BotCommand::new("model_default", "Reset model to config default"),
-        BotCommand::new("tasks", "Show pending tasks for this chat"),
-        BotCommand::new("todos", "Show your todo list for this chat"),
-        BotCommand::new("reminders", "Show pending reminders for this chat"),
-        BotCommand::new("new", "Reset context — messages before now are excluded from conversation"),
-        BotCommand::new("prompt", "Show the system prompt sent to the LLM"),
-        BotCommand::new("run", "Run task agent immediately for this chat"),
-        BotCommand::new("tools", "Show available tools in this chat"),
-        BotCommand::new("config", "Show the current config (redacted)"),
-        BotCommand::new("config_schema", "Show the JSON Schema for config fields"),
-        BotCommand::new("stop", "Stop the bot"),
+        BotCommand::new("status", "📊 Show current config for this chat"),
+        BotCommand::new("model", "🤖 Set or view the current model"),
+        BotCommand::new("models", "🔄 Browse and temporarily switch models"),
+        BotCommand::new("model_default", "↩️ Reset model to config default"),
+        BotCommand::new("tasks", "📋 Show pending tasks for this chat"),
+        BotCommand::new("todos", "✅ Show your todo list for this chat"),
+        BotCommand::new("reminders", "⏰ Show pending reminders for this chat"),
+        BotCommand::new("new", "🆕 Reset context — messages before now are excluded from conversation"),
+        BotCommand::new("prompt", "💬 Show the system prompt sent to the LLM"),
+        BotCommand::new("run", "▶️ Run task agent immediately for this chat"),
+        BotCommand::new("tools", "🛠️ Show available tools in this chat"),
+        BotCommand::new("config", "⚙️ Show the current config (redacted)"),
+        BotCommand::new("config_schema", "📝 Show the JSON Schema for config fields"),
+        BotCommand::new("stop", "🛑 Stop the bot"),
     ];
     if let Err(e) = tg_bot.set_my_commands(commands).await {
         log::warn!("Failed to set bot commands: {}", e);
