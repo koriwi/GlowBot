@@ -83,6 +83,7 @@ async fn run_bot() -> anyhow::Result<()> {
         BotCommand::new("models", "Browse and temporarily switch models"),
         BotCommand::new("model_default", "Reset model to config default"),
         BotCommand::new("tasks", "Show pending tasks for this chat"),
+        BotCommand::new("todos", "Show your todo list for this chat"),
         BotCommand::new("reminders", "Show pending reminders for this chat"),
         BotCommand::new("new", "Reset context — messages before now are excluded from conversation"),
         BotCommand::new("prompt", "Show the system prompt sent to the LLM"),
