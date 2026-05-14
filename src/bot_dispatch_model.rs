@@ -294,3 +294,306 @@ pub async fn handle_model_callback_approval(
         _ => Some(("⚠️ Unknown action.".into(), None)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bot::BotState;
+    use crate::llm::mock::MockLlmBackend;
+    use crate::openrouter::ModelInfo;
+    use serde_json::json;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+    use tokio::sync::Mutex;
+
+    async fn make_state() -> (Arc<Mutex<BotState>>, TempDir) {
+        let dir = TempDir::new().unwrap();
+        let data_dir = dir.path().join("glowbot_data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let config = crate::config::basic_config();
+        config.save(&data_dir.join("config.yaml")).unwrap();
+        let mock_llm: Arc<dyn crate::llm::LlmBackend> = Arc::new(MockLlmBackend::new());
+        let state = Arc::new(Mutex::new(BotState {
+            config,
+            skills: std::collections::HashMap::new(),
+            llm: mock_llm,
+            data_dir: data_dir.clone(),
+            db: crate::db::Database::open_in_memory().unwrap(),
+            mcp_tools: vec![],
+            _mcp_services: vec![],
+            mcp_peers: std::collections::HashMap::new(),
+            model_metadata: std::collections::HashMap::new(),
+            model_order: vec![],
+            last_usage: std::collections::HashMap::new(),
+            pending_config_changes: std::collections::HashMap::new(),
+            pending_model_changes: std::collections::HashMap::new(),
+            model_overrides: std::collections::HashMap::new(),
+            last_browse_cb: std::collections::HashMap::new(),
+        }));
+        (state, dir)
+    }
+
+    #[test]
+    fn test_short_id_non_empty() {
+        let id = short_id();
+        assert!(!id.is_empty());
+    }
+
+    #[test]
+    fn test_short_id_unique() {
+        let id1 = short_id();
+        let id2 = short_id();
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn test_short_id_is_hex() {
+        let id = short_id();
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    // ─── tool_get_model_info ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_get_model_info_default() {
+        let (state, _dir) = make_state().await;
+        let result = tool_get_model_info(&state, "-123").await;
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        // Default config uses "test/model"
+        assert_eq!(v["effective_model"], "test/model");
+        assert_eq!(v["config_default_model"], "test/model");
+        assert!(!v["has_temporary_override"].as_bool().unwrap());
+        assert!(v["specifier"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_get_model_info_with_override() {
+        let (state, _dir) = make_state().await;
+        {
+            let mut s = state.lock().await;
+            s.model_overrides
+                .insert("-123".into(), "openai/gpt-4o".into());
+        }
+        let result = tool_get_model_info(&state, "-123").await;
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["effective_model"], "openai/gpt-4o");
+        assert_eq!(v["config_default_model"], "test/model");
+        assert!(v["has_temporary_override"].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_get_model_info_with_specifier() {
+        let (state, _dir) = make_state().await;
+        {
+            let mut s = state.lock().await;
+            s.model_overrides
+                .insert("-123".into(), "openai/gpt-4o:nitro".into());
+        }
+        let result = tool_get_model_info(&state, "-123").await;
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["effective_model"], "openai/gpt-4o:nitro");
+        assert_eq!(v["base_model"], "openai/gpt-4o");
+        assert_eq!(v["specifier"], "nitro");
+    }
+
+    #[tokio::test]
+    async fn test_get_model_info_with_unknown_specifier() {
+        let (state, _dir) = make_state().await;
+        {
+            let mut s = state.lock().await;
+            s.model_overrides
+                .insert("-123".into(), "openai/gpt-4o:unknown".into());
+        }
+        let result = tool_get_model_info(&state, "-123").await;
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        // "unknown" is not a valid specifier, should not be split
+        assert_eq!(v["base_model"], "openai/gpt-4o:unknown");
+        assert!(v["specifier"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_get_model_info_with_cached_metadata() {
+        let (state, _dir) = make_state().await;
+        {
+            let mut s = state.lock().await;
+            s.model_metadata.insert(
+                "test/model".into(),
+                ModelInfo {
+                    id: "test/model".into(),
+                    name: "Test Model Display".into(),
+                    context_length: 128000,
+                    created: 0,
+                    pricing: crate::openrouter::ModelPricing {
+                        prompt: "0.5".into(),
+                        completion: "1.5".into(),
+                        request: "0".into(),
+                    },
+                    architecture: crate::openrouter::ModelArchitecture {
+                        input_modalities: vec!["text".into()],
+                    },
+                },
+            );
+        }
+        let result = tool_get_model_info(&state, "-123").await;
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let meta = &v["model_metadata"];
+        assert_eq!(meta["display_name"], "Test Model Display");
+        assert_eq!(meta["context_length"], 128000);
+        assert_eq!(meta["is_free"], false);
+    }
+
+    // ─── tool_propose_model_change ───────────────────────────────
+
+    #[tokio::test]
+    async fn test_propose_model_change_no_args() {
+        let (state, _dir) = make_state().await;
+        let args = json!({});
+        let result = tool_propose_model_change(&state, "-123", &args, None).await;
+        assert!(result.contains("at least one"));
+    }
+
+    #[tokio::test]
+    async fn test_propose_model_change_invalid_specifier() {
+        let (state, _dir) = make_state().await;
+        let args = json!({"specifier": "invalid"});
+        let result = tool_propose_model_change(&state, "-123", &args, None).await;
+        assert!(result.contains("unknown specifier"));
+    }
+
+    #[tokio::test]
+    async fn test_propose_model_change_same_as_current() {
+        let (state, _dir) = make_state().await;
+        // Default model is "test/model"
+        let args = json!({"model_id": "test/model"});
+        let result = tool_propose_model_change(&state, "-123", &args, None).await;
+        assert!(result.contains("already the active model"));
+    }
+
+    #[tokio::test]
+    async fn test_propose_model_change_no_tg_bot() {
+        let (state, _dir) = make_state().await;
+        let args = json!({"model_id": "openai/gpt-4o"});
+        let result = tool_propose_model_change(&state, "-123", &args, None).await;
+        assert!(result.contains("requires Telegram bot context"));
+    }
+
+    #[tokio::test]
+    async fn test_propose_model_change_only_specifier_invalid() {
+        let (state, _dir) = make_state().await;
+        let args = json!({"specifier": "bad"});
+        let result = tool_propose_model_change(&state, "-123", &args, None).await;
+        assert!(result.contains("unknown specifier"));
+    }
+
+    #[tokio::test]
+    async fn test_propose_model_change_with_specifier_invalid_chat_id() {
+        let (state, _dir) = make_state().await;
+        let args = json!({"model_id": "openai/gpt-4o"});
+        let result = tool_propose_model_change(&state, "not-a-number", &args, None).await;
+        assert!(result.starts_with("Error"));
+    }
+
+    // ─── handle_model_callback_approval ──────────────────────────
+
+    #[tokio::test]
+    async fn test_handle_callback_invalid_format() {
+        let (state, _dir) = make_state().await;
+        let result = handle_model_callback_approval(&state, "garbage", None).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_handle_callback_wrong_prefix() {
+        let (state, _dir) = make_state().await;
+        let result = handle_model_callback_approval(&state, "cfg:abc:accept", None).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_handle_callback_expired() {
+        let (state, _dir) = make_state().await;
+        let result =
+            handle_model_callback_approval(&state, "mdl:nonexistent:accept", None).await;
+        let (text, followup) = result.unwrap();
+        assert!(text.contains("expired"));
+        assert!(followup.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_handle_callback_accept() {
+        let (state, _dir) = make_state().await;
+        // Register a pending model change
+        let pending_id = {
+            let mut s = state.lock().await;
+            let id = short_id();
+            s.pending_model_changes.insert(
+                id.clone(),
+                crate::bot::PendingModelChange {
+                    chat_id: "-123".into(),
+                    message_id: 42,
+                    proposed_model: "openai/gpt-4o".into(),
+                },
+            );
+            id
+        };
+        let cb_data = format!("mdl:{}:accept", pending_id);
+        let result = handle_model_callback_approval(&state, &cb_data, None).await;
+        let (text, followup) = result.unwrap();
+        assert!(text.contains("Model Changed"));
+        // Followup exists even if tg_bot is None (the text is generated, send is best-effort)
+        assert!(followup.is_some());
+        assert!(followup.unwrap().contains("accepted"));
+        // Override should be applied
+        let s = state.lock().await;
+        assert!(s.model_overrides.get("-123").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_handle_callback_deny() {
+        let (state, _dir) = make_state().await;
+        let pending_id = {
+            let mut s = state.lock().await;
+            let id = short_id();
+            s.pending_model_changes.insert(
+                id.clone(),
+                crate::bot::PendingModelChange {
+                    chat_id: "-123".into(),
+                    message_id: 42,
+                    proposed_model: "openai/gpt-4o".into(),
+                },
+            );
+            id
+        };
+        let cb_data = format!("mdl:{}:deny", pending_id);
+        let result = handle_model_callback_approval(&state, &cb_data, None).await;
+        let (text, followup) = result.unwrap();
+        assert!(text.contains("Denied"));
+        assert!(followup.is_some());
+        // Override should NOT be applied
+        let s = state.lock().await;
+        assert!(!s.model_overrides.contains_key("-123"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_callback_unknown_action() {
+        let (state, _dir) = make_state().await;
+        let pending_id = {
+            let mut s = state.lock().await;
+            let id = short_id();
+            s.pending_model_changes.insert(
+                id.clone(),
+                crate::bot::PendingModelChange {
+                    chat_id: "-123".into(),
+                    message_id: 42,
+                    proposed_model: "openai/gpt-4o".into(),
+                },
+            );
+            id
+        };
+        let cb_data = format!("mdl:{}:bogus", pending_id);
+        let result = handle_model_callback_approval(&state, &cb_data, None).await;
+        let (text, followup) = result.unwrap();
+        assert!(text.contains("Unknown action"));
+        assert!(followup.is_none());
+    }
+}
