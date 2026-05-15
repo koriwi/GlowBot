@@ -116,12 +116,35 @@ pub struct DmConfig {
 }
 
 /// Database-related configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseConfig {
     /// Whether to persist LLM reasoning/thinking content in the database.
     /// Reasoning is only captured when `conversation.include_reasoning` is also enabled.
     #[serde(default)]
     pub store_reasoning: bool,
+    /// Whether to store tool call messages (assistant tool_calls and tool results) in the database.
+    /// When false, tool interactions are not persisted, keeping the DB leaner.
+    #[serde(default = "default_true")]
+    pub store_tool_calls: bool,
+    /// Maximum character length for tool call/result content stored in the database.
+    /// Content exceeding this is truncated. None = no limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_max_content_len: Option<usize>,
+    /// Maximum character length for reasoning/thinking content stored in the database.
+    /// Content exceeding this is truncated. None = no limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_max_content_len: Option<usize>,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            store_reasoning: false,
+            store_tool_calls: true,
+            tool_max_content_len: None,
+            reasoning_max_content_len: None,
+        }
+    }
 }
 
 /// Conversation context configuration.
@@ -288,6 +311,10 @@ fn default_embedding_search_limit() -> usize {
 
 fn default_media_dir() -> String {
     "/media".into()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[path = "config_methods.rs"]

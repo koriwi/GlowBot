@@ -59,7 +59,10 @@ conversation:
 
 # Database settings
 db:
-  store_reasoning: false    # persist reasoning content in SQLite
+  store_reasoning: false             # persist reasoning content in SQLite
+  store_tool_calls: true              # store assistant tool_calls and tool results (default: true)
+  # tool_max_content_len: 5000       # truncate tool call/result content to N chars (default: no limit)
+  # reasoning_max_content_len: 5000  # truncate reasoning content to N chars (default: no limit)
 
 # MCP servers for additional tools
 # mcp_servers:
@@ -240,7 +243,10 @@ Some LLM models (DeepSeek-R1, Claude with extended thinking, OpenAI o-series) re
 conversation:
   include_reasoning: false          # default: false
 db:
-  store_reasoning: false          # default: false
+  store_reasoning: false           # default: false
+  store_tool_calls: true            # default: true — when false, assistant tool_calls and tool_result messages are filtered out before DB storage
+  tool_max_content_len: ~           # default: no limit — truncate tool call arguments and tool result content to N chars before storage
+  reasoning_max_content_len: ~      # default: no limit — truncate reasoning content to N chars before storage
 ```
 
 **How it works:**
@@ -248,6 +254,8 @@ db:
 - Reasoning is attached to `ChatMessage` objects and sent back in the next request, so the model sees its previous thinking.
 - When `false` (default), reasoning content is silently discarded — it never enters the turn history.
 - If `db.store_reasoning` is also `true`, reasoning text is persisted in the `reasoning` column of the `messages` table in SQLite.
+- When `db.store_tool_calls` is `false`, tool interaction messages (assistant tool_calls and tool results) are excluded from DB storage, keeping the database leaner.
+- The `db.tool_max_content_len` and `db.reasoning_max_content_len` options truncate content (with "..." appended) before storage to prevent excessively large messages from bloating the database.
 - Reasoning is included in token estimation for context trimming.
 - Reasoning is **not** part of `text_content()` — it's a separate field, so embeddings and tool input don't include it.
 

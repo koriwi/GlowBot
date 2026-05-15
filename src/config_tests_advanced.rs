@@ -44,6 +44,7 @@ fn test_database_config_default() {
 fn test_database_config_serialization() {
     let db = DatabaseConfig {
         store_reasoning: true,
+        ..Default::default()
     };
     let yaml = serde_yaml::to_string(&db).unwrap();
     assert!(yaml.contains("store_reasoning"));
@@ -53,6 +54,61 @@ fn test_database_config_serialization() {
 fn test_config_defaults_db_store_reasoning_false() {
     let config = basic_config();
     assert!(!config.db.store_reasoning);
+}
+
+#[test]
+fn test_database_config_defaults() {
+    let db = DatabaseConfig::default();
+    assert!(!db.store_reasoning);
+    assert!(db.store_tool_calls);
+    assert_eq!(db.tool_max_content_len, None);
+    assert_eq!(db.reasoning_max_content_len, None);
+}
+
+#[test]
+fn test_database_config_full_serialization() {
+    let db = DatabaseConfig {
+        store_reasoning: true,
+        store_tool_calls: false,
+        tool_max_content_len: Some(2048),
+        reasoning_max_content_len: Some(4096),
+    };
+    let yaml = serde_yaml::to_string(&db).unwrap();
+    assert!(yaml.contains("store_reasoning"));
+    assert!(yaml.contains("store_tool_calls"));
+    assert!(yaml.contains("tool_max_content_len"));
+    assert!(yaml.contains("reasoning_max_content_len"));
+    let loaded: DatabaseConfig = serde_yaml::from_str(&yaml).unwrap();
+    assert!(loaded.store_reasoning);
+    assert!(!loaded.store_tool_calls);
+    assert_eq!(loaded.tool_max_content_len, Some(2048));
+    assert_eq!(loaded.reasoning_max_content_len, Some(4096));
+}
+
+#[test]
+fn test_database_config_minimal_serialization() {
+    // Defaults should not appear in serialized output
+    let db = DatabaseConfig::default();
+    let yaml = serde_yaml::to_string(&db).unwrap();
+    assert!(!yaml.contains("tool_max_content_len"));
+    assert!(!yaml.contains("reasoning_max_content_len"));
+}
+
+#[test]
+fn test_config_load_save_with_db_config() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("config.yaml");
+    let mut config = basic_config();
+    config.db.store_reasoning = true;
+    config.db.store_tool_calls = false;
+    config.db.tool_max_content_len = Some(1000);
+    config.db.reasoning_max_content_len = Some(500);
+    config.save(&path).unwrap();
+    let loaded = Config::load(&path).unwrap();
+    assert!(loaded.db.store_reasoning);
+    assert!(!loaded.db.store_tool_calls);
+    assert_eq!(loaded.db.tool_max_content_len, Some(1000));
+    assert_eq!(loaded.db.reasoning_max_content_len, Some(500));
 }
 
 #[test]

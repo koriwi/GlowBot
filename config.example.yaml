@@ -31,6 +31,9 @@ conversation:
 # Database settings
 db:
   store_reasoning: false             # persist LLM reasoning/thinking content in DB (default: false)
+  store_tool_calls: true              # store assistant tool_calls and tool results in DB (default: true)
+  # tool_max_content_len: 5000       # truncate tool call/result content to N chars (default: no limit)
+  # reasoning_max_content_len: 5000  # truncate reasoning content to N chars (default: no limit)
 
 # Embedding / vector search (RAG) settings
 embedding:
