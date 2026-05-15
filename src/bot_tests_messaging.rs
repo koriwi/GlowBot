@@ -254,6 +254,19 @@ async fn test_process_message_command_tools_dm_not_authorized() {
 }
 
 #[tokio::test]
+async fn test_process_message_command_todos_group_bypasses_whitelist() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // Group chat, command_whitelist empty → nobody normally runs commands,
+    // but /todos is exempt from all authorization checks.
+    let result = bot
+        .process_message("-123", "456", "@testuser", "/todos", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(!resp.contains("not authorized"));
+}
+
+#[tokio::test]
 async fn test_process_message_command_todos_dm_always_allowed() {
     let (bot, _dir, _mock) = setup_test_bot().await;
     // DM from user without DM config — /todos is always allowed
