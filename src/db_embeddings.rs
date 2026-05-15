@@ -112,6 +112,7 @@ impl Database {
              FROM messages m
              LEFT JOIN message_embeddings e ON e.message_id = m.id
              WHERE e.id IS NULL
+               AND m.role != 'tool'
              ORDER BY m.id",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -150,6 +151,7 @@ impl Database {
              FROM message_embeddings e
              JOIN messages m ON m.id = e.message_id
              WHERE m.chat_id = ?1 AND e.model = ?2
+               AND m.role != 'tool'
              ORDER BY e.message_id DESC
              LIMIT ?3",
         )?;

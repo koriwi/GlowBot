@@ -383,6 +383,15 @@ pub(crate) async fn dispatch_tool(
             };
             let items: Vec<_> = history
                 .iter()
+                .filter(|m| {
+                    // Exclude tool-call results and messages with no visible text.
+                    if m.role == "tool" {
+                        return false;
+                    }
+                    // Skip assistant messages that only carry tool_calls (no text).
+                    let text = m.text_content();
+                    !text.trim().is_empty() && text != "[image]" && text != "[audio]"
+                })
                 .map(|m| {
                     serde_json::json!({
                         "role": &m.role,
@@ -538,8 +547,14 @@ pub(crate) async fn dispatch_tool(
                     .unwrap_or_default()
             };
 
+            // search_embeddings already excludes tool messages at the SQL level.
             let top_results: Vec<_> = results
                 .into_iter()
+                .filter(|(_id, _score, text)| {
+                    // Extra safety: skip messages that are just media placeholders.
+                    let t = text.trim();
+                    !t.is_empty() && t != "[image]" && t != "[audio]"
+                })
                 .map(|(_id, score, text)| {
                     serde_json::json!({
                         "similarity": format!("{:.4}", score),
