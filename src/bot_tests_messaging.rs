@@ -254,6 +254,56 @@ async fn test_process_message_command_tools_dm_not_authorized() {
 }
 
 #[tokio::test]
+async fn test_process_message_command_todos_dm_always_allowed() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // DM from user without DM config — /todos is always allowed
+    let result = bot
+        .process_message("12345", "12345", "@rando", "/todos", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(!resp.contains("not authorized"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_tasks_dm_always_allowed() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // DM from user without DM config — /tasks is always allowed
+    let result = bot
+        .process_message("12345", "12345", "@rando", "/tasks", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(!resp.contains("not authorized"));
+    assert!(resp.contains("No pending tasks"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_reminders_dm_always_allowed() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // DM from user without DM config — /reminders is always allowed
+    let result = bot
+        .process_message("12345", "12345", "@rando", "/reminders", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(!resp.contains("not authorized"));
+}
+
+#[tokio::test]
+async fn test_process_message_command_stop_dm_always_allowed() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    // DM from user without DM config — /stop is always allowed
+    let result = bot
+        .process_message("12345", "12345", "@rando", "/stop", "mybot")
+        .await
+        .unwrap();
+    let resp = result.unwrap();
+    assert!(!resp.contains("not authorized"));
+    assert!(resp.contains("Stop signal sent"));
+}
+
+#[tokio::test]
 async fn test_process_message_with_tool_call() {
     let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 

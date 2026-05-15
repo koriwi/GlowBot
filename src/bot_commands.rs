@@ -17,7 +17,18 @@ pub(crate) async fn handle_bot_command_impl(
     tg_bot: Option<&teloxide::Bot>,
     _git_repo: &GitRepo,
 ) -> anyhow::Result<Option<String>> {
-    let allowed = {
+    // Commands that are always allowed in DMs regardless of commands_enabled.
+    let is_always_allowed = matches!(
+        command,
+        crate::commands::Command::Todos(_)
+            | crate::commands::Command::Tasks
+            | crate::commands::Command::Reminders
+            | crate::commands::Command::Stop
+    );
+
+    let allowed = if is_always_allowed {
+        true
+    } else {
         let s = state.lock().await;
         let is_dm = !chat_id.starts_with('-');
         if is_dm {

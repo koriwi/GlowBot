@@ -87,7 +87,8 @@ pub struct DmConfig {
     /// Optional model override for this DM.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// Whether bot commands (/status, /stop, /tasks, /run) are enabled for this DM.
+    /// Whether most bot commands are enabled for this DM.
+    /// /todos, /tasks, /reminders, and /stop are always allowed regardless of this setting.
     #[serde(default)]
     pub commands_enabled: bool,
     /// Optional per-DM system prompt appended to the base.
