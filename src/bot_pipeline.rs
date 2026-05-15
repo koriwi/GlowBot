@@ -380,9 +380,9 @@ pub(crate) fn chunk_for_embedding(text: &str, max_chars: usize, allow_split: boo
 
 /// Build the user message for the LLM, handling media ingestion:
 /// - Native image: downloads image, encodes as data-URL, builds user_multimodal
-/// - Fallback image: calls image_fallback_model to describe, builds text message
+/// - Non-native image: metadata + file path so the LLM can use the describe_image tool
 /// - Native audio: downloads audio, encodes as base64, builds user_multimodal
-/// - Fallback audio: calls audio_fallback_model to transcribe, builds text message
+/// - Non-native audio: calls audio_fallback_model to transcribe, builds text message
 async fn build_user_message_full(
     state: &Arc<Mutex<BotState>>,
     chat_id: &str,
@@ -400,27 +400,20 @@ async fn build_user_message_full(
     let is_image = matches!(media, crate::media::IngestedMedia::Photo { .. });
 
     // Get model capabilities and config
-    let (_model_id, supports_modality, fallback_model, token, media_dir, api_key) = {
+    let (_model_id, supports_modality, image_fallback_exists, audio_fallback_model, token, media_dir, api_key) = {
         let s = state.lock().await;
         let model_id = s.effective_model(chat_id);
         let normalized = crate::openrouter::normalize_model_id(&model_id);
         let meta = s.model_metadata.get(normalized);
-        let supports_modality = meta.map(|m| {
-            if is_image {
-                m.supports_modality("image")
-            } else {
-                m.supports_modality("audio")
-            }
-        }).unwrap_or(false);
-        let fallback_model = if is_image {
-            s.config.image_fallback_model_for_chat(chat_id).map(String::from)
-        } else {
-            s.config.audio_fallback_model_for_chat(chat_id).map(String::from)
-        };
+        let modality = if is_image { "image" } else { "audio" };
+        let supports_modality = meta.map(|m| m.supports_modality(modality)).unwrap_or(false);
+        let image_fallback_exists = s.config.image_fallback_model_for_chat(chat_id).is_some();
+        let audio_fallback_model = s.config.audio_fallback_model_for_chat(chat_id).map(String::from);
         (
             model_id,
             supports_modality,
-            fallback_model,
+            image_fallback_exists,
+            audio_fallback_model,
             s.config.telegram_token.clone(),
             s.config.media_dir.clone(),
             s.config.openrouter.api_key.clone(),
@@ -464,23 +457,18 @@ async fn build_user_message_full(
     // Build the user message based on capabilities
     if let Some(fp) = file_path {
         if supports_modality {
-            // Native path: include media directly as content parts
             build_native_message(media, caption, text, username, &fp)
         } else if is_image {
-            // Image without native support: metadata + file path, let LLM use describe_image tool
-            build_image_metadata_message(media, caption, text, username, &fp, fallback_model.is_some())
-        } else if let Some(ref fb_model) = fallback_model {
-            // Audio without native support: automatic transcription via fallback model
-            build_fallback_message(
+            build_image_metadata_message(media, caption, text, username, &fp, image_fallback_exists)
+        } else if let Some(ref fb_model) = audio_fallback_model {
+            build_audio_fallback_message(
                 media, caption, text, username, &fp, fb_model, &api_key,
             )
             .await
         } else {
-            // No fallback model configured: metadata only
             build_text_metadata_message(media, caption, text, username)
         }
     } else {
-        // Download failed or not possible: metadata only
         build_text_metadata_message(media, caption, text, username)
     }
 }
@@ -546,7 +534,7 @@ fn build_native_message(
 }
 
 /// Build a ChatMessage where audio is transcribed via a fallback model.
-async fn build_fallback_message(
+async fn build_audio_fallback_message(
     media: &crate::media::IngestedMedia,
     caption: Option<&str>,
     text: &str,
