@@ -46,7 +46,7 @@ fn test_save_and_search_embeddings() {
     // Search with query that matches emb1
     let query = vec![1.0f32, 0.0, 0.0, 0.0];
     let results = db
-        .search_embeddings(chat_id, &query, "test-embed-model", 10)
+        .search_embeddings(chat_id, &query, "test-embed-model", 10, 10)
         .unwrap();
 
     assert_eq!(results.len(), 2);
@@ -80,7 +80,7 @@ fn test_search_embeddings_respects_limit() {
 
     let query = vec![0.0f32, 1.0, 0.0, 0.0];
     let results = db
-        .search_embeddings(chat_id, &query, "test-model", 3)
+        .search_embeddings(chat_id, &query, "test-model", 3, 3)
         .unwrap();
     assert!(
         results.len() <= 3,
@@ -101,13 +101,13 @@ fn test_search_embeddings_model_filter() {
 
     // Search with different model should find nothing
     let results = db
-        .search_embeddings(chat_id, &[1.0, 0.0], "model-b", 10)
+        .search_embeddings(chat_id, &[1.0, 0.0], "model-b", 10, 10)
         .unwrap();
     assert!(results.is_empty());
 
     // Search with correct model should find it
     let results = db
-        .search_embeddings(chat_id, &[1.0, 0.0], "model-a", 10)
+        .search_embeddings(chat_id, &[1.0, 0.0], "model-a", 10, 10)
         .unwrap();
     assert_eq!(results.len(), 1);
 }
@@ -116,7 +116,7 @@ fn test_search_embeddings_model_filter() {
 fn test_search_embeddings_empty_chat() {
     let db = make_db();
     let results = db
-        .search_embeddings("nonexistent", &[1.0, 0.0], "any-model", 10)
+        .search_embeddings("nonexistent", &[1.0, 0.0], "any-model", 10, 10)
         .unwrap();
     assert!(results.is_empty());
 }
@@ -137,7 +137,7 @@ fn test_cleanup_mismatched_embeddings() {
 
     // Only new-model embedding should survive
     let results = db
-        .search_embeddings(chat_id, &[1.0], "new-model", 10)
+        .search_embeddings(chat_id, &[1.0], "new-model", 10, 10)
         .unwrap();
     assert_eq!(results.len(), 1);
 }
@@ -206,7 +206,7 @@ fn test_search_embeddings_dimension_mismatch_skipped() {
 
     // Search with a 4-dim query
     let results = db
-        .search_embeddings("-222", &[1.0, 0.0, 0.0, 0.0], "model-x", 10)
+        .search_embeddings("-222", &[1.0, 0.0, 0.0, 0.0], "model-x", 10, 10)
         .unwrap();
     // Mismatched dimension should be skipped
     assert!(results.is_empty());

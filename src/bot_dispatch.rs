@@ -534,13 +534,12 @@ pub(crate) async fn dispatch_tool(
             let results = {
                 let s = state.lock().await;
                 s.db
-                    .search_embeddings(&cid, &query_embedding, &embedding_model, search_limit)
+                    .search_embeddings(&cid, &query_embedding, &embedding_model, count, search_limit)
                     .unwrap_or_default()
             };
 
             let top_results: Vec<_> = results
                 .into_iter()
-                .take(count)
                 .map(|(_id, score, text)| {
                     serde_json::json!({
                         "similarity": format!("{:.4}", score),

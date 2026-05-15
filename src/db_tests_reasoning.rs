@@ -77,7 +77,7 @@ fn test_search_embedding_skips_empty_text() {
     db.save_embedding(ids[0], &[1.0, 0.0], "model-e").unwrap();
 
     let results = db
-        .search_embeddings("-000", &[1.0, 0.0], "model-e", 10)
+        .search_embeddings("-000", &[1.0, 0.0], "model-e", 10, 10)
         .unwrap();
     // Empty text messages should be skipped
     assert!(results.is_empty());
