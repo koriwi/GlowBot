@@ -745,7 +745,7 @@ pub(crate) fn describe_image_tool_definition() -> ToolDefinition {
         def_type: "function".into(),
         function: FunctionDef {
             name: "describe_image".into(),
-            description: "Get a detailed description of an image using a vision-capable model. Use this when you need specific visual details that aren't obvious from context — e.g. portion sizes, text reading, object identification, calorie estimation, spatial layout, etc. The image is already saved to disk; provide the file_path from the user's message metadata and a specific prompt requesting exactly what details you need.".into(),
+            description: "Get a detailed description of an image using a vision-capable model. Before calling, send a brief heads-up via send_message to let the user know you're analyzing the image (e.g. 'Let me take a closer look...') — this may take a moment. Use this tool when you need specific visual details that aren't obvious from context — e.g. portion sizes, text reading, object identification, calorie estimation, spatial layout, etc. The image is already saved to disk; provide the file_path from the user's message metadata and a specific prompt requesting exactly what details you need.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
