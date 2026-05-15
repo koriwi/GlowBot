@@ -171,14 +171,14 @@ pub(crate) async fn process_with_llm_impl(
             let msg_count = request.messages.len();
 
             let (response, usage) = {
-                let s = state.lock().await;
+                let llm = { state.lock().await.llm.clone() };
                 log::info!(
                     "pipeline: calling LLM model={}, round={}, messages={}",
                     model,
                     round,
                     msg_count
                 );
-                let resp = s.llm.chat_completion(&request).await?;
+                let resp = llm.chat_completion(&request).await?;
                 let usage = resp.usage.clone().unwrap_or_default();
                 log::info!(
                     "pipeline: LLM response received, prompt_tokens={}, completion_tokens={}, has_tool_calls={}",
@@ -186,12 +186,10 @@ pub(crate) async fn process_with_llm_impl(
                     usage.completion_tokens,
                     resp.choices.first().and_then(|c| c.message.tool_calls.as_ref()).map(|t| t.len()).unwrap_or(0)
                 );
+                let mut s = state.lock().await;
+                s.last_usage.insert(chat_id.to_string(), usage.clone());
                 (resp, usage)
             };
-            {
-                let mut s = state.lock().await;
-                s.last_usage.insert(chat_id.to_string(), usage);
-            }
 
             if check_stopped() {
                 return Ok(Some("⏹ Stopped.".into()));
