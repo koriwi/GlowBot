@@ -131,6 +131,7 @@ impl BotState {
             self.config.openrouter.embedding_model.as_deref(),
             &self.config.media_dir,
             self.config.image_gen_model_for_chat(chat_id),
+            self.config.image_fallback_model_for_chat(chat_id),
             self.config.advice_model_for_chat(chat_id),
         );
         let mut blacklisted_counts: HashMap<&str, usize> = HashMap::new();

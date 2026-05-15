@@ -83,12 +83,14 @@ pub(crate) fn update_memory_tool_definition() -> ToolDefinition {
 /// When `model` is Some, adds the search_conversations RAG tool.
 /// `media_dir` is the configured media directory path, shown in the send_media description.
 /// `image_gen_model` enables the `generate_image` tool.
+/// `image_fallback_model` enables the `describe_image` tool.
 /// `advice_model` enables the `ask_advisor` tool.
 pub fn all_tool_definitions(
     include_bash: bool,
     embedding_model: Option<&str>,
     media_dir: &str,
     image_gen_model: Option<&str>,
+    image_fallback_model: Option<&str>,
     advice_model: Option<&str>,
 ) -> Vec<ToolDefinition> {
     let mut tools = vec![
@@ -119,6 +121,9 @@ pub fn all_tool_definitions(
     tools.push(send_media_tool_definition(media_dir));
     if image_gen_model.is_some() {
         tools.push(generate_image_tool_definition(media_dir));
+    }
+    if image_fallback_model.is_some() {
+        tools.push(describe_image_tool_definition());
     }
     if advice_model.is_some() {
         tools.push(ask_advisor_tool_definition(advice_model.unwrap()));
@@ -728,6 +733,32 @@ pub(crate) fn ask_advisor_tool_definition(advice_model: &str) -> ToolDefinition 
                     }
                 },
                 "required": ["query"]
+            }),
+        },
+    }
+}
+
+/// The describe_image tool definition.
+/// Only exposed when `image_fallback_model` is configured.
+pub(crate) fn describe_image_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: "describe_image".into(),
+            description: "Get a detailed description of an image using a vision-capable model. Use this when you need specific visual details that aren't obvious from context — e.g. portion sizes, text reading, object identification, calorie estimation, spatial layout, etc. The image is already saved to disk; provide the file_path from the user's message metadata and a specific prompt requesting exactly what details you need.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the image file on disk. This is provided in the user's message when they send an image."
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "What to ask about the image. Be specific — request measurements, text reading, object identification, or any other details you need."
+                    }
+                },
+                "required": ["file_path", "prompt"]
             }),
         },
     }

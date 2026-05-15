@@ -75,7 +75,7 @@ fn test_chat_completion_request_seialization() {
     let req = ChatCompletionRequest {
         model: "test/model".into(),
         messages: vec![ChatMessage::system("sys"), ChatMessage::user("hi")],
-        tools: Some(all_tool_definitions(true, None, "/media", None, None)),
+        tools: Some(all_tool_definitions(true, None, "/media", None, None, None)),
         tool_choice: None,
         modalities: None,
         image_config: None,
@@ -90,7 +90,7 @@ fn test_chat_completion_request_seialization() {
 
 #[test]
 fn test_all_tool_definitions_with_bash() {
-    let tools = all_tool_definitions(true, None, "/media", None, None);
+    let tools = all_tool_definitions(true, None, "/media", None, None, None);
     assert_eq!(tools.len(), 27);
     assert_eq!(tools[0].function.name, "bash");
     assert_eq!(tools[1].function.name, "read_memory");
@@ -99,7 +99,7 @@ fn test_all_tool_definitions_with_bash() {
 
 #[test]
 fn test_all_tool_definitions_without_bash() {
-    let tools = all_tool_definitions(false, None, "/media", None, None);
+    let tools = all_tool_definitions(false, None, "/media", None, None, None);
     assert_eq!(tools.len(), 26);
     assert_eq!(tools[0].function.name, "read_memory");
     assert!(!tools.iter().any(|t| t.function.name == "bash"));

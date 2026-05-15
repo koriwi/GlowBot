@@ -16,6 +16,8 @@ mod bot_dispatch_skills;
 pub mod bot_dispatch_config;
 #[path = "bot_dispatch_model.rs"]
 pub mod bot_dispatch_model;
+#[path = "bot_dispatch_describe.rs"]
+mod bot_dispatch_describe;
 
 /// Log a tool call to `tool_calls.log` in the given data directory.
 pub(crate) fn log_tool_call_to(
@@ -230,6 +232,9 @@ pub(crate) async fn dispatch_tool(
         }
         "generate_image" => {
             bot_dispatch_image::tool_generate_image(state, &cid, args).await
+        }
+        "describe_image" => {
+            bot_dispatch_describe::tool_describe_image(state, &cid, args).await
         }
         "create_skill" => {
             bot_dispatch_skills::tool_create_skill(state, args).await

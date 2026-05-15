@@ -21,20 +21,57 @@ fn test_generate_image_tool_definition() {
 #[test]
 fn test_all_tool_definitions_with_image_gen_model() {
     // With image_gen_model, without bash, without embedding: 21 base + generate_image + 3 config + 2 model tools = 27
-    let tools = all_tool_definitions(false, None, "/media", Some("black-forest-labs/flux-1.1-pro"), None);
+    let tools = all_tool_definitions(false, None, "/media", Some("black-forest-labs/flux-1.1-pro"), None, None);
     assert_eq!(tools.len(), 27);
     assert!(tools.iter().any(|t| t.function.name == "generate_image"));
 
     // With image_gen_model, with bash, without embedding: 21 base + generate_image + bash + 3 config + 2 model tools = 28
-    let tools = all_tool_definitions(true, None, "/media", Some("black-forest-labs/flux-1.1-pro"), None);
+    let tools = all_tool_definitions(true, None, "/media", Some("black-forest-labs/flux-1.1-pro"), None, None);
     assert_eq!(tools.len(), 28);
     assert_eq!(tools[0].function.name, "bash");
     assert!(tools.iter().any(|t| t.function.name == "generate_image"));
 
     // Without image_gen_model: generate_image is excluded
-    let tools = all_tool_definitions(true, None, "/media", None, None);
+    let tools = all_tool_definitions(true, None, "/media", None, None, None);
     assert_eq!(tools.len(), 27);
     assert!(!tools.iter().any(|t| t.function.name == "generate_image"));
+}
+
+#[test]
+fn test_describe_image_tool_definition() {
+    let def = describe_image_tool_definition();
+    assert_eq!(def.def_type, "function");
+    assert_eq!(def.function.name, "describe_image");
+    assert!(def.function.description.contains("vision-capable"));
+    assert!(def.function.description.contains("portion sizes"));
+
+    let params = &def.function.parameters;
+    assert_eq!(params["type"], "object");
+    let required = params["required"].as_array().unwrap();
+    assert_eq!(required.len(), 2);
+    assert!(required.iter().any(|v| v.as_str() == Some("file_path")));
+    assert!(required.iter().any(|v| v.as_str() == Some("prompt")));
+    assert_eq!(params["properties"]["file_path"]["type"], "string");
+    assert_eq!(params["properties"]["prompt"]["type"], "string");
+}
+
+#[test]
+fn test_all_tool_definitions_with_image_fallback_model() {
+    // With image_fallback_model, without bash, without embedding: 21 base + describe_image + 3 config + 2 model tools = 27
+    let tools = all_tool_definitions(false, None, "/media", None, Some("openai/gpt-4o"), None);
+    assert_eq!(tools.len(), 27);
+    assert!(tools.iter().any(|t| t.function.name == "describe_image"));
+
+    // With image_fallback_model, with bash, without embedding: 21 base + describe_image + bash + 3 config + 2 model tools = 28
+    let tools = all_tool_definitions(true, None, "/media", None, Some("openai/gpt-4o"), None);
+    assert_eq!(tools.len(), 28);
+    assert_eq!(tools[0].function.name, "bash");
+    assert!(tools.iter().any(|t| t.function.name == "describe_image"));
+
+    // Without image_fallback_model: describe_image is excluded
+    let tools = all_tool_definitions(true, None, "/media", None, None, None);
+    assert_eq!(tools.len(), 27);
+    assert!(!tools.iter().any(|t| t.function.name == "describe_image"));
 }
 
 #[test]
@@ -150,18 +187,18 @@ fn test_ask_advisor_tool_definition() {
 #[test]
 fn test_all_tool_definitions_with_advice_model() {
     // Without bash, without embedding, with advice_model: base 26 + advice = 27
-    let tools = all_tool_definitions(false, None, "/media", None, Some("openai/gpt-4o"));
+    let tools = all_tool_definitions(false, None, "/media", None, None, Some("openai/gpt-4o"));
     assert_eq!(tools.len(), 27);
     assert!(tools.iter().any(|t| t.function.name == "ask_advisor"));
 
     // With bash, without embedding, with advice_model: base 27 + advice = 28
-    let tools = all_tool_definitions(true, None, "/media", None, Some("openai/gpt-4o"));
+    let tools = all_tool_definitions(true, None, "/media", None, None, Some("openai/gpt-4o"));
     assert_eq!(tools.len(), 28);
     assert!(tools.iter().any(|t| t.function.name == "ask_advisor"));
     assert!(tools.iter().any(|t| t.function.name == "bash"));
 
     // Without advice_model: tool is excluded
-    let tools = all_tool_definitions(true, None, "/media", None, None);
+    let tools = all_tool_definitions(true, None, "/media", None, None, None);
     assert_eq!(tools.len(), 27);
     assert!(!tools.iter().any(|t| t.function.name == "ask_advisor"));
 }

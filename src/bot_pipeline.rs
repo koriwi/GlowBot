@@ -466,10 +466,13 @@ async fn build_user_message_full(
         if supports_modality {
             // Native path: include media directly as content parts
             build_native_message(media, caption, text, username, &fp)
+        } else if is_image {
+            // Image without native support: metadata + file path, let LLM use describe_image tool
+            build_image_metadata_message(media, caption, text, username, &fp, fallback_model.is_some())
         } else if let Some(ref fb_model) = fallback_model {
-            // Fallback path: convert media to text via fallback model
+            // Audio without native support: automatic transcription via fallback model
             build_fallback_message(
-                media, caption, text, username, &fp, fb_model, &api_key, is_image,
+                media, caption, text, username, &fp, fb_model, &api_key,
             )
             .await
         } else {
@@ -542,7 +545,7 @@ fn build_native_message(
     ChatMessage::user_multimodal_with_name(parts, username)
 }
 
-/// Build a ChatMessage where media is converted to text via a fallback model.
+/// Build a ChatMessage where audio is transcribed via a fallback model.
 async fn build_fallback_message(
     media: &crate::media::IngestedMedia,
     caption: Option<&str>,
@@ -551,15 +554,10 @@ async fn build_fallback_message(
     file_path: &std::path::Path,
     fallback_model: &str,
     api_key: &str,
-    is_image: bool,
 ) -> ChatMessage {
     let client = OpenRouterClient::new(api_key.to_string());
 
-    let fallback_text = if is_image {
-        call_image_fallback(&client, fallback_model, file_path).await
-    } else {
-        call_audio_fallback(&client, fallback_model, file_path).await
-    };
+    let fallback_text = call_audio_fallback(&client, fallback_model, file_path).await;
 
     let metadata = media_metadata_text(media);
     let mut combined = format!("{} File saved to: {}", metadata, file_path.display());
@@ -579,43 +577,6 @@ async fn build_fallback_message(
     }
 
     ChatMessage::user_with_name(&combined, username)
-}
-
-/// Call an image-capable fallback model to describe an image.
-async fn call_image_fallback(
-    client: &OpenRouterClient,
-    model: &str,
-    image_path: &std::path::Path,
-) -> anyhow::Result<String> {
-    let data_url = crate::media::image_to_data_url(image_path)?;
-    let parts = vec![
-        crate::openrouter::ContentPart::Text {
-            text: "Describe this image in detail. Include any visible text.".into(),
-        },
-        crate::openrouter::ContentPart::ImageUrl {
-            image_url: crate::openrouter::ImageUrlDetail {
-                url: data_url,
-                detail: None,
-            },
-        },
-    ];
-    let msg = ChatMessage::user_multimodal(parts);
-    let request = ChatCompletionRequest {
-        model: model.to_string(),
-        messages: vec![msg],
-        tools: None,
-        tool_choice: None,
-        modalities: None,
-        image_config: None,
-    };
-    let response = client.chat_completion(&request).await?;
-    let text = response
-        .choices
-        .into_iter()
-        .next()
-        .and_then(|c| c.message.content)
-        .unwrap_or_default();
-    Ok(text)
 }
 
 /// Call an audio-capable fallback model to transcribe audio.
@@ -655,6 +616,32 @@ async fn call_audio_fallback(
     Ok(text)
 }
 
+/// Build a metadata message for images when the model doesn't support them natively.
+/// Includes file path so the LLM can use the describe_image tool.
+fn build_image_metadata_message(
+    media: &crate::media::IngestedMedia,
+    caption: Option<&str>,
+    text: &str,
+    username: &str,
+    file_path: &std::path::Path,
+    has_fallback: bool,
+) -> ChatMessage {
+    let metadata = media_metadata_text(media);
+    let mut combined = format!("{} File saved to: {}", metadata, file_path.display());
+    if has_fallback {
+        combined.push_str(" Use the describe_image tool with a specific prompt to get visual details (e.g. portion sizes, text reading, object identification, layout).");
+    }
+    if let Some(cap) = caption {
+        if !cap.is_empty() {
+            combined.push_str(&format!("\nCaption: {}", cap));
+        }
+    }
+    if !text.is_empty() {
+        combined.push_str(&format!("\n\n{}", text));
+    }
+    ChatMessage::user_with_name(&combined, username)
+}
+
 /// Build a text-only metadata message (when download fails or no native/fallback available).
 fn build_text_metadata_message(
     media: &crate::media::IngestedMedia,
@@ -680,7 +667,7 @@ fn media_metadata_text(media: &crate::media::IngestedMedia) -> String {
     match media {
         crate::media::IngestedMedia::Photo { width, height, .. } => {
             format!(
-                "[This image ({}x{}) was sent by the user and was automatically converted to text for you.]",
+                "[This image ({}x{}) was sent by the user.]",
                 width, height
             )
         }
