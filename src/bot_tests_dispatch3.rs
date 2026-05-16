@@ -5,22 +5,7 @@ async fn test_dispatch_add_task_empty() {
     std::fs::create_dir_all(&data_dir).unwrap();
     let cfg = crate::config::basic_config();
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir,
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-            model_order: Vec::new(),
-        last_usage: HashMap::new(),
-            pending_config_changes: HashMap::new(),
-            pending_model_changes: HashMap::new(),
-            model_overrides: HashMap::new(),
-            last_browse_cb: HashMap::new(),
-            _mcp_services: vec![], mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg, &data_dir);
     let out = dispatch_tool(
         &state,
         "-123",
@@ -39,22 +24,7 @@ async fn test_dispatch_list_tasks_non_empty() {
     std::fs::create_dir_all(&data_dir).unwrap();
     let cfg = crate::config::basic_config();
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir: data_dir.clone(),
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-            model_order: Vec::new(),
-        last_usage: HashMap::new(),
-            pending_config_changes: HashMap::new(),
-            pending_model_changes: HashMap::new(),
-            model_overrides: HashMap::new(),
-            last_browse_cb: HashMap::new(),
-            _mcp_services: vec![], mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg, &data_dir);
     // Add a task first
     dispatch_tool(
         &state,
@@ -75,22 +45,7 @@ async fn test_dispatch_remove_task_empty_and_not_found() {
     std::fs::create_dir_all(&data_dir).unwrap();
     let cfg = crate::config::basic_config();
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir: data_dir.clone(),
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-            model_order: Vec::new(),
-        last_usage: HashMap::new(),
-            pending_config_changes: HashMap::new(),
-            pending_model_changes: HashMap::new(),
-            model_overrides: HashMap::new(),
-            last_browse_cb: HashMap::new(),
-            _mcp_services: vec![], mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg, &data_dir);
     let out = dispatch_tool(
         &state,
         "-123",
@@ -118,22 +73,7 @@ async fn test_dispatch_create_skill_validation() {
     std::fs::create_dir_all(&data_dir).unwrap();
     let cfg = crate::config::basic_config();
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir: data_dir.clone(),
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-            model_order: Vec::new(),
-        last_usage: HashMap::new(),
-            pending_config_changes: HashMap::new(),
-            pending_model_changes: HashMap::new(),
-            model_overrides: HashMap::new(),
-            last_browse_cb: HashMap::new(),
-            _mcp_services: vec![], mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg, &data_dir);
     let out = dispatch_tool(
         &state,
         "-123",
@@ -152,22 +92,7 @@ async fn test_dispatch_read_skill_not_found() {
     std::fs::create_dir_all(&data_dir).unwrap();
     let cfg = crate::config::basic_config();
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir,
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-            model_order: Vec::new(),
-        last_usage: HashMap::new(),
-            pending_config_changes: HashMap::new(),
-            pending_model_changes: HashMap::new(),
-            model_overrides: HashMap::new(),
-            last_browse_cb: HashMap::new(),
-            _mcp_services: vec![], mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg, &data_dir);
     let out = dispatch_tool(
         &state,
         "-123",
@@ -186,22 +111,7 @@ async fn test_dispatch_update_skill_not_found() {
     std::fs::create_dir_all(&data_dir).unwrap();
     let cfg = crate::config::basic_config();
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir,
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-            model_order: Vec::new(),
-        last_usage: HashMap::new(),
-            pending_config_changes: HashMap::new(),
-            pending_model_changes: HashMap::new(),
-            model_overrides: HashMap::new(),
-            last_browse_cb: HashMap::new(),
-            _mcp_services: vec![], mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg, &data_dir);
     let out = dispatch_tool(
         &state,
         "-123",
@@ -220,22 +130,7 @@ async fn test_dispatch_unknown_tool() {
     std::fs::create_dir_all(&data_dir).unwrap();
     let cfg = crate::config::basic_config();
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir,
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-            model_order: Vec::new(),
-        last_usage: HashMap::new(),
-            pending_config_changes: HashMap::new(),
-            pending_model_changes: HashMap::new(),
-            model_overrides: HashMap::new(),
-            last_browse_cb: HashMap::new(),
-            _mcp_services: vec![], mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg, &data_dir);
     let out = dispatch_tool(&state, "-123", "narnia", &serde_json::json!({}), None).await;
     assert!(out.contains("Unknown tool"));
 }
@@ -247,22 +142,7 @@ async fn test_dispatch_mcp_tool_not_found() {
     std::fs::create_dir_all(&data_dir).unwrap();
     let cfg = crate::config::basic_config();
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir,
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-            model_order: Vec::new(),
-        last_usage: HashMap::new(),
-            pending_config_changes: HashMap::new(),
-            pending_model_changes: HashMap::new(),
-            model_overrides: HashMap::new(),
-            last_browse_cb: HashMap::new(),
-            _mcp_services: vec![], mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg, &data_dir);
     let out = dispatch_tool(&state, "-123", "mcp_no_no", &serde_json::json!({}), None).await;
     assert!(out.contains("MCP tool not found"));
 }
@@ -274,22 +154,7 @@ async fn test_get_recent_messages_empty_history() {
     std::fs::create_dir_all(&data_dir).unwrap();
     let cfg = crate::config::basic_config();
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir,
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-            model_order: Vec::new(),
-        last_usage: HashMap::new(),
-            pending_config_changes: HashMap::new(),
-            pending_model_changes: HashMap::new(),
-            model_overrides: HashMap::new(),
-            last_browse_cb: HashMap::new(),
-            _mcp_services: vec![], mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg, &data_dir);
     let out = dispatch_tool(
         &state,
         "-123",
@@ -353,6 +218,28 @@ async fn test_conversation_history_window_trims() {
     assert_eq!(h_len, 20);
 }
 
+// ---------- helpers ----------
+
+fn make_bot_state(cfg: crate::config::Config, data_dir: &std::path::Path) -> Arc<Mutex<BotState>> {
+    Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir: data_dir.to_path_buf(),
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_metadata: HashMap::new(),
+        model_order: Vec::new(),
+        last_usage: HashMap::new(),
+        pending_config_changes: HashMap::new(),
+        pending_model_changes: HashMap::new(),
+        model_overrides: HashMap::new(),
+        last_browse_cb: HashMap::new(),
+        _mcp_services: vec![],
+        mcp_peers: HashMap::new(),
+    }))
+}
+
 // ---------- max_tool_result_chars / cap_tool_result ----------
 
 #[test]
@@ -392,23 +279,7 @@ async fn test_dispatch_tool_calls_caps_results_when_limit_set() {
     let mut cfg = crate::config::basic_config();
     cfg.conversation.max_tool_result_chars = Some(20);
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir,
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-        model_order: Vec::new(),
-        last_usage: HashMap::new(),
-        pending_config_changes: HashMap::new(),
-        pending_model_changes: HashMap::new(),
-        model_overrides: HashMap::new(),
-        last_browse_cb: HashMap::new(),
-        _mcp_services: vec![],
-        mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg.clone(), &data_dir);
 
     // add_task produces a result that includes the description —
     // use a long description to trigger the cap
@@ -434,23 +305,7 @@ async fn test_dispatch_tool_calls_no_cap_when_limit_unset() {
     std::fs::create_dir_all(&data_dir).unwrap();
     let cfg = crate::config::basic_config();
     cfg.save(&data_dir.join("config.yaml")).unwrap();
-    let state = Arc::new(Mutex::new(BotState {
-        config: cfg,
-        skills: HashMap::new(),
-        llm: Arc::new(MockLlmBackend::new()),
-        data_dir,
-        db: crate::db::Database::open_in_memory().unwrap(),
-        mcp_tools: vec![],
-        model_metadata: HashMap::new(),
-        model_order: Vec::new(),
-        last_usage: HashMap::new(),
-        pending_config_changes: HashMap::new(),
-        pending_model_changes: HashMap::new(),
-        model_overrides: HashMap::new(),
-        last_browse_cb: HashMap::new(),
-        _mcp_services: vec![],
-        mcp_peers: HashMap::new(),
-    }));
+    let state = make_bot_state(cfg, &data_dir);
 
     let tool_calls = vec![ToolCall {
         id: "call_1".into(),

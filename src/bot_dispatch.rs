@@ -66,14 +66,12 @@ pub(crate) async fn dispatch_tool_calls(
     data_dir: Option<&std::path::Path>,
     tg_bot: Option<&teloxide::Bot>,
 ) -> Vec<ChatMessage> {
-    let max_result_chars = {
-        state
-            .lock()
-            .await
-            .config
-            .conversation
-            .max_tool_result_chars
-    };
+    let max_result_chars = state
+        .lock()
+        .await
+        .config
+        .conversation
+        .max_tool_result_chars;
 
     let mut results = Vec::new();
     for tc in tool_calls {
@@ -449,7 +447,6 @@ pub(crate) async fn dispatch_tool(
                 return "Error: query required".into();
             }
 
-            // Get advice model, window size, and DB from config
             let (advice_model, window_size, db) = {
                 let s = state.lock().await;
                 let advice_model = match s.config.advice_model_for_chat(&cid) {
@@ -461,7 +458,6 @@ pub(crate) async fn dispatch_tool(
                 (advice_model, window_size, db)
             };
 
-            // Load recent messages from the conversation (limited by advice window size)
             let recent_messages = if window_size > 0 {
                 match db.load_messages(&cid, window_size, None) {
                     Ok(msgs) => msgs,
@@ -474,7 +470,6 @@ pub(crate) async fn dispatch_tool(
                 vec![]
             };
 
-            // Build messages for the advice model
             let mut advice_messages: Vec<ChatMessage> = vec![
                 ChatMessage::system(
                     "You are an advisor model. A smaller/cheaper AI model is asking for your private help \
@@ -512,7 +507,6 @@ pub(crate) async fn dispatch_tool(
                 "calling_model",
             ));
 
-            // Call the advice model via the LLM backend
             let request = crate::openrouter::ChatCompletionRequest {
                 model: advice_model,
                 messages: advice_messages,
@@ -531,7 +525,6 @@ pub(crate) async fn dispatch_tool(
                         .next()
                         .and_then(|c| c.message.content)
                         .unwrap_or_default();
-                    // Include usage info if available
                     let usage_info = match &resp.usage {
                         Some(u) if u.total_tokens > 0 => {
                             format!("\n\n[Advisor model usage: {} prompt + {} completion = {} total tokens]",

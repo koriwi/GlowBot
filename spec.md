@@ -45,9 +45,10 @@ glowbot_data/
 telegram_token: "..."
 
 # OpenRouter
-openrouter_api_key: "..."
-openrouter_default_model: "anthropic/claude-sonnet-4"
-openrouter_advice_model: "openai/gpt-4o"   # optional; when set enables ask_advisor tool
+openrouter:
+  api_key: "..."
+  model: "anthropic/claude-sonnet-4"
+  advice_model: "openai/gpt-4o"   # optional; when set enables ask_advisor tool
 
 # Conversation context settings
 conversation:
@@ -77,7 +78,7 @@ chats:
     model: "openai/gpt-4o"               # optional, overrides default
     interaction_mode: "every_message"    # "every_message" | "mention_only"
     interaction_whitelist: []            # user IDs; empty = everyone allowed
-    commands_enabled: false               # whether bot commands are enabled
+    command_whitelist: []                # user IDs allowed to run commands; empty = nobody
     system_prompt: ""                    # optional per-chat system prompt
     advice_model: "openai/gpt-4o"        # optional, override global advice model
 ```
