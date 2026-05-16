@@ -116,7 +116,7 @@ pub struct DmConfig {
 }
 
 /// Database-related configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct DatabaseConfig {
     /// Maximum character length for tool call/result content stored in the database.
     /// Content exceeding this is truncated (with "..." appended). None = no limit.
@@ -126,15 +126,6 @@ pub struct DatabaseConfig {
     /// Content exceeding this is truncated (with "..." appended). None = no limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_max_content_len: Option<usize>,
-}
-
-impl Default for DatabaseConfig {
-    fn default() -> Self {
-        Self {
-            tool_max_content_len: None,
-            reasoning_max_content_len: None,
-        }
-    }
 }
 
 /// Conversation context configuration.
@@ -238,7 +229,7 @@ pub struct Config {
     pub telegram_token: String,
     /// OpenRouter configuration.
     pub openrouter: OpenRouterConfig,
-    /// Conversation context settings (window size, thought inclusion).
+    /// Conversation context settings (window sizes for history and advice).
     #[serde(default)]
     pub conversation: ConversationConfig,
 

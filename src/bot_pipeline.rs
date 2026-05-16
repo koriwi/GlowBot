@@ -258,11 +258,9 @@ pub(crate) async fn process_with_llm_impl(
     // Store the completed turn in conversation history
     let message_ids = {
         let s = state.lock().await;
-        let db_config = s.config.db.clone();
-        let prepared = prepare_messages_for_storage(&turn_messages, &db_config);
+        let prepared = prepare_messages_for_storage(&turn_messages, &s.config.db);
         log::info!(
-            "pipeline: saving turn to DB ({} messages, {} after filtering)",
-            turn_messages.len(),
+            "pipeline: saving turn to DB ({} messages)",
             prepared.len()
         );
         s.db.save_messages(chat_id, &prepared)
@@ -402,7 +400,7 @@ async fn build_user_message_full(
     let is_image = matches!(media, crate::media::IngestedMedia::Photo { .. });
 
     // Get model capabilities and config
-    let (_model_id, supports_modality, image_fallback_exists, audio_fallback_model, token, media_dir, api_key) = {
+    let (supports_modality, image_fallback_exists, audio_fallback_model, token, media_dir, api_key) = {
         let s = state.lock().await;
         let model_id = s.effective_model(chat_id);
         let normalized = crate::openrouter::normalize_model_id(&model_id);
@@ -412,7 +410,6 @@ async fn build_user_message_full(
         let image_fallback_exists = s.config.image_fallback_model_for_chat(chat_id).is_some();
         let audio_fallback_model = s.config.audio_fallback_model_for_chat(chat_id).map(String::from);
         (
-            model_id,
             supports_modality,
             image_fallback_exists,
             audio_fallback_model,
@@ -717,12 +714,10 @@ pub(crate) fn prepare_messages_for_storage(
             }
 
             // Truncate tool call arguments
-            if msg.role == "assistant" && msg.tool_calls.is_some() {
-                if let Some(max_len) = db_config.tool_max_content_len {
-                    if let Some(ref mut tcs) = msg.tool_calls {
-                        for tc in tcs.iter_mut() {
-                            truncate_str(&mut tc.function.arguments, max_len);
-                        }
+            if msg.role == "assistant" {
+                if let (Some(max_len), Some(ref mut tcs)) = (db_config.tool_max_content_len, &mut msg.tool_calls) {
+                    for tc in tcs.iter_mut() {
+                        truncate_str(&mut tc.function.arguments, max_len);
                     }
                 }
             }

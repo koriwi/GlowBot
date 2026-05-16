@@ -123,14 +123,14 @@ async fn test_dispatch_ask_advisor_with_recent_messages() {
 }
 
 #[tokio::test]
-async fn test_dispatch_ask_advisor_with_reasoning_included() {
+async fn test_dispatch_ask_advisor_with_reasoning() {
     let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 
     {
         let mut s = bot.state.lock().await;
         s.config.openrouter.advice_model = Some("advisor/model".into());
         s.config.conversation.advice_recent_messages_window_size = 2;
-        // Pre-seed messages with reasoning
+        // Reasoning is always included — seed messages with reasoning
         let msgs = vec![
             ChatMessage::user_with_name("Question", "Alice"),
             ChatMessage::assistant_with_reasoning("Answer", "I think this is because...".into()),
@@ -154,39 +154,6 @@ async fn test_dispatch_ask_advisor_with_reasoning_included() {
     let result = dispatch_tool(&state, "-123", "ask_advisor", &args, None).await;
     assert!(result.contains("Advisor response:"));
     assert!(result.contains("Good reasoning!"));
-}
-
-#[tokio::test]
-async fn test_dispatch_ask_advisor_with_reasoning_always_included() {
-    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
-
-    {
-        let mut s = bot.state.lock().await;
-        s.config.openrouter.advice_model = Some("advisor/model".into());
-        s.config.conversation.advice_recent_messages_window_size = 2;
-        // Reasoning is always included now — no config flag needed
-        let msgs = vec![
-            ChatMessage::user_with_name("Question", "Alice"),
-            ChatMessage::assistant_with_reasoning("Answer", "Visible reasoning".into()),
-        ];
-        s.db.save_messages("-123", &msgs).unwrap();
-    }
-
-    mock.add_response(ChatCompletionResponse {
-        choices: vec![Choice {
-            message: AssistantMessage {
-                content: Some("Reasoning visible!".into()),
-                ..Default::default()
-            },
-            finish_reason: Some("stop".into()),
-        }],
-        ..Default::default()
-    });
-
-    let state = bot.state.clone();
-    let args = serde_json::json!({"query": "Is reasoning included?"});
-    let result = dispatch_tool(&state, "-123", "ask_advisor", &args, None).await;
-    assert!(result.contains("Advisor response:"));
 }
 
 #[tokio::test]
