@@ -1,5 +1,6 @@
 use super::BotState;
 use crate::openrouter::{ChatMessage, ToolCall};
+use std::io::Write;
 use std::sync::Arc;
 use teloxide::prelude::*;
 use tokio::sync::Mutex;
@@ -39,10 +40,7 @@ pub(crate) fn log_tool_call_to(
         .create(true)
         .append(true)
         .open(&log_path)
-        .and_then(|mut f| {
-            use std::io::Write;
-            f.write_all(line.as_bytes())
-        });
+        .and_then(|mut f| f.write_all(line.as_bytes()));
 
     let is_error = ["Error", "parse error", "HTTP", "request failed", "RPC error"]
         .iter()
@@ -116,9 +114,7 @@ pub(crate) async fn dispatch_tool(
         }
         "bash" => {
             if !state.lock().await.config.is_bash_enabled(&cid) {
-                return format!(
-                    "Error: bash is disabled for this chat. Enable it in config or ask an admin."
-                );
+                return "Error: bash is disabled for this chat. Enable it in config or ask an admin.".into();
             }
             let cmd = args["command"].as_str().unwrap_or("");
             let dir = { state.lock().await.data_dir.clone() };
@@ -318,9 +314,9 @@ pub(crate) async fn dispatch_tool(
                 return "Error: id required".into();
             }
             let new_desc = args["description"].as_str();
-            let set_completed = args.get("completed").and_then(|v| v.as_bool());
+            let completed = args.get("completed").and_then(|v| v.as_bool());
 
-            if new_desc.is_none() && set_completed.is_none() {
+            if new_desc.is_none() && completed.is_none() {
                 return "Error: at least one of 'description' or 'completed' must be provided".into();
             }
 
@@ -341,7 +337,7 @@ pub(crate) async fn dispatch_tool(
                 }
             }
 
-            if set_completed.is_some() {
+            if completed.is_some() {
                 match list.toggle(id) {
                     Some(new_status) => {
                         let status_word = if new_status { "completed" } else { "not completed" };
@@ -388,12 +384,9 @@ pub(crate) async fn dispatch_tool(
             };
             let items: Vec<_> = history
                 .iter()
+                .filter(|m| m.role != "tool")
                 .filter(|m| {
-                    // Exclude tool-call results and messages with no visible text.
-                    if m.role == "tool" {
-                        return false;
-                    }
-                    // Skip assistant messages that only carry tool_calls (no text).
+                    // Skip messages with no visible text (empty content or media placeholders).
                     let text = m.text_content();
                     !text.trim().is_empty() && text != "[image]" && text != "[audio]"
                 })
