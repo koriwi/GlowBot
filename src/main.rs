@@ -85,7 +85,10 @@ async fn run_bot() -> anyhow::Result<()> {
         BotCommand::new("tasks", "📋 Show pending tasks for this chat"),
         BotCommand::new("todos", "✅ Show your todo list for this chat"),
         BotCommand::new("reminders", "⏰ Show pending reminders for this chat"),
-        BotCommand::new("new", "🆕 Reset context — messages before now are excluded from conversation"),
+        BotCommand::new(
+            "new",
+            "🆕 Reset context — messages before now are excluded from conversation",
+        ),
         BotCommand::new("prompt", "💬 Show the system prompt sent to the LLM"),
         BotCommand::new("run", "▶️ Run task agent immediately for this chat"),
         BotCommand::new("tools", "🛠️ Show available tools in this chat"),
@@ -177,10 +180,7 @@ async fn run_bot() -> anyhow::Result<()> {
                                 consecutive_errors
                             );
                         } else {
-                            log::debug!(
-                                "GetUpdates error: {}, retrying in 5s",
-                                e
-                            );
+                            log::debug!("GetUpdates error: {}, retrying in 5s", e);
                         }
                         tokio::time::sleep(Duration::from_secs(5)).await;
                     }
@@ -368,9 +368,20 @@ async fn run_heartbeat_loop(bot: Arc<Mutex<GlowBot>>, tg_bot: Bot) {
                 tokio::spawn(async move {
                     let (state, git_repo, stop_signals) = {
                         let inner = bot_clone.lock().await;
-                        (inner.state.clone(), inner.git_repo.clone(), inner.stop_signals.clone())
+                        (
+                            inner.state.clone(),
+                            inner.git_repo.clone(),
+                            inner.stop_signals.clone(),
+                        )
                     };
-                    glowbot::bot::run_heartbeat_task(state, git_repo, stop_signals, &cid, tg_clone.clone()).await;
+                    glowbot::bot::run_heartbeat_task(
+                        state,
+                        git_repo,
+                        stop_signals,
+                        &cid,
+                        tg_clone.clone(),
+                    )
+                    .await;
                     active_clone.lock().await.remove(&chat_id);
                 });
             }
@@ -441,10 +452,15 @@ async fn run_chat_heartbeat(
 
         let (state, git_repo, stop_signals) = {
             let inner = bot.lock().await;
-            (inner.state.clone(), inner.git_repo.clone(), inner.stop_signals.clone())
+            (
+                inner.state.clone(),
+                inner.git_repo.clone(),
+                inner.stop_signals.clone(),
+            )
         };
 
-        glowbot::bot::run_heartbeat_task(state, git_repo, stop_signals, &chat_id, tg_bot.clone()).await;
+        glowbot::bot::run_heartbeat_task(state, git_repo, stop_signals, &chat_id, tg_bot.clone())
+            .await;
 
         // After running tasks, check if there are any tasks remaining.
         // If the task list is empty, exit the loop so the chat becomes
@@ -468,7 +484,11 @@ async fn run_chat_heartbeat(
 }
 
 /// Handle incoming Telegram callback queries (inline keyboard button presses).
-async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::types::CallbackQuery) {
+async fn handle_callback(
+    tg_bot: Bot,
+    bot: Arc<Mutex<GlowBot>>,
+    cb: teloxide::types::CallbackQuery,
+) {
     let data = cb.data.clone().unwrap_or_default();
     let callback_id = cb.id.clone();
 
@@ -483,8 +503,13 @@ async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::ty
                 bot_inner.state.clone()
             };
             glowbot::bot::bot_models::handle_model_callback(
-                &state, &data, &tg_bot, msg.chat().id, msg.id(),
-            ).await;
+                &state,
+                &data,
+                &tg_bot,
+                msg.chat().id,
+                msg.id(),
+            )
+            .await;
         }
         return;
     }
@@ -496,10 +521,13 @@ async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::ty
             let bot_inner = bot.lock().await;
             bot_inner.state.clone()
         };
-        let result = glowbot::bot::bot_dispatch::bot_dispatch_model::handle_model_callback_approval(
-            &state, &data, Some(&tg_bot),
-        )
-        .await;
+        let result =
+            glowbot::bot::bot_dispatch::bot_dispatch_model::handle_model_callback_approval(
+                &state,
+                &data,
+                Some(&tg_bot),
+            )
+            .await;
         if let Some((edit_text, _followup)) = result {
             if let Some(msg) = cb.message {
                 let chat_id = msg.chat().id;
@@ -527,7 +555,12 @@ async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::ty
                 bot_inner.state.clone()
             };
             glowbot::bot::bot_todos::handle_todo_callback(
-                &state, &data, &callback_id, &tg_bot, msg.chat().id, msg.id(),
+                &state,
+                &data,
+                &callback_id,
+                &tg_bot,
+                msg.chat().id,
+                msg.id(),
             )
             .await;
         }
@@ -557,7 +590,9 @@ async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::ty
     };
 
     let result = glowbot::bot::bot_dispatch::bot_dispatch_config::handle_config_callback(
-        &state, &data, Some(&tg_bot),
+        &state,
+        &data,
+        Some(&tg_bot),
     )
     .await;
 
@@ -574,9 +609,7 @@ async fn handle_callback(tg_bot: Bot, bot: Arc<Mutex<GlowBot>>, cb: teloxide::ty
             if let Err(e) = result {
                 log::warn!("Failed to edit message on callback: {}", e);
                 // Try without MarkdownV2
-                let _ = tg_bot
-                    .edit_message_text(chat_id, msg_id, &edit_text)
-                    .await;
+                let _ = tg_bot.edit_message_text(chat_id, msg_id, &edit_text).await;
             }
         }
     }

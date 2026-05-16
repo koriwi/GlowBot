@@ -31,7 +31,10 @@ pub const SPECIFIER_BUTTONS: &[(&str, &str)] = &[
 /// The `/api/v1/models` endpoint returns IDs like `deepseek/deepseek-v4-pro`, but the config
 /// may specify `deepseek/deepseek-v4-pro:deepseek` to route to a specific provider.
 pub(crate) fn normalize_model_id(model: &str) -> &str {
-    model.rsplit_once(':').map(|(base, _)| base).unwrap_or(model)
+    model
+        .rsplit_once(':')
+        .map(|(base, _)| base)
+        .unwrap_or(model)
 }
 
 /// Apply a routing specifier (e.g. `nitro`, `floor`, `free`) to a model ID.
@@ -77,13 +80,9 @@ pub enum ContentPart {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "image_url")]
-    ImageUrl {
-        image_url: ImageUrlDetail,
-    },
+    ImageUrl { image_url: ImageUrlDetail },
     #[serde(rename = "input_audio")]
-    InputAudio {
-        input_audio: InputAudioDetail,
-    },
+    InputAudio { input_audio: InputAudioDetail },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -341,7 +340,9 @@ where
         serde_json::Value::Number(n) => n
             .as_u64()
             .or_else(|| n.as_f64().map(|f| f as u64))
-            .ok_or_else(|| serde::de::Error::custom(format!("cannot convert number to u64: {}", n))),
+            .ok_or_else(|| {
+                serde::de::Error::custom(format!("cannot convert number to u64: {}", n))
+            }),
         serde_json::Value::Null => Ok(0),
         _ => Err(serde::de::Error::custom(format!(
             "expected number, got {}",

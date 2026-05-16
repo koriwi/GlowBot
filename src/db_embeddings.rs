@@ -1,7 +1,7 @@
+use crate::openrouter::{ChatContent, ContentPart};
 use rusqlite::params;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use crate::openrouter::{ChatContent, ContentPart};
 
 use super::Database;
 
@@ -57,7 +57,11 @@ impl Database {
                 .join(" "),
             Err(_) => return None,
         };
-        if text.is_empty() { None } else { Some(text) }
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
     }
     /// Pack a slice of f32 values into a little-endian byte blob.
     pub fn pack_embedding(embedding: &[f32]) -> Vec<u8> {

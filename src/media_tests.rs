@@ -16,7 +16,11 @@ fn test_try_from_message_photo_largest() {
     let msg: Message = serde_json::from_value(json).unwrap();
     let media = IngestedMedia::try_from_message(&msg).unwrap();
     match media {
-        IngestedMedia::Photo { file_id, width, height } => {
+        IngestedMedia::Photo {
+            file_id,
+            width,
+            height,
+        } => {
             assert_eq!(file_id, "large");
             assert_eq!(width, 800);
             assert_eq!(height, 600);
@@ -212,7 +216,12 @@ fn test_image_to_data_url_jpg() {
     let expected_prefix = "data:image/jpeg;base64,";
     assert!(url.starts_with(expected_prefix), "got: {}", &url[..50]);
     let b64 = &url[expected_prefix.len()..];
-    assert_eq!(base64::engine::general_purpose::STANDARD.decode(b64).unwrap(), b"fake-jpeg");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .unwrap(),
+        b"fake-jpeg"
+    );
 }
 
 #[test]
@@ -241,7 +250,9 @@ fn test_audio_to_base64_ogg() {
     let (data, format) = audio_to_base64(&path).unwrap();
     assert_eq!(format, "ogg");
     assert_eq!(
-        base64::engine::general_purpose::STANDARD.decode(&data).unwrap(),
+        base64::engine::general_purpose::STANDARD
+            .decode(&data)
+            .unwrap(),
         b"fake-audio"
     );
 }
@@ -254,7 +265,9 @@ fn test_audio_to_base64_wav() {
     let (data, format) = audio_to_base64(&path).unwrap();
     assert_eq!(format, "wav");
     assert_eq!(
-        base64::engine::general_purpose::STANDARD.decode(&data).unwrap(),
+        base64::engine::general_purpose::STANDARD
+            .decode(&data)
+            .unwrap(),
         b"wav-data"
     );
 }

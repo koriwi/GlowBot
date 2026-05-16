@@ -3,6 +3,7 @@ use crate::skills::Skill;
 use std::collections::HashMap;
 
 /// Assemble the full system prompt for a given context.
+#[allow(clippy::too_many_arguments)]
 pub fn assemble(
     chat_id: &str,
     chat_system_prompt: &str,

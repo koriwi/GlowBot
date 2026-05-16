@@ -214,7 +214,7 @@ mod tests {
         let id2 = list.add("b");
         let id3 = list.add("c");
         list.toggle(&id2); // b is done
-        // a (incomplete), c (incomplete), b (completed, last 3)
+                           // a (incomplete), c (incomplete), b (completed, last 3)
         let items = list.display_items(3);
         assert_eq!(items.len(), 3);
         assert_eq!(items[0].id, id1);

@@ -67,7 +67,9 @@ pub mod mock {
         }
 
         fn lock_embeddings(&self) -> std::sync::MutexGuard<'_, Vec<Vec<f32>>> {
-            self.embedding_responses.lock().unwrap_or_else(|e| e.into_inner())
+            self.embedding_responses
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
         }
 
         fn check_error(&self) -> bool {
@@ -112,7 +114,7 @@ pub mod mock {
                             tool_calls: None,
                             role: Some("assistant".into()),
                             reasoning: None,
-                        ..Default::default()
+                            ..Default::default()
                         },
                         finish_reason: Some("stop".into()),
                     }],
@@ -169,7 +171,7 @@ pub mod mock {
                         tool_calls: None,
                         role: Some("assistant".into()),
                         reasoning: None,
-                    ..Default::default()
+                        ..Default::default()
                     },
                     finish_reason: Some("stop".into()),
                 }],
@@ -189,7 +191,7 @@ pub mod mock {
                         }]),
                         role: Some("assistant".into()),
                         reasoning: None,
-                    ..Default::default()
+                        ..Default::default()
                     },
                     finish_reason: Some("tool_calls".into()),
                 }],

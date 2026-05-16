@@ -81,9 +81,7 @@ pub fn can_run_command(chat_config: &ChatConfig, user_id: &str) -> bool {
     if chat_config.command_whitelist.is_empty() {
         return false;
     }
-    chat_config
-        .command_whitelist
-        .contains(&user_id.to_string())
+    chat_config.command_whitelist.contains(&user_id.to_string())
 }
 
 /// Check if a user is allowed to interact with the bot in a chat.
@@ -121,7 +119,11 @@ pub fn handle_command_with_model(
             if chat_id.starts_with('-') {
                 // Group chat
                 let chat = config.chat_config(chat_id);
-                let name_line = chat.name.as_ref().map(|n| format!("Name: {}\n", n)).unwrap_or_default();
+                let name_line = chat
+                    .name
+                    .as_ref()
+                    .map(|n| format!("Name: {}\n", n))
+                    .unwrap_or_default();
                 format!(
                     "{}Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
                     name_line,
@@ -143,7 +145,10 @@ pub fn handle_command_with_model(
             } else {
                 // DM
                 let dm = config.dm_config(chat_id);
-                let name_line = dm.and_then(|d| d.name.as_ref()).map(|n| format!("Name: {}\n", n)).unwrap_or_default();
+                let name_line = dm
+                    .and_then(|d| d.name.as_ref())
+                    .map(|n| format!("Name: {}\n", n))
+                    .unwrap_or_default();
                 format!(
                     "{}Chat ID: {}\nModel: {}\nContext usage: {}\nDM commands: {}\nDM system prompt: {}",
                     name_line,
@@ -164,18 +169,18 @@ pub fn handle_command_with_model(
             }
         }
         Command::Stop => "Stop command received.".to_string(),
-        Command::Tasks => String::new(),     // handled in handle_bot_command
-        Command::Todos(_) => String::new(),     // handled in handle_bot_command
+        Command::Tasks => String::new(), // handled in handle_bot_command
+        Command::Todos(_) => String::new(), // handled in handle_bot_command
         Command::Reminders => String::new(), // handled in handle_bot_command
         Command::Run => String::new(),   // handled in handle_bot_command
         Command::New => String::new(),   // handled in handle_bot_command
         Command::Prompt => String::new(), // handled in handle_bot_command
-        Command::Tools => String::new(),   // handled in handle_bot_command
-        Command::Config => String::new(),   // handled in handle_bot_command
+        Command::Tools => String::new(), // handled in handle_bot_command
+        Command::Config => String::new(), // handled in handle_bot_command
         Command::ConfigSchema => String::new(), // handled in handle_bot_command
-        Command::Models => String::new(),   // handled in handle_bot_command
+        Command::Models => String::new(), // handled in handle_bot_command
         Command::ModelDefault => String::new(), // handled in handle_bot_command
-        Command::Model(_) => String::new(),     // handled in handle_bot_command
+        Command::Model(_) => String::new(), // handled in handle_bot_command
     }
 }
 
@@ -198,17 +203,29 @@ mod tests {
         assert_eq!(parse_command("/todos"), Some(Command::Todos(false)));
         assert_eq!(parse_command("/todos details"), Some(Command::Todos(true)));
         assert_eq!(parse_command("/todos DETAILS"), Some(Command::Todos(true)));
-        assert_eq!(parse_command("/todos@glowythebot"), Some(Command::Todos(false)));
-        assert_eq!(parse_command("/todos@glowythebot details"), Some(Command::Todos(true)));
+        assert_eq!(
+            parse_command("/todos@glowythebot"),
+            Some(Command::Todos(false))
+        );
+        assert_eq!(
+            parse_command("/todos@glowythebot details"),
+            Some(Command::Todos(true))
+        );
         // other args are not "details"
         assert_eq!(parse_command("/todos foo"), Some(Command::Todos(false)));
     }
 
     #[test]
     fn test_parse_command_strips_botname_suffix() {
-        assert_eq!(parse_command("/todos@glowythebot"), Some(Command::Todos(false)));
+        assert_eq!(
+            parse_command("/todos@glowythebot"),
+            Some(Command::Todos(false))
+        );
         assert_eq!(parse_command("/tasks@glowythebot"), Some(Command::Tasks));
-        assert_eq!(parse_command("/reminders@glowythebot"), Some(Command::Reminders));
+        assert_eq!(
+            parse_command("/reminders@glowythebot"),
+            Some(Command::Reminders)
+        );
         assert_eq!(parse_command("/status@otherbot"), Some(Command::Status));
         assert_eq!(parse_command("/stop@somebot"), Some(Command::Stop));
         // With arguments
@@ -272,8 +289,14 @@ mod tests {
     fn test_parse_command_model_default() {
         assert_eq!(parse_command("/model_default"), Some(Command::ModelDefault));
         assert_eq!(parse_command("/model_reset"), Some(Command::ModelDefault));
-        assert_eq!(parse_command("/model_default@glowythebot"), Some(Command::ModelDefault));
-        assert_eq!(parse_command("/model_reset@glowythebot"), Some(Command::ModelDefault));
+        assert_eq!(
+            parse_command("/model_default@glowythebot"),
+            Some(Command::ModelDefault)
+        );
+        assert_eq!(
+            parse_command("/model_reset@glowythebot"),
+            Some(Command::ModelDefault)
+        );
     }
 
     #[test]
@@ -283,10 +306,22 @@ mod tests {
         assert!(parse_command("   hi   ").is_none());
         // /model is now a command
         assert_eq!(parse_command("/model"), Some(Command::Model(None)));
-        assert_eq!(parse_command("/model gpt-4"), Some(Command::Model(Some("gpt-4".into()))));
-        assert_eq!(parse_command("/model :nitro"), Some(Command::Model(Some(":nitro".into()))));
-        assert_eq!(parse_command("/model foo/bar:nitro"), Some(Command::Model(Some("foo/bar:nitro".into()))));
-        assert_eq!(parse_command("/model@glowythebot :floor"), Some(Command::Model(Some(":floor".into()))));
+        assert_eq!(
+            parse_command("/model gpt-4"),
+            Some(Command::Model(Some("gpt-4".into())))
+        );
+        assert_eq!(
+            parse_command("/model :nitro"),
+            Some(Command::Model(Some(":nitro".into())))
+        );
+        assert_eq!(
+            parse_command("/model foo/bar:nitro"),
+            Some(Command::Model(Some("foo/bar:nitro".into())))
+        );
+        assert_eq!(
+            parse_command("/model@glowythebot :floor"),
+            Some(Command::Model(Some(":floor".into())))
+        );
         // /mode and /reload are no longer commands
         assert!(parse_command("/mode every_message").is_none());
         assert!(parse_command("/reload").is_none());
@@ -332,7 +367,7 @@ mod tests {
         assert!(resp.contains("MentionOnly"));
         assert!(resp.contains("everyone")); // interaction whitelist
         assert!(resp.contains("nobody")); // command whitelist empty = nobody
-        // Group chat must not contain DM-specific fields
+                                          // Group chat must not contain DM-specific fields
         assert!(!resp.contains("DM commands"));
         // Name field should not appear when not set
         assert!(!resp.contains("Name:"));

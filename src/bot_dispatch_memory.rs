@@ -19,7 +19,10 @@ pub(crate) async fn tool_read_memory(
             "body": m.body,
         })
         .to_string(),
-        None => format!("No memory file found for user_id={} in chat {}", uid, chat_id),
+        None => format!(
+            "No memory file found for user_id={} in chat {}",
+            uid, chat_id
+        ),
     }
 }
 
@@ -65,10 +68,7 @@ pub(crate) async fn tool_update_memory(
 }
 
 /// Handle the `read_chat_memory` tool — load the chat-level memory file.
-pub(crate) async fn tool_read_chat_memory(
-    state: &Arc<Mutex<BotState>>,
-    chat_id: &str,
-) -> String {
+pub(crate) async fn tool_read_chat_memory(state: &Arc<Mutex<BotState>>, chat_id: &str) -> String {
     let s = state.lock().await;
     match crate::memory::load_chat_memory(&s.chats_dir(), chat_id) {
         Some(m) => serde_json::json!({
@@ -165,13 +165,7 @@ mod tests {
     async fn test_read_memory_exists() {
         let (state, _dir) = make_state().await;
         let mem = crate::memory::Memory::new("456", "@testuser");
-        crate::memory::save_memory(
-            &state.lock().await.chats_dir(),
-            "-123",
-            "456",
-            &mem,
-        )
-        .unwrap();
+        crate::memory::save_memory(&state.lock().await.chats_dir(), "-123", "456", &mem).unwrap();
 
         let args = json!({"user_id": "456"});
         let result = tool_read_memory(&state, "-123", &args).await;
@@ -195,8 +189,7 @@ mod tests {
         let result = tool_update_memory(&state, "-123", &args).await;
         assert!(result.contains("Memory updated"));
 
-        let mem =
-            crate::memory::load_memory(&state.lock().await.chats_dir(), "-123", "789");
+        let mem = crate::memory::load_memory(&state.lock().await.chats_dir(), "-123", "789");
         assert!(mem.is_some());
         let m = mem.unwrap();
         assert_eq!(m.frontmatter.username, "@newuser");
@@ -209,20 +202,13 @@ mod tests {
     async fn test_update_memory_partial_fields() {
         let (state, _dir) = make_state().await;
         let mem = crate::memory::Memory::new("456", "@original");
-        crate::memory::save_memory(
-            &state.lock().await.chats_dir(),
-            "-123",
-            "456",
-            &mem,
-        )
-        .unwrap();
+        crate::memory::save_memory(&state.lock().await.chats_dir(), "-123", "456", &mem).unwrap();
 
         let args = json!({"user_id": "456", "call_name": "Updated"});
         let result = tool_update_memory(&state, "-123", &args).await;
         assert!(result.contains("Memory updated"));
 
-        let m = crate::memory::load_memory(&state.lock().await.chats_dir(), "-123", "456")
-            .unwrap();
+        let m = crate::memory::load_memory(&state.lock().await.chats_dir(), "-123", "456").unwrap();
         assert_eq!(m.frontmatter.call_name, "Updated");
         assert_eq!(m.frontmatter.username, "@original");
     }
@@ -256,8 +242,7 @@ mod tests {
     async fn test_read_chat_memory_exists() {
         let (state, _dir) = make_state().await;
         let mem = crate::memory::Memory::new_chat();
-        crate::memory::save_chat_memory(&state.lock().await.chats_dir(), "-123", &mem)
-            .unwrap();
+        crate::memory::save_chat_memory(&state.lock().await.chats_dir(), "-123", &mem).unwrap();
 
         let result = tool_read_chat_memory(&state, "-123").await;
         let v: serde_json::Value = serde_json::from_str(&result).unwrap();
@@ -278,8 +263,7 @@ mod tests {
         let result = tool_update_chat_memory(&state, "-123", &args).await;
         assert_eq!(result, "Chat memory updated");
 
-        let m =
-            crate::memory::load_chat_memory(&state.lock().await.chats_dir(), "-123");
+        let m = crate::memory::load_chat_memory(&state.lock().await.chats_dir(), "-123");
         assert!(m.is_some());
         assert_eq!(m.unwrap().frontmatter.call_name, "Test Chat");
     }

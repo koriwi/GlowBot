@@ -69,8 +69,7 @@ pub async fn run_heartbeat_task(
     // Process due reminders first.
     {
         let s = state.lock().await;
-        let list =
-            crate::reminders::ReminderList::load(&s.chats_dir(), &cid).unwrap_or_default();
+        let list = crate::reminders::ReminderList::load(&s.chats_dir(), &cid).unwrap_or_default();
         let due = list.due();
         if !due.is_empty() {
             log::info!(
@@ -172,7 +171,8 @@ pub async fn run_heartbeat_task(
             let model = s.effective_model(&cid);
             let bash_enabled = s.config.is_bash_enabled(&cid);
             let tools = s.build_tools(bash_enabled, &cid);
-            let ctx = s.model_metadata
+            let ctx = s
+                .model_metadata
                 .get(crate::openrouter::normalize_model_id(&model))
                 .map(|m| m.context_length)
                 .unwrap_or(0);
@@ -190,7 +190,7 @@ pub async fn run_heartbeat_task(
 
             let (request_messages, _) = crate::openrouter::build_trimmed_request(
                 context_limit,
-                &[system_msg.clone()],
+                std::slice::from_ref(&system_msg),
                 &history,
                 &turn_messages,
                 &tools,
@@ -254,6 +254,7 @@ pub async fn run_heartbeat_task(
 
 /// Process a single due reminder that has an action.
 /// Runs the LLM agent to perform the action, then the caller removes the reminder.
+#[allow(clippy::too_many_arguments)]
 async fn process_reminder_action(
     state: &Arc<tokio::sync::Mutex<BotState>>,
     stop_signals: &Arc<std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>>,
@@ -289,7 +290,8 @@ async fn process_reminder_action(
         let model = s.effective_model(&cid);
         let bash_enabled = s.config.is_bash_enabled(&cid);
         let tools = s.build_tools(bash_enabled, &cid);
-        let ctx = s.model_metadata
+        let ctx = s
+            .model_metadata
             .get(crate::openrouter::normalize_model_id(&model))
             .map(|m| m.context_length)
             .unwrap_or(0);
@@ -310,7 +312,7 @@ async fn process_reminder_action(
 
         let (request_messages, _) = crate::openrouter::build_trimmed_request(
             context_limit,
-            &[system_msg.clone()],
+            std::slice::from_ref(&system_msg),
             history,
             &turn_messages,
             &tools,
@@ -332,11 +334,7 @@ async fn process_reminder_action(
                     (r, usage)
                 }
                 Err(e) => {
-                    log::error!(
-                        "Heartbeat reminder {} LLM error: {}",
-                        reminder_id,
-                        e
-                    );
+                    log::error!("Heartbeat reminder {} LLM error: {}", reminder_id, e);
                     let msg = format!(
                         "⏰ Reminder: {}\n⚠️ Action failed: LLM error — {}",
                         description, e
@@ -361,8 +359,7 @@ async fn process_reminder_action(
                 break;
             }
             turn_messages.push(ChatMessage::assistant_tool_calls(tcs.clone()));
-            turn_messages
-                .extend(dispatch_tool_calls(state, &cid, tcs, None, Some(tg_bot)).await);
+            turn_messages.extend(dispatch_tool_calls(state, &cid, tcs, None, Some(tg_bot)).await);
             continue;
         }
         break;

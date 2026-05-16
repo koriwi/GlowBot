@@ -36,7 +36,8 @@ pub struct BotState {
     /// Not accessed directly; cloned Peers from `mcp_peers` are used instead.
     pub _mcp_services: Vec<crate::mcp::McpConnection>,
     /// Cloned peer handles for MCP tool invocation, keyed by server name.
-    pub mcp_peers: std::collections::HashMap<String, rmcp::service::Peer<rmcp::service::RoleClient>>,
+    pub mcp_peers:
+        std::collections::HashMap<String, rmcp::service::Peer<rmcp::service::RoleClient>>,
     /// Cached model metadata from OpenRouter (includes context lengths and input modalities).
     pub model_metadata: HashMap<String, ModelInfo>,
     /// Model IDs in the order they were returned by the API (for "popular" sort).

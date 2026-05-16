@@ -4,10 +4,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-#[path = "db_migrations.rs"]
-mod db_migrations;
 #[path = "db_embeddings.rs"]
 mod db_embeddings;
+#[path = "db_migrations.rs"]
+mod db_migrations;
 
 /// Intermediate row type for message loading.
 struct RawMessage {

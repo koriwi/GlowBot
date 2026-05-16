@@ -78,10 +78,7 @@ pub async fn download_file(
     let file_path = &file.path;
 
     // Construct download URL
-    let url = format!(
-        "https://api.telegram.org/file/bot{}/{}",
-        token, file_path
-    );
+    let url = format!("https://api.telegram.org/file/bot{}/{}", token, file_path);
 
     // Download file bytes
     let client = reqwest::Client::new();

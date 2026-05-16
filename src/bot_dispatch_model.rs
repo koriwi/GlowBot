@@ -15,10 +15,7 @@ fn short_id() -> String {
 }
 
 /// Tool: get_model_info — returns current model, specifier, override status, and metadata.
-pub(crate) async fn tool_get_model_info(
-    state: &Arc<Mutex<BotState>>,
-    chat_id: &str,
-) -> String {
+pub(crate) async fn tool_get_model_info(state: &Arc<Mutex<BotState>>, chat_id: &str) -> String {
     let s = state.lock().await;
     let effective = s.effective_model(chat_id);
     let config_default = s.config.model_for_chat(chat_id);
@@ -97,7 +94,10 @@ pub(crate) async fn tool_propose_model_change(
                     .map(|s| format!(":{}", s))
                     .collect::<Vec<_>>()
                     .join(", ");
-                return format!("Error: unknown specifier ':{}'. Valid specifiers: {}", spec, list);
+                return format!(
+                    "Error: unknown specifier ':{}'. Valid specifiers: {}",
+                    spec, list
+                );
             }
             crate::openrouter::apply_specifier(mid, spec)
         }
@@ -116,7 +116,10 @@ pub(crate) async fn tool_propose_model_change(
                     .map(|s| format!(":{}", s))
                     .collect::<Vec<_>>()
                     .join(", ");
-                return format!("Error: unknown specifier ':{}'. Valid specifiers: {}", spec, list);
+                return format!(
+                    "Error: unknown specifier ':{}'. Valid specifiers: {}",
+                    spec, list
+                );
             }
             let s = state.lock().await;
             let current = s.effective_model(chat_id);
@@ -226,10 +229,12 @@ pub async fn handle_model_callback_approval(
 
     let pending = match pending {
         Some(p) => p,
-        None => return Some((
-            "⚠️ This model change proposal has expired or was already processed.".into(),
-            None,
-        )),
+        None => {
+            return Some((
+                "⚠️ This model change proposal has expired or was already processed.".into(),
+                None,
+            ))
+        }
     };
 
     match action {
@@ -255,9 +260,7 @@ pub async fn handle_model_callback_approval(
             // Send followup as a new message so the LLM sees it
             if let Some(bot) = tg_bot {
                 if let Ok(chat_id) = pending.chat_id.parse::<i64>() {
-                    let _ = bot
-                        .send_message(ChatId(chat_id), &followup)
-                        .await;
+                    let _ = bot.send_message(ChatId(chat_id), &followup).await;
                 }
             }
 
@@ -270,19 +273,14 @@ pub async fn handle_model_callback_approval(
             ))
         }
         "deny" => {
-            log::info!(
-                "Model change denied in chat {}",
-                pending.chat_id
-            );
+            log::info!("Model change denied in chat {}", pending.chat_id);
 
             let followup = "Model change denied. The current model remains unchanged.".to_string();
 
             // Send followup as a new message so the LLM sees it
             if let Some(bot) = tg_bot {
                 if let Ok(chat_id) = pending.chat_id.parse::<i64>() {
-                    let _ = bot
-                        .send_message(ChatId(chat_id), &followup)
-                        .await;
+                    let _ = bot.send_message(ChatId(chat_id), &followup).await;
                 }
             }
 
@@ -512,8 +510,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_callback_expired() {
         let (state, _dir) = make_state().await;
-        let result =
-            handle_model_callback_approval(&state, "mdl:nonexistent:accept", None).await;
+        let result = handle_model_callback_approval(&state, "mdl:nonexistent:accept", None).await;
         let (text, followup) = result.unwrap();
         assert!(text.contains("expired"));
         assert!(followup.is_none());

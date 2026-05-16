@@ -132,7 +132,12 @@ mod tests {
         assert!(result.contains("created"));
 
         // Verify the skill was written
-        let path = state.lock().await.skills_dir().join("my-skill").join("skill.md");
+        let path = state
+            .lock()
+            .await
+            .skills_dir()
+            .join("my-skill")
+            .join("skill.md");
         let skill = crate::skills::load_skill(&path).unwrap();
         assert_eq!(skill.frontmatter.name, "my-skill");
         assert_eq!(skill.body, "This is the skill body");
@@ -222,11 +227,17 @@ mod tests {
         )
         .unwrap();
 
-        let args = json!({"name": "update-me", "description": "Updated desc", "body": "updated body"});
+        let args =
+            json!({"name": "update-me", "description": "Updated desc", "body": "updated body"});
         let result = tool_update_skill(&state, &args).await;
         assert!(result.contains("updated"));
 
-        let path = state.lock().await.skills_dir().join("update-me").join("skill.md");
+        let path = state
+            .lock()
+            .await
+            .skills_dir()
+            .join("update-me")
+            .join("skill.md");
         let skill = crate::skills::load_skill(&path).unwrap();
         assert_eq!(skill.frontmatter.description, "Updated desc");
         assert_eq!(skill.body, "updated body");
@@ -239,13 +250,8 @@ mod tests {
             name: "unchanged".into(),
             description: "Desc".into(),
         };
-        crate::skills::write_skill(
-            &state.lock().await.skills_dir(),
-            "unchanged",
-            &fm,
-            "body",
-        )
-        .unwrap();
+        crate::skills::write_skill(&state.lock().await.skills_dir(), "unchanged", &fm, "body")
+            .unwrap();
 
         let args = json!({"name": "unchanged"});
         let result = tool_update_skill(&state, &args).await;

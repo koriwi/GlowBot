@@ -94,7 +94,10 @@ pub(crate) async fn tool_list_media(
                 _ => continue,
             };
             let rel = canonical.strip_prefix(base).unwrap_or(&canonical);
-            let name = canonical.file_name().and_then(|n| n.to_str()).unwrap_or("???");
+            let name = canonical
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("???");
             if canonical.is_dir() {
                 if entries.len() >= max {
                     *overflow = true;
@@ -114,7 +117,10 @@ pub(crate) async fn tool_list_media(
                     *overflow = true;
                     return;
                 }
-                let size = std::fs::metadata(&canonical).ok().map(|m| m.len()).unwrap_or(0);
+                let size = std::fs::metadata(&canonical)
+                    .ok()
+                    .map(|m| m.len())
+                    .unwrap_or(0);
                 entries.push(format!(
                     "{}📄 {} ({})",
                     prefix,

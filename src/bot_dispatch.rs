@@ -5,20 +5,20 @@ use std::sync::Arc;
 use teloxide::prelude::*;
 use tokio::sync::Mutex;
 
+#[path = "bot_dispatch_config.rs"]
+pub mod bot_dispatch_config;
+#[path = "bot_dispatch_describe.rs"]
+mod bot_dispatch_describe;
+#[path = "bot_dispatch_image.rs"]
+pub(crate) mod bot_dispatch_image;
 #[path = "bot_dispatch_media.rs"]
 mod bot_dispatch_media;
 #[path = "bot_dispatch_memory.rs"]
 mod bot_dispatch_memory;
-#[path = "bot_dispatch_image.rs"]
-pub(crate) mod bot_dispatch_image;
-#[path = "bot_dispatch_skills.rs"]
-mod bot_dispatch_skills;
-#[path = "bot_dispatch_config.rs"]
-pub mod bot_dispatch_config;
 #[path = "bot_dispatch_model.rs"]
 pub mod bot_dispatch_model;
-#[path = "bot_dispatch_describe.rs"]
-mod bot_dispatch_describe;
+#[path = "bot_dispatch_skills.rs"]
+mod bot_dispatch_skills;
 
 /// Log a tool call to `tool_calls.log` in the given data directory.
 pub(crate) fn log_tool_call_to(
@@ -42,9 +42,15 @@ pub(crate) fn log_tool_call_to(
         .open(&log_path)
         .and_then(|mut f| f.write_all(line.as_bytes()));
 
-    let is_error = ["Error", "parse error", "HTTP", "request failed", "RPC error"]
-        .iter()
-        .any(|pat| result.contains(pat));
+    let is_error = [
+        "Error",
+        "parse error",
+        "HTTP",
+        "request failed",
+        "RPC error",
+    ]
+    .iter()
+    .any(|pat| result.contains(pat));
     if is_error {
         log::warn!(
             "tool {} error (args: {}): {}",
@@ -66,12 +72,7 @@ pub(crate) async fn dispatch_tool_calls(
     data_dir: Option<&std::path::Path>,
     tg_bot: Option<&teloxide::Bot>,
 ) -> Vec<ChatMessage> {
-    let max_result_chars = state
-        .lock()
-        .await
-        .config
-        .conversation
-        .max_tool_result_chars;
+    let max_result_chars = state.lock().await.config.conversation.max_tool_result_chars;
 
     let mut results = Vec::new();
     for tc in tool_calls {
@@ -132,12 +133,8 @@ pub(crate) async fn dispatch_tool(
                 "Error: send_message not available in this context.".into()
             }
         }
-        "list_media" => {
-            bot_dispatch_media::tool_list_media(state, args).await
-        }
-        "send_media" => {
-            bot_dispatch_media::tool_send_media(state, &cid, args, tg_bot).await
-        }
+        "list_media" => bot_dispatch_media::tool_list_media(state, args).await,
+        "send_media" => bot_dispatch_media::tool_send_media(state, &cid, args, tg_bot).await,
         "bash" => {
             if !state.lock().await.config.is_bash_enabled(&cid) {
                 return "Error: bash is disabled for this chat. Enable it in config or ask an admin.".into();
@@ -161,15 +158,9 @@ pub(crate) async fn dispatch_tool(
                 Err(e) => format!("Error: {}", e),
             }
         }
-        "read_memory" => {
-            bot_dispatch_memory::tool_read_memory(state, &cid, args).await
-        }
-        "update_memory" => {
-            bot_dispatch_memory::tool_update_memory(state, &cid, args).await
-        }
-        "read_chat_memory" => {
-            bot_dispatch_memory::tool_read_chat_memory(state, &cid).await
-        }
+        "read_memory" => bot_dispatch_memory::tool_read_memory(state, &cid, args).await,
+        "update_memory" => bot_dispatch_memory::tool_update_memory(state, &cid, args).await,
+        "read_chat_memory" => bot_dispatch_memory::tool_read_chat_memory(state, &cid).await,
         "update_chat_memory" => {
             bot_dispatch_memory::tool_update_chat_memory(state, &cid, args).await
         }
@@ -179,8 +170,7 @@ pub(crate) async fn dispatch_tool(
                 return "Error: description required".into();
             }
             let s = state.lock().await;
-            let mut list =
-                crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            let mut list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
             let id = list.add(d);
             let _ = list.save(&s.chats_dir(), &cid);
             format!("Task '{}' added: {}", id, d)
@@ -200,8 +190,7 @@ pub(crate) async fn dispatch_tool(
                 return "Error: id required".into();
             }
             let s = state.lock().await;
-            let mut list =
-                crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            let mut list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
             if list.remove(id) {
                 let _ = list.save(&s.chats_dir(), &cid);
                 format!("Task '{}' removed. {} remaining.", id, list.tasks.len())
@@ -247,26 +236,20 @@ pub(crate) async fn dispatch_tool(
                 crate::reminders::ReminderList::load(&s.chats_dir(), &cid).unwrap_or_default();
             if list.remove(id) {
                 let _ = list.save(&s.chats_dir(), &cid);
-                format!("Reminder '{}' removed. {} remaining.", id, list.reminders.len())
+                format!(
+                    "Reminder '{}' removed. {} remaining.",
+                    id,
+                    list.reminders.len()
+                )
             } else {
                 format!("Reminder '{}' not found.", id)
             }
         }
-        "generate_image" => {
-            bot_dispatch_image::tool_generate_image(state, &cid, args).await
-        }
-        "describe_image" => {
-            bot_dispatch_describe::tool_describe_image(state, &cid, args).await
-        }
-        "create_skill" => {
-            bot_dispatch_skills::tool_create_skill(state, args).await
-        }
-        "read_skill" => {
-            bot_dispatch_skills::tool_read_skill(state, args).await
-        }
-        "update_skill" => {
-            bot_dispatch_skills::tool_update_skill(state, args).await
-        }
+        "generate_image" => bot_dispatch_image::tool_generate_image(state, &cid, args).await,
+        "describe_image" => bot_dispatch_describe::tool_describe_image(state, &cid, args).await,
+        "create_skill" => bot_dispatch_skills::tool_create_skill(state, args).await,
+        "read_skill" => bot_dispatch_skills::tool_read_skill(state, args).await,
+        "update_skill" => bot_dispatch_skills::tool_update_skill(state, args).await,
         name if name.starts_with("mcp_") => {
             let mut args_clone = args.clone();
             // Look up tool info and peer under the state lock, then invoke outside it.
@@ -296,8 +279,7 @@ pub(crate) async fn dispatch_tool(
                             {
                                 args_clone[*key] = serde_json::json!(format!(
                                     "{}/pw-media/{}",
-                                    s.config.media_dir,
-                                    name_val
+                                    s.config.media_dir, name_val
                                 ));
                                 break;
                             }
@@ -319,8 +301,7 @@ pub(crate) async fn dispatch_tool(
                 return "Error: description required".into();
             }
             let s = state.lock().await;
-            let mut list =
-                crate::todos::TodoList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            let mut list = crate::todos::TodoList::load(&s.chats_dir(), &cid).unwrap_or_default();
             let id = list.add(d);
             let _ = list.save(&s.chats_dir(), &cid);
             format!("Todo created: {} — {}", id, d)
@@ -343,12 +324,12 @@ pub(crate) async fn dispatch_tool(
             let completed = args.get("completed").and_then(|v| v.as_bool());
 
             if new_desc.is_none() && completed.is_none() {
-                return "Error: at least one of 'description' or 'completed' must be provided".into();
+                return "Error: at least one of 'description' or 'completed' must be provided"
+                    .into();
             }
 
             let s = state.lock().await;
-            let mut list =
-                crate::todos::TodoList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            let mut list = crate::todos::TodoList::load(&s.chats_dir(), &cid).unwrap_or_default();
 
             let mut result_parts: Vec<String> = Vec::new();
 
@@ -366,7 +347,11 @@ pub(crate) async fn dispatch_tool(
             if completed.is_some() {
                 match list.toggle(id) {
                     Some(new_status) => {
-                        let status_word = if new_status { "completed" } else { "not completed" };
+                        let status_word = if new_status {
+                            "completed"
+                        } else {
+                            "not completed"
+                        };
                         result_parts.push(format!("marked as {}", status_word));
                     }
                     None => return format!("Todo '{}' not found.", id),
@@ -382,8 +367,7 @@ pub(crate) async fn dispatch_tool(
                 return "Error: id required".into();
             }
             let s = state.lock().await;
-            let mut list =
-                crate::todos::TodoList::load(&s.chats_dir(), &cid).unwrap_or_default();
+            let mut list = crate::todos::TodoList::load(&s.chats_dir(), &cid).unwrap_or_default();
             if list.remove(id) {
                 let _ = list.save(&s.chats_dir(), &cid);
                 format!("Todo '{}' deleted. {} remaining.", id, list.todos.len())
@@ -426,18 +410,10 @@ pub(crate) async fn dispatch_tool(
                 .collect();
             serde_json::json!({"messages": items}).to_string()
         }
-        "read_config_schema" => {
-            bot_dispatch_config::tool_read_config_schema().await
-        }
-        "read_config" => {
-            bot_dispatch_config::tool_read_config(state).await
-        }
-        "edit_config" => {
-            bot_dispatch_config::tool_edit_config(state, &cid, args, tg_bot).await
-        }
-        "get_model_info" => {
-            bot_dispatch_model::tool_get_model_info(state, &cid).await
-        }
+        "read_config_schema" => bot_dispatch_config::tool_read_config_schema().await,
+        "read_config" => bot_dispatch_config::tool_read_config(state).await,
+        "edit_config" => bot_dispatch_config::tool_edit_config(state, &cid, args, tg_bot).await,
+        "get_model_info" => bot_dispatch_model::tool_get_model_info(state, &cid).await,
         "propose_model_change" => {
             bot_dispatch_model::tool_propose_model_change(state, &cid, args, tg_bot).await
         }
@@ -503,7 +479,10 @@ pub(crate) async fn dispatch_tool(
             }
 
             advice_messages.push(ChatMessage::user_with_name(
-                &format!("Here is my question. Please give me your best analysis and advice:\n\n{}", query),
+                &format!(
+                    "Here is my question. Please give me your best analysis and advice:\n\n{}",
+                    query
+                ),
                 "calling_model",
             ));
 
@@ -565,9 +544,14 @@ pub(crate) async fn dispatch_tool(
 
             let results = {
                 let s = state.lock().await;
-                s.db
-                    .search_embeddings(&cid, &query_embedding, &embedding_model, count, search_limit)
-                    .unwrap_or_default()
+                s.db.search_embeddings(
+                    &cid,
+                    &query_embedding,
+                    &embedding_model,
+                    count,
+                    search_limit,
+                )
+                .unwrap_or_default()
             };
 
             // search_embeddings already excludes tool messages at the SQL level.

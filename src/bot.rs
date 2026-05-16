@@ -5,18 +5,18 @@ use crate::git::GitRepo;
 use crate::llm::LlmBackend;
 #[path = "bot_commands.rs"]
 mod bot_commands;
-#[path = "bot_models.rs"]
-pub mod bot_models;
-#[path = "bot_todos.rs"]
-pub mod bot_todos;
 #[path = "bot_dispatch.rs"]
 pub mod bot_dispatch;
 #[path = "bot_heartbeat.rs"]
 mod bot_heartbeat;
+#[path = "bot_models.rs"]
+pub mod bot_models;
 #[path = "bot_pipeline.rs"]
 mod bot_pipeline;
 #[path = "bot_state.rs"]
 mod bot_state;
+#[path = "bot_todos.rs"]
+pub mod bot_todos;
 use self::bot_commands::handle_bot_command_impl;
 pub use self::bot_heartbeat::run_heartbeat_task;
 pub use self::bot_state::{BotState, PendingConfigChange, PendingModelChange};
@@ -51,8 +51,7 @@ impl GlowBot {
         }
 
         // Discover MCP server tools
-        let (mcp_services, mcp_tools) =
-            crate::mcp::discover_all(&config.mcp_servers).await?;
+        let (mcp_services, mcp_tools) = crate::mcp::discover_all(&config.mcp_servers).await?;
         if !mcp_tools.is_empty() {
             log::info!(
                 "Loaded {} MCP tools from {} server(s)",
@@ -260,6 +259,7 @@ impl GlowBot {
 }
 
 /// Process an incoming message (free function, can be called without the GlowBot lock).
+#[allow(clippy::too_many_arguments)]
 pub async fn process_message_impl(
     state: &Arc<Mutex<BotState>>,
     _git_repo: &GitRepo,

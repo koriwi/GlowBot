@@ -33,11 +33,10 @@ pub(crate) async fn tool_generate_image(
     };
 
     // Build the user message: text prompt + optional reference images
-    let mut content_parts: Vec<crate::openrouter::ContentPart> = vec![
-        crate::openrouter::ContentPart::Text {
+    let mut content_parts: Vec<crate::openrouter::ContentPart> =
+        vec![crate::openrouter::ContentPart::Text {
             text: prompt.to_string(),
-        },
-    ];
+        }];
 
     // Attach reference images as image_url parts
     if let Some(ref_paths) = args["reference_images"].as_array() {
@@ -190,8 +189,7 @@ fn image_gen_model_id(model: &str) -> String {
         .rsplit_once('/')
         .map(|(_, name)| name)
         .unwrap_or(model)
-        .replace(':', "_")
-        .replace('.', "_")
+        .replace([':', '.'], "_")
 }
 
 /// Decode a base64 string (with optional data-URL prefix) to bytes.
@@ -227,7 +225,11 @@ fn detect_image_format(bytes: &[u8]) -> Option<&'static str> {
 }
 
 /// Resolve a file path: try absolute, relative to data_dir, relative to media_dir.
-fn resolve_file_path(path_str: &str, data_dir: &std::path::Path, media_dir: &str) -> std::path::PathBuf {
+fn resolve_file_path(
+    path_str: &str,
+    data_dir: &std::path::Path,
+    media_dir: &str,
+) -> std::path::PathBuf {
     let p = std::path::Path::new(path_str);
     if p.is_absolute() {
         return p.to_path_buf();

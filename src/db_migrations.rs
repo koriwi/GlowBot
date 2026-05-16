@@ -1,5 +1,5 @@
-use rusqlite::Connection;
 use anyhow::Context;
+use rusqlite::Connection;
 use std::path::Path;
 
 /// Build a temporary reference database from the schema `.sql` files,
@@ -17,12 +17,12 @@ pub(crate) fn migrate_with_sqldiff(db_path: &Path, schema_dir: &Path) -> anyhow:
     {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().map_or(false, |ext| ext == "sql") {
+        if path.extension().is_some_and(|ext| ext == "sql") {
             let sql = std::fs::read_to_string(&path)
                 .with_context(|| format!("Failed to read schema file: {}", path.display()))?;
-            ref_conn.execute_batch(&sql).with_context(|| {
-                format!("Failed to execute schema file: {}", path.display())
-            })?;
+            ref_conn
+                .execute_batch(&sql)
+                .with_context(|| format!("Failed to execute schema file: {}", path.display()))?;
         }
     }
     drop(ref_conn);

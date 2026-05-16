@@ -45,10 +45,22 @@ pub(crate) async fn send_model_menu(
     fetch_models_if_needed(state).await?;
 
     let keyboard = InlineKeyboardMarkup::new(vec![
-        vec![InlineKeyboardButton::callback("🆓 Free Models", "model:browse:free:0")],
-        vec![InlineKeyboardButton::callback("🏭 By Provider", "model:provider_list:0")],
-        vec![InlineKeyboardButton::callback("🆕 Newest", "model:browse:newest:0")],
-        vec![InlineKeyboardButton::callback("🔥 Popular", "model:browse:popular:0")],
+        vec![InlineKeyboardButton::callback(
+            "🆓 Free Models",
+            "model:browse:free:0",
+        )],
+        vec![InlineKeyboardButton::callback(
+            "🏭 By Provider",
+            "model:provider_list:0",
+        )],
+        vec![InlineKeyboardButton::callback(
+            "🆕 Newest",
+            "model:browse:newest:0",
+        )],
+        vec![InlineKeyboardButton::callback(
+            "🔥 Popular",
+            "model:browse:popular:0",
+        )],
     ]);
 
     let text = format_model_status(state, chat_id).await;
@@ -137,7 +149,13 @@ pub async fn handle_model_callback(
             }
 
             if let Err(e) = edit_to_browse(
-                state, chat_id, bot, msg_id, category, page, provider.as_deref(),
+                state,
+                chat_id,
+                bot,
+                msg_id,
+                category,
+                page,
+                provider.as_deref(),
             )
             .await
             {
@@ -151,7 +169,7 @@ pub async fn handle_model_callback(
             let model_id = if parts[1] == "detail" {
                 data.splitn(3, ':').nth(2).unwrap_or("")
             } else {
-                data.splitn(2, ':').nth(1).unwrap_or("")
+                data.split_once(':').map(|x| x.1).unwrap_or("")
             };
             if let Err(e) = edit_to_detail(state, chat_id, bot, msg_id, model_id).await {
                 log::error!("Failed to edit to detail for model '{}': {}", model_id, e);
@@ -167,7 +185,6 @@ pub async fn handle_model_callback(
             match cb_data {
                 Some(cb) => {
                     Box::pin(handle_model_callback(state, &cb, bot, chat_id, msg_id)).await;
-                    return;
                 }
                 None => {
                     if let Err(e) = edit_to_menu(state, chat_id, bot, msg_id).await {
@@ -182,7 +199,7 @@ pub async fn handle_model_callback(
             let model_id = if parts[1] == "select" {
                 data.splitn(3, ':').nth(2).unwrap_or("")
             } else {
-                data.splitn(2, ':').nth(1).unwrap_or("")
+                data.split_once(':').map(|x| x.1).unwrap_or("")
             };
             if let Err(e) = select_model(state, chat_id, bot, msg_id, model_id).await {
                 log::error!("Failed to select model '{}': {}", model_id, e);
@@ -194,9 +211,7 @@ pub async fn handle_model_callback(
         }
         "spec" => {
             let specifier = parts.get(2).unwrap_or(&"");
-            if let Err(e) =
-                handle_spec_callback(state, chat_id, bot, msg_id, specifier).await
-            {
+            if let Err(e) = handle_spec_callback(state, chat_id, bot, msg_id, specifier).await {
                 log::error!("Failed to handle spec callback '{}': {}", specifier, e);
             }
         }
@@ -234,10 +249,22 @@ async fn edit_to_menu(
     msg_id: MessageId,
 ) -> anyhow::Result<()> {
     let keyboard = InlineKeyboardMarkup::new(vec![
-        vec![InlineKeyboardButton::callback("🆓 Free Models", "model:browse:free:0")],
-        vec![InlineKeyboardButton::callback("🏭 By Provider", "model:provider_list:0")],
-        vec![InlineKeyboardButton::callback("🆕 Newest", "model:browse:newest:0")],
-        vec![InlineKeyboardButton::callback("🔥 Popular", "model:browse:popular:0")],
+        vec![InlineKeyboardButton::callback(
+            "🆓 Free Models",
+            "model:browse:free:0",
+        )],
+        vec![InlineKeyboardButton::callback(
+            "🏭 By Provider",
+            "model:provider_list:0",
+        )],
+        vec![InlineKeyboardButton::callback(
+            "🆕 Newest",
+            "model:browse:newest:0",
+        )],
+        vec![InlineKeyboardButton::callback(
+            "🔥 Popular",
+            "model:browse:popular:0",
+        )],
     ]);
 
     let text = format_model_status(state, &chat_id.to_string()).await;
@@ -277,7 +304,7 @@ async fn edit_to_provider_list(
         return Ok(());
     }
 
-    let total_pages = (total + PROVIDERS_PER_PAGE - 1) / PROVIDERS_PER_PAGE;
+    let total_pages = total.div_ceil(PROVIDERS_PER_PAGE);
     let clamped_page = page.min(total_pages.saturating_sub(1));
     let start = clamped_page * PROVIDERS_PER_PAGE;
     let end = (start + PROVIDERS_PER_PAGE).min(total);
@@ -319,16 +346,10 @@ async fn edit_to_provider_list(
         rows.push(nav_row);
     }
 
-    rows.push(vec![InlineKeyboardButton::callback(
-        "↩ Back",
-        "model:menu",
-    )]);
+    rows.push(vec![InlineKeyboardButton::callback("↩ Back", "model:menu")]);
 
     let keyboard = InlineKeyboardMarkup::new(rows);
-    let text = format!(
-        "*Select Provider* \\({} available\\)",
-        total
-    );
+    let text = format!("*Select Provider* \\({} available\\)", total);
 
     bot.edit_message_text(chat_id, msg_id, text)
         .parse_mode(ParseMode::MarkdownV2)
@@ -352,8 +373,9 @@ async fn edit_to_browse(
     let all_models: Vec<&ModelInfo> = s.model_metadata.values().collect();
 
     // Filter models based on category
-    let mut filtered: Vec<&&ModelInfo> = all_models.iter().filter(|m| {
-        match category {
+    let mut filtered: Vec<&&ModelInfo> = all_models
+        .iter()
+        .filter(|m| match category {
             "free" => m.pricing.is_free(),
             "provider" => {
                 if let Some(p) = provider {
@@ -366,12 +388,12 @@ async fn edit_to_browse(
                 }
             }
             _ => true,
-        }
-    }).collect();
+        })
+        .collect();
 
     // Sort
     match category {
-        "newest" => filtered.sort_by(|a, b| b.created.cmp(&a.created)),
+        "newest" => filtered.sort_by_key(|b| std::cmp::Reverse(b.created)),
         "popular" => {
             // Sort by API return order (model_order)
             filtered.sort_by(|a, b| {
@@ -384,21 +406,35 @@ async fn edit_to_browse(
     }
 
     let total = filtered.len();
-    let total_pages = if total == 0 { 1 } else { (total + MODELS_PER_PAGE - 1) / MODELS_PER_PAGE };
+    let total_pages = if total == 0 {
+        1
+    } else {
+        total.div_ceil(MODELS_PER_PAGE)
+    };
     let clamped_page = page.min(total_pages.saturating_sub(1));
 
     let start = clamped_page * MODELS_PER_PAGE;
     let end = (start + MODELS_PER_PAGE).min(total);
     let page_models: Vec<(String, String)> = filtered[start..end]
         .iter()
-        .map(|m| (m.id.clone(), if m.name.is_empty() { m.id.clone() } else { m.name.clone() }))
+        .map(|m| {
+            (
+                m.id.clone(),
+                if m.name.is_empty() {
+                    m.id.clone()
+                } else {
+                    m.name.clone()
+                },
+            )
+        })
         .collect();
     drop(s);
 
     if total == 0 {
-        let keyboard = InlineKeyboardMarkup::new(vec![vec![
-            InlineKeyboardButton::callback("↩ Back", "model:menu"),
-        ]]);
+        let keyboard = InlineKeyboardMarkup::new(vec![vec![InlineKeyboardButton::callback(
+            "↩ Back",
+            "model:menu",
+        )]]);
         bot.edit_message_text(chat_id, msg_id, "No models found for this category\\.")
             .parse_mode(ParseMode::MarkdownV2)
             .reply_markup(keyboard)
@@ -413,10 +449,7 @@ async fn edit_to_browse(
         } else {
             m_name.clone()
         };
-        rows.push(vec![InlineKeyboardButton::callback(
-            label,
-            detail_cb(m_id),
-        )]);
+        rows.push(vec![InlineKeyboardButton::callback(label, detail_cb(m_id))]);
     }
 
     // Navigation row
@@ -446,7 +479,11 @@ async fn edit_to_browse(
     }
 
     // Back button
-    let back_cb = if provider.is_some() { "model:provider_list" } else { "model:menu" };
+    let back_cb = if provider.is_some() {
+        "model:provider_list"
+    } else {
+        "model:menu"
+    };
     rows.push(vec![InlineKeyboardButton::callback("↩ Back", back_cb)]);
 
     let keyboard = InlineKeyboardMarkup::new(rows);
@@ -455,7 +492,11 @@ async fn edit_to_browse(
         "free" => "Free Models",
         "provider" => {
             if let Some(p) = provider {
-                if p == "all" { "All Models" } else { p }
+                if p == "all" {
+                    "All Models"
+                } else {
+                    p
+                }
             } else {
                 "Provider"
             }
@@ -466,10 +507,7 @@ async fn edit_to_browse(
     };
 
     let escaped_label = crate::escape_v2_safe(category_label);
-    let text = format!(
-        "*{}* \\({} models\\)",
-        escaped_label, total
-    );
+    let text = format!("*{}* \\({} models\\)", escaped_label, total);
 
     bot.edit_message_text(chat_id, msg_id, text)
         .parse_mode(ParseMode::MarkdownV2)
@@ -490,13 +528,21 @@ async fn edit_to_detail(
     let s = state.lock().await;
     let model_data = s.model_metadata.get(model_id).map(|m| {
         (
-            if m.name.is_empty() { m.id.clone() } else { m.name.clone() },
+            if m.name.is_empty() {
+                m.id.clone()
+            } else {
+                m.name.clone()
+            },
             m.context_length,
             m.pricing.is_free(),
             m.pricing.format_per_million(),
         )
     });
-    let is_selected = s.model_overrides.get(&chat_id.to_string()).map(|m| m == model_id).unwrap_or(false);
+    let is_selected = s
+        .model_overrides
+        .get(&chat_id.to_string())
+        .map(|m| m == model_id)
+        .unwrap_or(false);
     let current_config_model = s.config.model_for_chat(&chat_id.to_string()).to_string();
     drop(s);
 
@@ -516,7 +562,11 @@ async fn edit_to_detail(
             };
             (name, ctx_str, pricing)
         }
-        None => (model_id.to_string(), "unknown".to_string(), "unknown".to_string()),
+        None => (
+            model_id.to_string(),
+            "unknown".to_string(),
+            "unknown".to_string(),
+        ),
     };
 
     let is_config_default = model_id == current_config_model;
@@ -532,12 +582,24 @@ async fn edit_to_detail(
         model_id,
         escaped_context,
         escaped_pricing,
-        if is_config_default { "\n📌 Config default" } else { "" },
-        if is_selected { "\n✅ Currently selected" } else { "" },
+        if is_config_default {
+            "\n📌 Config default"
+        } else {
+            ""
+        },
+        if is_selected {
+            "\n✅ Currently selected"
+        } else {
+            ""
+        },
     );
 
     let mut rows = vec![vec![InlineKeyboardButton::callback(
-        if is_selected { "✅ Selected" } else { "📌 Select Model" },
+        if is_selected {
+            "✅ Selected"
+        } else {
+            "📌 Select Model"
+        },
         select_cb(model_id),
     )]];
     rows.push(vec![InlineKeyboardButton::callback(
@@ -573,7 +635,13 @@ async fn select_model(
         let s = state.lock().await;
         s.model_metadata
             .get(model_id)
-            .map(|m| if m.name.is_empty() { m.id.clone() } else { m.name.clone() })
+            .map(|m| {
+                if m.name.is_empty() {
+                    m.id.clone()
+                } else {
+                    m.name.clone()
+                }
+            })
             .unwrap_or_else(|| model_id.to_string())
     };
 
@@ -582,9 +650,10 @@ async fn select_model(
         display_name
     );
 
-    let keyboard = InlineKeyboardMarkup::new(vec![
-        vec![InlineKeyboardButton::callback("🔙 Back to Menu", "model:menu")],
-    ]);
+    let keyboard = InlineKeyboardMarkup::new(vec![vec![InlineKeyboardButton::callback(
+        "🔙 Back to Menu",
+        "model:menu",
+    )]]);
 
     bot.edit_message_text(chat_id, msg_id, text)
         .parse_mode(ParseMode::MarkdownV2)
@@ -637,9 +706,10 @@ async fn handle_spec_callback(
         spec_label, new_model
     );
 
-    let keyboard = InlineKeyboardMarkup::new(vec![
-        vec![InlineKeyboardButton::callback("🔙 Back to Menu", "model:menu")],
-    ]);
+    let keyboard = InlineKeyboardMarkup::new(vec![vec![InlineKeyboardButton::callback(
+        "🔙 Back to Menu",
+        "model:menu",
+    )]]);
 
     bot.edit_message_text(chat_id, msg_id, text)
         .parse_mode(ParseMode::MarkdownV2)
@@ -662,10 +732,7 @@ async fn format_model_status(state: &Arc<Mutex<BotState>>, chat_id: &str) -> Str
             current, config_default
         )
     } else {
-        format!(
-            "🎯 *Current model:* `{}`\n\nBrowse models:",
-            current
-        )
+        format!("🎯 *Current model:* `{}`\n\nBrowse models:", current)
     }
 }
 

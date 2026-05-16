@@ -49,21 +49,14 @@ impl ReminderList {
     }
 
     /// Add a reminder and return its ID.
-    pub fn add(
-        &mut self,
-        description: &str,
-        trigger_at: &str,
-        action: Option<&str>,
-    ) -> String {
+    pub fn add(&mut self, description: &str, trigger_at: &str, action: Option<&str>) -> String {
         let id = uuid::Uuid::new_v4().to_string();
         self.reminders.push(Reminder {
             id: id.clone(),
             description: description.to_string(),
             action: action.map(|a| a.to_string()),
             trigger_at: trigger_at.to_string(),
-            created_at: chrono::Utc::now()
-                .format("%Y-%m-%dT%H:%M:%SZ")
-                .to_string(),
+            created_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         });
         id
     }
@@ -135,17 +128,9 @@ mod tests {
     fn test_due_reminders() {
         let mut list = ReminderList::default();
         // Past reminder — should be due
-        list.add(
-            "Past reminder",
-            "2020-01-01T00:00:00Z",
-            None,
-        );
+        list.add("Past reminder", "2020-01-01T00:00:00Z", None);
         // Future reminder — not due
-        list.add(
-            "Future reminder",
-            "2099-12-31T23:59:59Z",
-            None,
-        );
+        list.add("Future reminder", "2099-12-31T23:59:59Z", None);
         let due = list.due();
         assert_eq!(due.len(), 1);
         assert_eq!(due[0].description, "Past reminder");
@@ -166,11 +151,7 @@ mod tests {
 
         let mut list = ReminderList::default();
         list.add("Reminder one", "2026-06-01T12:00:00Z", None);
-        list.add(
-            "Reminder two",
-            "2026-06-02T12:00:00Z",
-            Some("Do something"),
-        );
+        list.add("Reminder two", "2026-06-02T12:00:00Z", Some("Do something"));
         list.save(&chats_dir, "-123").unwrap();
 
         let loaded = ReminderList::load(&chats_dir, "-123").unwrap();

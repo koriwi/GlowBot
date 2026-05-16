@@ -63,9 +63,10 @@ pub async fn send_todos_message(
     let escaped = crate::escape_v2_safe(&text);
 
     if has_items {
-        let keyboard = InlineKeyboardMarkup::new(vec![vec![
-            InlineKeyboardButton::callback("✅ Mark done", "todo:menu:0"),
-        ]]);
+        let keyboard = InlineKeyboardMarkup::new(vec![vec![InlineKeyboardButton::callback(
+            "✅ Mark done",
+            "todo:menu:0",
+        )]]);
 
         let result = tg_bot
             .send_message(chat_id_i64, &escaped)
@@ -115,12 +116,7 @@ async fn show_todo_menu_page(
     let end = (start + TODOS_PER_PAGE).min(total);
     let page_items = &list.todos[start..end];
 
-    let header = format!(
-        "*Todos \\({}—{} of {}\\):*",
-        start + 1,
-        end,
-        total
-    );
+    let header = format!("*Todos \\({}—{} of {}\\):*", start + 1, end, total);
 
     let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
     for t in page_items {
@@ -191,9 +187,7 @@ pub async fn handle_todo_callback(
     }
 
     if data == "todo:close" {
-        let _ = tg_bot
-            .edit_message_reply_markup(chat, msg_id)
-            .await;
+        let _ = tg_bot.edit_message_reply_markup(chat, msg_id).await;
         return true;
     }
 
@@ -239,7 +233,7 @@ pub async fn handle_todo_callback(
         let desc = description.unwrap_or_default();
         let _ = tg_bot
             .answer_callback_query(callback_id)
-            .text(&format!("Marked {}: {}", status_word, desc))
+            .text(format!("Marked {}: {}", status_word, desc))
             .show_alert(false)
             .await;
 

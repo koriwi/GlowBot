@@ -1,6 +1,6 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use schemars::JsonSchema;
 
 /// An MCP (Model Context Protocol) server configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

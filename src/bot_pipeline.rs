@@ -2,7 +2,7 @@ use super::BotState;
 use crate::db::Database;
 use crate::git::GitRepo;
 use crate::memory::{save_memory, Memory};
-use crate::openrouter::{ChatCompletionRequest, ChatMessage, ContentPart, OpenRouterClient};
+use crate::openrouter::{ChatCompletionRequest, ChatMessage, OpenRouterClient};
 use std::collections::HashMap;
 use std::sync::Arc;
 use teloxide::prelude::*;
@@ -20,6 +20,7 @@ impl Drop for TypingGuard {
 }
 
 /// Process a message through the LLM pipeline (free function).
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn process_with_llm_impl(
     state: &Arc<Mutex<BotState>>,
     _git_repo: &GitRepo,
@@ -51,7 +52,9 @@ pub(crate) async fn process_with_llm_impl(
             let cid = teloxide::types::ChatId(parsed);
             tokio::spawn(async move {
                 while keep_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                    let _ = bot.send_chat_action(cid, teloxide::types::ChatAction::Typing).await;
+                    let _ = bot
+                        .send_chat_action(cid, teloxide::types::ChatAction::Typing)
+                        .await;
                     tokio::time::sleep(std::time::Duration::from_secs(4)).await;
                 }
             });
@@ -109,20 +112,11 @@ pub(crate) async fn process_with_llm_impl(
         // Strip orphaned tool results that can occur when the sliding
         // window drops an assistant_tool_calls message but keeps its
         // subsequent tool_result messages.
-        let hist = crate::openrouter::strip_orphaned_tool_results(&hist);
-        hist
+        crate::openrouter::strip_orphaned_tool_results(&hist)
     };
 
-    let current_msg = build_user_message_full(
-        state,
-        chat_id,
-        text,
-        caption,
-        media,
-        username,
-        tg_bot,
-    )
-    .await;
+    let current_msg =
+        build_user_message_full(state, chat_id, text, caption, media, username, tg_bot).await;
     let mut turn_messages = vec![current_msg.clone()];
 
     let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
@@ -169,7 +163,7 @@ pub(crate) async fn process_with_llm_impl(
             };
             let msg_count = request.messages.len();
 
-            let (response, usage) = {
+            let (response, _usage) = {
                 let llm = { state.lock().await.llm.clone() };
                 log::info!(
                     "pipeline: calling LLM model={}, round={}, messages={}",
@@ -407,7 +401,10 @@ async fn build_user_message_full(
         let modality = if is_image { "image" } else { "audio" };
         let supports_modality = meta.map(|m| m.supports_modality(modality)).unwrap_or(false);
         let image_fallback_exists = s.config.image_fallback_model_for_chat(chat_id).is_some();
-        let audio_fallback_model = s.config.audio_fallback_model_for_chat(chat_id).map(String::from);
+        let audio_fallback_model = s
+            .config
+            .audio_fallback_model_for_chat(chat_id)
+            .map(String::from);
         (
             supports_modality,
             image_fallback_exists,
@@ -431,15 +428,13 @@ async fn build_user_message_full(
         Some(bot) => {
             use teloxide::prelude::*;
             match bot.get_file(file_id).send().await {
-                Ok(file) => {
-                    match crate::media::download_file(&file, &token, &dest_dir).await {
-                        Ok(p) => Some(p),
-                        Err(e) => {
-                            log::warn!("Media: failed to download {}: {}", file_id, e);
-                            None
-                        }
+                Ok(file) => match crate::media::download_file(&file, &token, &dest_dir).await {
+                    Ok(p) => Some(p),
+                    Err(e) => {
+                        log::warn!("Media: failed to download {}: {}", file_id, e);
+                        None
                     }
-                }
+                },
                 Err(e) => {
                     log::warn!("Media: get_file failed for {}: {}", file_id, e);
                     None
@@ -447,7 +442,10 @@ async fn build_user_message_full(
             }
         }
         None => {
-            log::info!("Media: no tg_bot available, skipping download for {}", file_id);
+            log::info!(
+                "Media: no tg_bot available, skipping download for {}",
+                file_id
+            );
             None
         }
     };
@@ -459,10 +457,8 @@ async fn build_user_message_full(
         } else if is_image {
             build_image_metadata_message(media, caption, text, username, &fp, image_fallback_exists)
         } else if let Some(ref fb_model) = audio_fallback_model {
-            build_audio_fallback_message(
-                media, caption, text, username, &fp, fb_model, &api_key,
-            )
-            .await
+            build_audio_fallback_message(media, caption, text, username, &fp, fb_model, &api_key)
+                .await
         } else {
             build_text_metadata_message(media, caption, text, username)
         }
@@ -521,11 +517,15 @@ fn build_native_message(
     // Add text parts: caption first, then user text
     if let Some(cap) = caption {
         if !cap.is_empty() {
-            parts.push(ContentPart::Text { text: cap.to_string() });
+            parts.push(ContentPart::Text {
+                text: cap.to_string(),
+            });
         }
     }
     if !text.is_empty() {
-        parts.push(ContentPart::Text { text: text.to_string() });
+        parts.push(ContentPart::Text {
+            text: text.to_string(),
+        });
     }
 
     ChatMessage::user_multimodal_with_name(parts, username)
@@ -652,10 +652,7 @@ fn build_text_metadata_message(
 fn media_metadata_text(media: &crate::media::IngestedMedia) -> String {
     match media {
         crate::media::IngestedMedia::Photo { width, height, .. } => {
-            format!(
-                "[This image ({}x{}) was sent by the user.]",
-                width, height
-            )
+            format!("[This image ({}x{}) was sent by the user.]", width, height)
         }
         crate::media::IngestedMedia::Voice { duration, .. } => {
             format!(
@@ -663,7 +660,9 @@ fn media_metadata_text(media: &crate::media::IngestedMedia) -> String {
                 duration
             )
         }
-        crate::media::IngestedMedia::Audio { duration, title, .. } => {
+        crate::media::IngestedMedia::Audio {
+            duration, title, ..
+        } => {
             if let Some(t) = title {
                 format!(
                     "[This audio file \"{}\" ({}s) was sent by the user and was automatically transcribed for you.]",

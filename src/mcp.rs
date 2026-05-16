@@ -181,10 +181,7 @@ mod tests {
 
     #[test]
     fn test_call_tool_result_to_string_multiple() {
-        let result = CallToolResult::success(vec![
-            Content::text("line1"),
-            Content::text("line2"),
-        ]);
+        let result = CallToolResult::success(vec![Content::text("line1"), Content::text("line2")]);
         assert_eq!(call_tool_result_to_string(result), "line1\nline2");
     }
 

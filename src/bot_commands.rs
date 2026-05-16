@@ -77,10 +77,8 @@ pub(crate) async fn handle_bot_command_impl(
             let cid = chat_id.to_string();
             let tg_clone = bot.clone();
             tokio::spawn(async move {
-                crate::bot::bot_todos::send_todos_message(
-                    &state_clone, &cid, details, &tg_clone,
-                )
-                .await;
+                crate::bot::bot_todos::send_todos_message(&state_clone, &cid, details, &tg_clone)
+                    .await;
             });
             return Ok(None);
         }
@@ -97,7 +95,12 @@ pub(crate) async fn handle_bot_command_impl(
                 let updated = t.updated_at.as_deref().unwrap_or("never");
                 lines.push(format!(
                     "{}. {} `{}` — {}\n   Created: {} | Updated: {}",
-                    i + 1, status, t.id, t.description, t.created_at, updated
+                    i + 1,
+                    status,
+                    t.id,
+                    t.description,
+                    t.created_at,
+                    updated
                 ));
             }
             lines.join("\n")
@@ -119,10 +122,7 @@ pub(crate) async fn handle_bot_command_impl(
         let response = if list.reminders.is_empty() {
             "No pending reminders for this chat.".to_string()
         } else {
-            let mut lines = vec![format!(
-                "*{} pending reminder(s):*",
-                list.reminders.len()
-            )];
+            let mut lines = vec![format!("*{} pending reminder(s):*", list.reminders.len())];
             for (i, r) in list.reminders.iter().enumerate() {
                 let action_note = if r.action.is_some() {
                     " [has action]"
@@ -201,7 +201,13 @@ pub(crate) async fn handle_bot_command_impl(
                 .iter()
                 .filter(|mt| !s.config.is_mcp_server_allowed(chat_id, &mt.server_name))
                 .collect();
-            format_tools_output(&builtin_tools, &mcp_tools, &s.mcp_tools, &mcp_blacklisted, &s.config.mcp_servers)
+            format_tools_output(
+                &builtin_tools,
+                &mcp_tools,
+                &s.mcp_tools,
+                &mcp_blacklisted,
+                &s.config.mcp_servers,
+            )
         };
         return Ok(Some(output));
     }
@@ -232,7 +238,10 @@ pub(crate) async fn handle_bot_command_impl(
             let s = state.lock().await;
             s.config.model_for_chat(chat_id).to_string()
         };
-        return Ok(Some(format!("🔁 Model reset to config default: `{}`", model)));
+        return Ok(Some(format!(
+            "🔁 Model reset to config default: `{}`",
+            model
+        )));
     }
 
     // /model [model-id|:specifier] — set model override, apply specifier, or show info
@@ -319,10 +328,14 @@ pub(crate) async fn handle_bot_command_impl(
 
     // /models — browse and switch models via inline keyboard
     if matches!(command, crate::commands::Command::Models) {
-        let bot = match tg_bot {
-            Some(b) => b.clone(),
-            None => return Ok(Some("Models command cannot be used in this context (no Telegram bot available).".into())),
-        };
+        let bot =
+            match tg_bot {
+                Some(b) => b.clone(),
+                None => return Ok(Some(
+                    "Models command cannot be used in this context (no Telegram bot available)."
+                        .into(),
+                )),
+            };
         let state_clone = Arc::clone(state);
         let cid = chat_id.to_string();
         tokio::spawn(async move {
@@ -340,7 +353,8 @@ pub(crate) async fn handle_bot_command_impl(
             let cid = chat_id.to_string();
             let tg_clone = bot.clone();
             tokio::spawn(async move {
-                crate::bot::run_heartbeat_task(state_clone, git_clone, stop_clone, &cid, tg_clone).await;
+                crate::bot::run_heartbeat_task(state_clone, git_clone, stop_clone, &cid, tg_clone)
+                    .await;
             });
             return Ok(Some("🔄 Running task agent for this chat now...".into()));
         }
@@ -353,7 +367,9 @@ pub(crate) async fn handle_bot_command_impl(
         {
             let s = state.lock().await;
             let model = s.effective_model(chat_id);
-            let needs_fetch = !s.model_metadata.contains_key(crate::openrouter::normalize_model_id(&model));
+            let needs_fetch = !s
+                .model_metadata
+                .contains_key(crate::openrouter::normalize_model_id(&model));
             let api_key = s.config.openrouter.api_key.clone();
             drop(s);
 
@@ -384,7 +400,13 @@ pub(crate) async fn handle_bot_command_impl(
             let mut s = state.lock().await;
             let usage = s.context_usage(chat_id);
             let model = s.effective_model(chat_id);
-            crate::commands::handle_command_with_model(command, &mut s.config, chat_id, &usage, Some(&model))
+            crate::commands::handle_command_with_model(
+                command,
+                &mut s.config,
+                chat_id,
+                &usage,
+                Some(&model),
+            )
         };
         return Ok(Some(response));
     }

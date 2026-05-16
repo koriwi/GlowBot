@@ -125,8 +125,8 @@ pub fn all_tool_definitions(
     if image_fallback_model.is_some() {
         tools.push(describe_image_tool_definition());
     }
-    if advice_model.is_some() {
-        tools.push(ask_advisor_tool_definition(advice_model.unwrap()));
+    if let Some(advice_model) = &advice_model {
+        tools.push(ask_advisor_tool_definition(advice_model.to_owned()));
     }
     if include_bash {
         tools.insert(0, bash_tool_definition());
@@ -358,7 +358,8 @@ pub(crate) fn list_reminders_tool_definition() -> ToolDefinition {
         def_type: "function".into(),
         function: FunctionDef {
             name: "list_reminders".into(),
-            description: "List all pending reminders for this chat, including their trigger times.".into(),
+            description: "List all pending reminders for this chat, including their trigger times."
+                .into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {},

@@ -22,7 +22,8 @@ fn short_id() -> String {
 /// Tool: read_config_schema — returns the JSON Schema for all config types.
 pub(crate) async fn tool_read_config_schema() -> String {
     let schema = schemars::schema_for!(crate::config::Config);
-    serde_json::to_string_pretty(&schema).unwrap_or_else(|e| format!("Error generating schema: {}", e))
+    serde_json::to_string_pretty(&schema)
+        .unwrap_or_else(|e| format!("Error generating schema: {}", e))
 }
 
 /// Tool: read_config — returns the current config as YAML.
@@ -43,7 +44,10 @@ pub(crate) async fn tool_edit_config(
 ) -> String {
     let new_yaml = match args["config_yaml"].as_str() {
         Some(y) => y.to_string(),
-        None => return "Error: config_yaml parameter required (the complete new config as YAML).".into(),
+        None => {
+            return "Error: config_yaml parameter required (the complete new config as YAML)."
+                .into()
+        }
     };
 
     // Parse the proposed YAML
@@ -62,7 +66,12 @@ pub(crate) async fn tool_edit_config(
     // Re-serialize to get canonical YAML for diff and storage
     let canonical_new_yaml = match serde_yaml::to_string(&new_config) {
         Ok(y) => y,
-        Err(e) => return format!("Error: config is valid YAML but failed to re-serialize — {}", e),
+        Err(e) => {
+            return format!(
+                "Error: config is valid YAML but failed to re-serialize — {}",
+                e
+            )
+        }
     };
 
     // Create redacted versions for the diff display to avoid leaking secrets
@@ -97,7 +106,10 @@ pub(crate) async fn tool_edit_config(
     // Send Telegram message with diff and Accept/Deny buttons
     let bot = match tg_bot {
         Some(b) => b,
-        None => return "Error: edit_config requires Telegram bot context to show approval buttons.".into(),
+        None => {
+            return "Error: edit_config requires Telegram bot context to show approval buttons."
+                .into()
+        }
     };
 
     let chat = match chat_id.parse::<i64>() {
@@ -115,7 +127,10 @@ pub(crate) async fn tool_edit_config(
     ]]);
 
     // Escape the diff for MarkdownV2. We wrap it in a code block so it renders as preformatted text.
-    let header = format!("⚙️ *Config Change Proposal*\n\n```diff\n{}\n```", diff_text.trim());
+    let header = format!(
+        "⚙️ *Config Change Proposal*\n\n```diff\n{}\n```",
+        diff_text.trim()
+    );
     let escaped = crate::escape_v2_safe(&header);
 
     let sent_msg = match bot
@@ -173,7 +188,12 @@ pub async fn handle_config_callback(
 
     let pending = match pending {
         Some(p) => p,
-        None => return Some(("⚠️ This config change has expired or was already processed.".into(), None)),
+        None => {
+            return Some((
+                "⚠️ This config change has expired or was already processed.".into(),
+                None,
+            ))
+        }
     };
 
     match action {
@@ -188,10 +208,7 @@ pub async fn handle_config_callback(
             match parse_result {
                 Ok(new_config) => {
                     if let Err(e) = new_config.save(&config_path) {
-                        return Some((
-                            format!("❌ Failed to save config: {}", e),
-                            None,
-                        ));
+                        return Some((format!("❌ Failed to save config: {}", e), None));
                     }
 
                     // Update in-memory config
@@ -214,7 +231,10 @@ pub async fn handle_config_callback(
                         let chat_id: ChatId = match pending.chat_id.parse::<i64>() {
                             Ok(c) => ChatId(c),
                             Err(_) => {
-                                log::error!("Invalid chat_id for restart notification: {}", pending.chat_id);
+                                log::error!(
+                                    "Invalid chat_id for restart notification: {}",
+                                    pending.chat_id
+                                );
                                 ChatId(0)
                             }
                         };
@@ -235,17 +255,11 @@ pub async fn handle_config_callback(
                         None,
                     ))
                 }
-                Err(e) => Some((
-                    format!("❌ Config validation failed: {}", e),
-                    None,
-                )),
+                Err(e) => Some((format!("❌ Config validation failed: {}", e), None)),
             }
         }
         "deny" => {
-            log::info!(
-                "Config change denied by user in chat {}",
-                pending.chat_id
-            );
+            log::info!("Config change denied by user in chat {}", pending.chat_id);
             Some((
                 "❌ *Config Change Denied*\n\nWhat would you like to change instead? The bot will ask for your feedback on the next message.".into(),
                 Some("The user denied the proposed config change. On the next user message, ask what adjustments they'd like to make.".into()),
