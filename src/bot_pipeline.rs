@@ -2,7 +2,7 @@ use super::BotState;
 use crate::db::Database;
 use crate::git::GitRepo;
 use crate::memory::{save_memory, Memory};
-use crate::openrouter::{ChatCompletionRequest, ChatContent, ChatMessage, ContentPart, OpenRouterClient};
+use crate::openrouter::{ChatCompletionRequest, ChatMessage, ContentPart, OpenRouterClient};
 use std::collections::HashMap;
 use std::sync::Arc;
 use teloxide::prelude::*;
@@ -258,12 +258,11 @@ pub(crate) async fn process_with_llm_impl(
     // Store the completed turn in conversation history
     let message_ids = {
         let s = state.lock().await;
-        let prepared = prepare_messages_for_storage(&turn_messages, &s.config.db);
         log::info!(
             "pipeline: saving turn to DB ({} messages)",
-            prepared.len()
+            turn_messages.len()
         );
-        s.db.save_messages(chat_id, &prepared)
+        s.db.save_messages(chat_id, &turn_messages)
             .unwrap_or_default()
     };
     log::info!(
@@ -693,66 +692,4 @@ pub(crate) async fn ensure_memory_exists_impl(
         save_memory(&s.chats_dir(), chat_id, user_id, &mem)?;
     }
     Ok(())
-}
-
-/// Prepare messages for database storage by applying truncation
-/// based on `DatabaseConfig`. Returns a new Vec of messages ready for `save_messages`.
-pub(crate) fn prepare_messages_for_storage(
-    messages: &[ChatMessage],
-    db_config: &crate::config::DatabaseConfig,
-) -> Vec<ChatMessage> {
-    messages
-        .iter()
-        .map(|msg| {
-            let mut msg = msg.clone();
-
-            // Truncate tool result content
-            if msg.role == "tool" {
-                if let Some(max_len) = db_config.tool_max_content_len {
-                    truncate_chat_content(&mut msg.content, max_len);
-                }
-            }
-
-            // Truncate tool call arguments
-            if msg.role == "assistant" {
-                if let (Some(max_len), Some(ref mut tcs)) = (db_config.tool_max_content_len, &mut msg.tool_calls) {
-                    for tc in tcs.iter_mut() {
-                        truncate_str(&mut tc.function.arguments, max_len);
-                    }
-                }
-            }
-
-            // Truncate reasoning
-            if let Some(max_len) = db_config.reasoning_max_content_len {
-                if let Some(ref mut r) = msg.reasoning {
-                    truncate_str(r, max_len);
-                }
-            }
-
-            msg
-        })
-        .collect()
-}
-
-/// Truncate a ChatContent to max_len characters.
-fn truncate_chat_content(content: &mut ChatContent, max_len: usize) {
-    match content {
-        ChatContent::Text(ref mut s) => truncate_str(s, max_len),
-        ChatContent::Parts(parts) => {
-            for part in parts.iter_mut() {
-                match part {
-                    ContentPart::Text { ref mut text } => truncate_str(text, max_len),
-                    _ => {} // Don't truncate non-text parts
-                }
-            }
-        }
-    }
-}
-
-/// Truncate a string to max_len characters, adding a truncation marker.
-fn truncate_str(s: &mut String, max_len: usize) {
-    if s.chars().count() > max_len {
-        let truncated: String = s.chars().take(max_len).collect();
-        *s = format!("{}...", truncated);
-    }
 }

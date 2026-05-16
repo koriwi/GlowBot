@@ -55,11 +55,6 @@ conversation:
   heartbeat_recent_messages_window_size: 10   # optional — conversation history messages for heartbeat tasks; falls back to recent_messages_window_size if unset; 0 = no history
   advice_recent_messages_window_size: 5   # number of recent messages sent to advice model via ask_advisor (default: 5)
 
-# Database settings
-db:
-  # tool_max_content_len: 5000       # truncate tool call/result content to N chars (default: no limit)
-  # reasoning_max_content_len: 5000  # truncate reasoning content to N chars (default: no limit)
-
 # MCP servers for additional tools
 # mcp_servers:
 #   - name: "my-server"
@@ -234,18 +229,10 @@ Parse the results and summarize.
 
 Some LLM models (DeepSeek-R1, Claude with extended thinking, OpenAI o-series) return **reasoning/thinking content** — the model's internal chain of thought — alongside the final response. GlowBot can optionally capture this and include it in subsequent requests.
 
-**Configuration:**
-```yaml
-db:
-  tool_max_content_len: ~           # default: no limit — truncate tool call arguments and tool result content to N chars before storage
-  reasoning_max_content_len: ~      # default: no limit — truncate reasoning content to N chars before storage
-```
-
 **How it works:**
 - Reasoning is always captured from assistant API responses and included in subsequent requests, so the model always sees its previous thinking.
 - Reasoning is always persisted in the `reasoning` column of the `messages` table in SQLite.
 - Tool call and tool result messages are always stored in the database.
-- The `db.tool_max_content_len` and `db.reasoning_max_content_len` options truncate content (with "..." appended) before storage to prevent excessively large messages from bloating the database.
 - Reasoning is included in token estimation for context trimming.
 - Reasoning is **not** part of `text_content()` — it's a separate field, so embeddings and tool input don't include it.
 

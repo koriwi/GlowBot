@@ -115,18 +115,9 @@ pub struct DmConfig {
     pub advice_model: Option<String>,
 }
 
-/// Database-related configuration.
+/// Database-related configuration (placeholder for future options).
 #[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
-pub struct DatabaseConfig {
-    /// Maximum character length for tool call/result content stored in the database.
-    /// Content exceeding this is truncated (with "..." appended). None = no limit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_max_content_len: Option<usize>,
-    /// Maximum character length for reasoning/thinking content stored in the database.
-    /// Content exceeding this is truncated (with "..." appended). None = no limit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reasoning_max_content_len: Option<usize>,
-}
+pub struct DatabaseConfig {}
 
 /// Conversation context configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
