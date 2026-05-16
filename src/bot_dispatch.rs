@@ -456,29 +456,40 @@ pub(crate) async fn dispatch_tool(
             // Build messages for the advice model
             let mut advice_messages: Vec<ChatMessage> = vec![
                 ChatMessage::system(
-                    "You are an advisor model. A smaller/cheaper AI model is asking for your help \
+                    "You are an advisor model. A smaller/cheaper AI model is asking for your private help \
                      with a question in an ongoing conversation. Below is the recent conversation \
                      history, followed by the specific question. Respond helpfully with your best \
-                     analysis, opinion, or recommendation. Be concise and direct — the original \
-                     model will relay your response to the user."
+                     analysis, opinion, or recommendation. Be concise and direct.\n\n\
+                     Important: Your response goes back to the calling model — NOT directly to the end user. \
+                     The calling model will decide whether to relay parts of your response verbatim or \
+                     use it as internal guidance to continue the conversation on its own."
                 ),
             ];
 
             for msg in &recent_messages {
+                // Relabel all messages as "user" so the advisor never sees
+                // "assistant" messages it didn't produce. Use the `name` field
+                // to distinguish human users from the calling model so the
+                // advisor can track who said what.
+                let speaker = if msg.role == "user" {
+                    msg.name.clone().unwrap_or_else(|| "human".into())
+                } else {
+                    "calling_model".into()
+                };
                 advice_messages.push(ChatMessage {
-                    role: msg.role.clone(),
+                    role: "user".into(),
                     content: msg.content.clone(),
-                    name: msg.name.clone(),
-                    tool_calls: msg.tool_calls.clone(),
-                    tool_call_id: msg.tool_call_id.clone(),
+                    name: Some(speaker),
+                    tool_calls: None,
+                    tool_call_id: None,
                     reasoning: msg.reasoning.clone(),
                 });
             }
 
-            advice_messages.push(ChatMessage::user(&format!(
-                "Here is my question. Please give me your best analysis and advice:\n\n{}",
-                query
-            )));
+            advice_messages.push(ChatMessage::user_with_name(
+                &format!("Here is my question. Please give me your best analysis and advice:\n\n{}", query),
+                "calling_model",
+            ));
 
             // Call the advice model via the LLM backend
             let request = crate::openrouter::ChatCompletionRequest {
