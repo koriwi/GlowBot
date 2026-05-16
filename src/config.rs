@@ -118,20 +118,12 @@ pub struct DmConfig {
 /// Database-related configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseConfig {
-    /// Whether to persist LLM reasoning/thinking content in the database.
-    /// Reasoning is only captured when `conversation.include_reasoning` is also enabled.
-    #[serde(default)]
-    pub store_reasoning: bool,
-    /// Whether to store tool call messages (assistant tool_calls and tool results) in the database.
-    /// When false, tool interactions are not persisted, keeping the DB leaner.
-    #[serde(default = "default_true")]
-    pub store_tool_calls: bool,
     /// Maximum character length for tool call/result content stored in the database.
-    /// Content exceeding this is truncated. None = no limit.
+    /// Content exceeding this is truncated (with "..." appended). None = no limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_max_content_len: Option<usize>,
     /// Maximum character length for reasoning/thinking content stored in the database.
-    /// Content exceeding this is truncated. None = no limit.
+    /// Content exceeding this is truncated (with "..." appended). None = no limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_max_content_len: Option<usize>,
 }
@@ -139,8 +131,6 @@ pub struct DatabaseConfig {
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            store_reasoning: false,
-            store_tool_calls: true,
             tool_max_content_len: None,
             reasoning_max_content_len: None,
         }
@@ -153,11 +143,6 @@ pub struct ConversationConfig {
     /// Number of recent messages to load from the database as context.
     #[serde(default = "default_recent_messages_window_size")]
     pub recent_messages_window_size: usize,
-    /// Whether to include the model's reasoning/thinking content in subsequent requests.
-    /// When enabled, reasoning text from assistant messages is captured and sent back
-    /// in the next turn so the model can see its previous thinking.
-    #[serde(default)]
-    pub include_reasoning: bool,
     /// Number of recent messages to load from the database as context for heartbeat/background tasks.
     /// When set, heartbeat tasks use this value instead of `recent_messages_window_size`.
     /// When unset (default), heartbeat tasks use `recent_messages_window_size`.
@@ -168,10 +153,6 @@ pub struct ConversationConfig {
     /// when the LLM calls the `ask_advisor` tool. Default: 5.
     #[serde(default = "default_advice_recent_messages_window_size")]
     pub advice_recent_messages_window_size: usize,
-    /// Whether to include reasoning/thinking blocks from assistant messages when
-    /// sending conversation context to the advice model. Default: false.
-    #[serde(default)]
-    pub advice_include_reasoning: bool,
 }
 
 fn default_advice_recent_messages_window_size() -> usize {
@@ -182,10 +163,8 @@ impl Default for ConversationConfig {
     fn default() -> Self {
         Self {
             recent_messages_window_size: default_recent_messages_window_size(),
-            include_reasoning: false,
             heartbeat_recent_messages_window_size: None,
             advice_recent_messages_window_size: default_advice_recent_messages_window_size(),
-            advice_include_reasoning: false,
         }
     }
 }
@@ -311,10 +290,6 @@ fn default_embedding_search_limit() -> usize {
 
 fn default_media_dir() -> String {
     "/media".into()
-}
-
-fn default_true() -> bool {
-    true
 }
 
 #[path = "config_methods.rs"]

@@ -130,7 +130,6 @@ async fn test_dispatch_ask_advisor_with_reasoning_included() {
         let mut s = bot.state.lock().await;
         s.config.openrouter.advice_model = Some("advisor/model".into());
         s.config.conversation.advice_recent_messages_window_size = 2;
-        s.config.conversation.advice_include_reasoning = true;
         // Pre-seed messages with reasoning
         let msgs = vec![
             ChatMessage::user_with_name("Question", "Alice"),
@@ -158,17 +157,17 @@ async fn test_dispatch_ask_advisor_with_reasoning_included() {
 }
 
 #[tokio::test]
-async fn test_dispatch_ask_advisor_with_reasoning_excluded() {
+async fn test_dispatch_ask_advisor_with_reasoning_always_included() {
     let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 
     {
         let mut s = bot.state.lock().await;
         s.config.openrouter.advice_model = Some("advisor/model".into());
         s.config.conversation.advice_recent_messages_window_size = 2;
-        s.config.conversation.advice_include_reasoning = false;
+        // Reasoning is always included now — no config flag needed
         let msgs = vec![
             ChatMessage::user_with_name("Question", "Alice"),
-            ChatMessage::assistant_with_reasoning("Answer", "Hidden reasoning".into()),
+            ChatMessage::assistant_with_reasoning("Answer", "Visible reasoning".into()),
         ];
         s.db.save_messages("-123", &msgs).unwrap();
     }
@@ -176,7 +175,7 @@ async fn test_dispatch_ask_advisor_with_reasoning_excluded() {
     mock.add_response(ChatCompletionResponse {
         choices: vec![Choice {
             message: AssistantMessage {
-                content: Some("No reasoning visible".into()),
+                content: Some("Reasoning visible!".into()),
                 ..Default::default()
             },
             finish_reason: Some("stop".into()),

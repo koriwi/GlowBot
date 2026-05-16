@@ -4,19 +4,16 @@
 fn test_conversation_config_default() {
     let conv = ConversationConfig::default();
     assert_eq!(conv.recent_messages_window_size, 20);
-    assert!(!conv.include_reasoning);
 }
 
 #[test]
 fn test_conversation_config_serialization() {
     let conv = ConversationConfig {
         recent_messages_window_size: 50,
-        include_reasoning: true,
         ..Default::default()
     };
     let yaml = serde_yaml::to_string(&conv).unwrap();
     assert!(yaml.contains("50"));
-    assert!(yaml.contains("include_reasoning"));
 }
 
 #[test]
@@ -25,62 +22,28 @@ fn test_config_load_save_with_conversation_config() {
     let path = dir.path().join("config.yaml");
     let mut config = basic_config();
     config.conversation.recent_messages_window_size = 30;
-    config.conversation.include_reasoning = true;
-    config.db.store_reasoning = true;
     config.save(&path).unwrap();
     let loaded = Config::load(&path).unwrap();
     assert_eq!(loaded.conversation.recent_messages_window_size, 30);
-    assert!(loaded.conversation.include_reasoning);
-    assert!(loaded.db.store_reasoning);
 }
 
 #[test]
 fn test_database_config_default() {
     let db = DatabaseConfig::default();
-    assert!(!db.store_reasoning);
-}
-
-#[test]
-fn test_database_config_serialization() {
-    let db = DatabaseConfig {
-        store_reasoning: true,
-        ..Default::default()
-    };
-    let yaml = serde_yaml::to_string(&db).unwrap();
-    assert!(yaml.contains("store_reasoning"));
-}
-
-#[test]
-fn test_config_defaults_db_store_reasoning_false() {
-    let config = basic_config();
-    assert!(!config.db.store_reasoning);
-}
-
-#[test]
-fn test_database_config_defaults() {
-    let db = DatabaseConfig::default();
-    assert!(!db.store_reasoning);
-    assert!(db.store_tool_calls);
     assert_eq!(db.tool_max_content_len, None);
     assert_eq!(db.reasoning_max_content_len, None);
 }
 
 #[test]
-fn test_database_config_full_serialization() {
+fn test_database_config_serialization() {
     let db = DatabaseConfig {
-        store_reasoning: true,
-        store_tool_calls: false,
         tool_max_content_len: Some(2048),
         reasoning_max_content_len: Some(4096),
     };
     let yaml = serde_yaml::to_string(&db).unwrap();
-    assert!(yaml.contains("store_reasoning"));
-    assert!(yaml.contains("store_tool_calls"));
     assert!(yaml.contains("tool_max_content_len"));
     assert!(yaml.contains("reasoning_max_content_len"));
     let loaded: DatabaseConfig = serde_yaml::from_str(&yaml).unwrap();
-    assert!(loaded.store_reasoning);
-    assert!(!loaded.store_tool_calls);
     assert_eq!(loaded.tool_max_content_len, Some(2048));
     assert_eq!(loaded.reasoning_max_content_len, Some(4096));
 }
@@ -99,14 +62,10 @@ fn test_config_load_save_with_db_config() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("config.yaml");
     let mut config = basic_config();
-    config.db.store_reasoning = true;
-    config.db.store_tool_calls = false;
     config.db.tool_max_content_len = Some(1000);
     config.db.reasoning_max_content_len = Some(500);
     config.save(&path).unwrap();
     let loaded = Config::load(&path).unwrap();
-    assert!(loaded.db.store_reasoning);
-    assert!(!loaded.db.store_tool_calls);
     assert_eq!(loaded.db.tool_max_content_len, Some(1000));
     assert_eq!(loaded.db.reasoning_max_content_len, Some(500));
 }

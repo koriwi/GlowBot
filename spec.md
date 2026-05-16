@@ -52,15 +52,11 @@ openrouter_advice_model: "openai/gpt-4o"   # optional; when set enables ask_advi
 # Conversation context settings
 conversation:
   recent_messages_window_size: 20   # number of recent messages (default: 20)
-  include_reasoning: false           # include LLM reasoning/thinking in next requests (default: false)
   heartbeat_recent_messages_window_size: 10   # optional — conversation history messages for heartbeat tasks; falls back to recent_messages_window_size if unset; 0 = no history
   advice_recent_messages_window_size: 5   # number of recent messages sent to advice model via ask_advisor (default: 5)
-  advice_include_reasoning: false         # include reasoning blocks in advice model context (default: false)
 
 # Database settings
 db:
-  store_reasoning: false             # persist reasoning content in SQLite
-  store_tool_calls: true              # store assistant tool_calls and tool results (default: true)
   # tool_max_content_len: 5000       # truncate tool call/result content to N chars (default: no limit)
   # reasoning_max_content_len: 5000  # truncate reasoning content to N chars (default: no limit)
 
@@ -240,21 +236,15 @@ Some LLM models (DeepSeek-R1, Claude with extended thinking, OpenAI o-series) re
 
 **Configuration:**
 ```yaml
-conversation:
-  include_reasoning: false          # default: false
 db:
-  store_reasoning: false           # default: false
-  store_tool_calls: true            # default: true — when false, assistant tool_calls and tool_result messages are filtered out before DB storage
   tool_max_content_len: ~           # default: no limit — truncate tool call arguments and tool result content to N chars before storage
   reasoning_max_content_len: ~      # default: no limit — truncate reasoning content to N chars before storage
 ```
 
 **How it works:**
-- When `conversation.include_reasoning` is `true`, the bot extracts `reasoning` from assistant messages in the API response.
-- Reasoning is attached to `ChatMessage` objects and sent back in the next request, so the model sees its previous thinking.
-- When `false` (default), reasoning content is silently discarded — it never enters the turn history.
-- If `db.store_reasoning` is also `true`, reasoning text is persisted in the `reasoning` column of the `messages` table in SQLite.
-- When `db.store_tool_calls` is `false`, tool interaction messages (assistant tool_calls and tool results) are excluded from DB storage, keeping the database leaner.
+- Reasoning is always captured from assistant API responses and included in subsequent requests, so the model always sees its previous thinking.
+- Reasoning is always persisted in the `reasoning` column of the `messages` table in SQLite.
+- Tool call and tool result messages are always stored in the database.
 - The `db.tool_max_content_len` and `db.reasoning_max_content_len` options truncate content (with "..." appended) before storage to prevent excessively large messages from bloating the database.
 - Reasoning is included in token estimation for context trimming.
 - Reasoning is **not** part of `text_content()` — it's a separate field, so embeddings and tool input don't include it.
@@ -509,7 +499,7 @@ Whitelists contain Telegram user IDs.
 - [x] Docker deployment with `glowbot_data/` as a volume
 - [x] GitHub CI/CD with ≥95% test coverage enforced
 - [x] Conversation history (stored in SQLite, retrievable via `get_recent_messages` tool, configurable window size)
-- [x] LLM reasoning/thinking capture and storage (configurable via `conversation.include_reasoning` and `db.store_reasoning`)
+- [x] LLM reasoning/thinking capture and storage (always on)
 - [x] Typing indicator while LLM is processing
 - [x] MarkdownV2 rendering via `telegram-markdown-v2` crate with plain text fallback
 - [x] Media ingest: images and audio (native multimodal or fallback conversion)

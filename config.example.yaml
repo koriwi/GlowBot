@@ -23,15 +23,11 @@ openrouter:
 # Conversation context settings
 conversation:
   recent_messages_window_size: 20    # number of recent messages loaded from DB as context (default: 20)
-  include_reasoning: false           # include model's reasoning/thinking in subsequent requests (default: false)
   # heartbeat_recent_messages_window_size: 10  # optional — number of recent messages loaded as context for heartbeat tasks; when unset falls back to recent_messages_window_size; set to 0 for no history (default: unset)
   advice_recent_messages_window_size: 5   # number of recent messages sent to advice model via ask_advisor (default: 5)
-  advice_include_reasoning: false         # include reasoning blocks when sending context to advice model (default: false)
 
 # Database settings
 db:
-  store_reasoning: false             # persist LLM reasoning/thinking content in DB (default: false)
-  store_tool_calls: true              # store assistant tool_calls and tool results in DB (default: true)
   # tool_max_content_len: 5000       # truncate tool call/result content to N chars (default: no limit)
   # reasoning_max_content_len: 5000  # truncate reasoning content to N chars (default: no limit)
 

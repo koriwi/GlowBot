@@ -428,17 +428,16 @@ pub(crate) async fn dispatch_tool(
                 return "Error: query required".into();
             }
 
-            // Get advice model, window size, and reasoning setting from config
-            let (advice_model, window_size, include_reasoning, db) = {
+            // Get advice model, window size, and DB from config
+            let (advice_model, window_size, db) = {
                 let s = state.lock().await;
                 let advice_model = match s.config.advice_model_for_chat(&cid) {
                     Some(m) => m.to_string(),
                     None => return "Error: advice model not configured — the ask_advisor tool is disabled.".into(),
                 };
                 let window_size = s.config.conversation.advice_recent_messages_window_size;
-                let include_reasoning = s.config.conversation.advice_include_reasoning;
                 let db = s.db.clone();
-                (advice_model, window_size, include_reasoning, db)
+                (advice_model, window_size, db)
             };
 
             // Load recent messages from the conversation (limited by advice window size)
@@ -466,19 +465,13 @@ pub(crate) async fn dispatch_tool(
             ];
 
             for msg in &recent_messages {
-                // Skip reasoning unless configured to include it
-                let reasoning = if include_reasoning {
-                    msg.reasoning.clone()
-                } else {
-                    None
-                };
                 advice_messages.push(ChatMessage {
                     role: msg.role.clone(),
                     content: msg.content.clone(),
                     name: msg.name.clone(),
                     tool_calls: msg.tool_calls.clone(),
                     tool_call_id: msg.tool_call_id.clone(),
-                    reasoning,
+                    reasoning: msg.reasoning.clone(),
                 });
             }
 

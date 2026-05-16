@@ -91,10 +91,9 @@ pub(crate) async fn process_with_llm_impl(
     ensure_memory_exists_impl(state, chat_id, user_id, username).await?;
 
     // Read existing conversation history upfront
-    let (history, include_reasoning) = {
+    let history = {
         let s = state.lock().await;
         let win = s.config.conversation.recent_messages_window_size;
-        let include = s.config.conversation.include_reasoning;
         let cutoff = s.db.get_cutoff(chat_id).unwrap_or(None);
         let hist = match s.db.load_messages(chat_id, win, cutoff) {
             Ok(msgs) => msgs,
@@ -111,7 +110,7 @@ pub(crate) async fn process_with_llm_impl(
         // window drops an assistant_tool_calls message but keeps its
         // subsequent tool_result messages.
         let hist = crate::openrouter::strip_orphaned_tool_results(&hist);
-        (hist, include)
+        hist
     };
 
     let current_msg = build_user_message_full(
@@ -207,7 +206,7 @@ pub(crate) async fn process_with_llm_impl(
                 }
 
                 // Record assistant's tool call message in the turn
-                if let (Some(reasoning), true) = (&choice.message.reasoning, include_reasoning) {
+                if let Some(reasoning) = &choice.message.reasoning {
                     turn_messages.push(ChatMessage::assistant_tool_calls_with_reasoning(
                         tool_calls.clone(),
                         reasoning.clone(),
@@ -247,7 +246,7 @@ pub(crate) async fn process_with_llm_impl(
     };
 
     // Record final assistant message in the turn
-    if let (Some(reasoning), true) = (&final_reasoning, include_reasoning) {
+    if let Some(reasoning) = &final_reasoning {
         turn_messages.push(ChatMessage::assistant_with_reasoning(
             &result,
             reasoning.clone(),
@@ -699,7 +698,7 @@ pub(crate) async fn ensure_memory_exists_impl(
     Ok(())
 }
 
-/// Prepare messages for database storage by applying filtering and truncation
+/// Prepare messages for database storage by applying truncation
 /// based on `DatabaseConfig`. Returns a new Vec of messages ready for `save_messages`.
 pub(crate) fn prepare_messages_for_storage(
     messages: &[ChatMessage],
@@ -707,17 +706,6 @@ pub(crate) fn prepare_messages_for_storage(
 ) -> Vec<ChatMessage> {
     messages
         .iter()
-        .filter(|msg| {
-            // Filter out tool messages if store_tool_calls is disabled
-            if !db_config.store_tool_calls {
-                let is_tool_result = msg.role == "tool";
-                let is_tool_call = msg.role == "assistant" && msg.tool_calls.is_some();
-                if is_tool_result || is_tool_call {
-                    return false;
-                }
-            }
-            true
-        })
         .map(|msg| {
             let mut msg = msg.clone();
 
@@ -744,11 +732,6 @@ pub(crate) fn prepare_messages_for_storage(
                 if let Some(ref mut r) = msg.reasoning {
                     truncate_str(r, max_len);
                 }
-            }
-
-            // Strip reasoning if not storing it
-            if !db_config.store_reasoning {
-                msg.reasoning = None;
             }
 
             msg

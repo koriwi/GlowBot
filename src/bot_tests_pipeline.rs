@@ -4,7 +4,7 @@ use crate::config::DatabaseConfig;
 // --- prepare_messages_for_storage tests ---
 
 #[test]
-fn test_store_tool_calls_true_keeps_all() {
+fn test_all_messages_preserved_by_default() {
     let msgs = vec![
         ChatMessage::user("hello"),
         ChatMessage::assistant_tool_calls(vec![ToolCall {
@@ -18,38 +18,15 @@ fn test_store_tool_calls_true_keeps_all() {
         ChatMessage::tool_result("1", "output"),
         ChatMessage::assistant("response"),
     ];
-    let config = DatabaseConfig::default(); // store_tool_calls = true
+    let config = DatabaseConfig::default();
     let result = prepare_messages_for_storage(&msgs, &config);
+    // All messages preserved — no filtering
     assert_eq!(result.len(), 4);
+    assert_eq!(result[0].role, "user");
     assert_eq!(result[1].role, "assistant");
     assert!(result[1].tool_calls.is_some());
     assert_eq!(result[2].role, "tool");
-}
-
-#[test]
-fn test_store_tool_calls_false_filters_tool_messages() {
-    let msgs = vec![
-        ChatMessage::user("hello"),
-        ChatMessage::assistant_tool_calls(vec![ToolCall {
-            id: "1".into(),
-            call_type: "function".into(),
-            function: FunctionCall {
-                name: "bash".into(),
-                arguments: "echo hi".into(),
-            },
-        }]),
-        ChatMessage::tool_result("1", "output"),
-        ChatMessage::assistant("response"),
-    ];
-    let config = DatabaseConfig {
-        store_tool_calls: false,
-        ..DatabaseConfig::default()
-    };
-    let result = prepare_messages_for_storage(&msgs, &config);
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].role, "user");
-    assert_eq!(result[1].role, "assistant");
-    assert!(result[1].tool_calls.is_none());
+    assert_eq!(result[3].role, "assistant");
 }
 
 #[test]
@@ -127,7 +104,6 @@ fn test_reasoning_max_content_len_truncates() {
     )];
     let config = DatabaseConfig {
         reasoning_max_content_len: Some(10),
-        store_reasoning: true,
         ..DatabaseConfig::default()
     };
     let result = prepare_messages_for_storage(&msgs, &config);
@@ -138,37 +114,19 @@ fn test_reasoning_max_content_len_truncates() {
 }
 
 #[test]
-fn test_store_reasoning_false_strips_reasoning() {
+fn test_reasoning_preserved_by_default() {
     let msgs = vec![ChatMessage::assistant_with_reasoning(
         "response",
         "thinking".into(),
     )];
-    let config = DatabaseConfig {
-        store_reasoning: false,
-        ..DatabaseConfig::default()
-    };
-    let result = prepare_messages_for_storage(&msgs, &config);
-    assert_eq!(result.len(), 1);
-    assert!(result[0].reasoning.is_none());
-}
-
-#[test]
-fn test_store_reasoning_true_keeps_reasoning() {
-    let msgs = vec![ChatMessage::assistant_with_reasoning(
-        "response",
-        "thinking".into(),
-    )];
-    let config = DatabaseConfig {
-        store_reasoning: true,
-        ..DatabaseConfig::default()
-    };
+    let config = DatabaseConfig::default();
     let result = prepare_messages_for_storage(&msgs, &config);
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].reasoning.as_deref(), Some("thinking"));
 }
 
 #[test]
-fn test_all_filters_combined() {
+fn test_tool_calls_always_preserved() {
     let msgs = vec![
         ChatMessage::user("hello"),
         ChatMessage::assistant_tool_calls(vec![ToolCall {
@@ -176,23 +134,13 @@ fn test_all_filters_combined() {
             call_type: "function".into(),
             function: FunctionCall {
                 name: "bash".into(),
-                arguments: "long_arg_".repeat(50),
+                arguments: "echo hi".into(),
             },
         }]),
-        ChatMessage::tool_result("1", &"long_result_".repeat(50)),
-        ChatMessage::assistant_with_reasoning("final", "long_reasoning_".repeat(50)),
+        ChatMessage::tool_result("1", "output"),
+        ChatMessage::assistant("response"),
     ];
-    let config = DatabaseConfig {
-        store_tool_calls: false,
-        store_reasoning: false,
-        tool_max_content_len: Some(20),
-        reasoning_max_content_len: Some(20),
-    };
+    let config = DatabaseConfig::default();
     let result = prepare_messages_for_storage(&msgs, &config);
-    // Only user and final assistant remain (tool calls filtered)
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].role, "user");
-    assert_eq!(result[1].role, "assistant");
-    // Reasoning stripped
-    assert!(result[1].reasoning.is_none());
+    assert_eq!(result.len(), 4);
 }

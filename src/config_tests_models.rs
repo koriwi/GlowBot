@@ -267,22 +267,18 @@ fn test_advice_model_none_global() {
 fn test_conversation_advice_config_defaults() {
     let conv = ConversationConfig::default();
     assert_eq!(conv.advice_recent_messages_window_size, 5);
-    assert!(!conv.advice_include_reasoning);
 }
 
 #[test]
 fn test_conversation_advice_config_serialization() {
     let conv = ConversationConfig {
         advice_recent_messages_window_size: 10,
-        advice_include_reasoning: true,
         ..Default::default()
     };
     let yaml = serde_yaml::to_string(&conv).unwrap();
     assert!(yaml.contains("advice_recent_messages_window_size"));
-    assert!(yaml.contains("advice_include_reasoning"));
     let loaded: ConversationConfig = serde_yaml::from_str(&yaml).unwrap();
     assert_eq!(loaded.advice_recent_messages_window_size, 10);
-    assert!(loaded.advice_include_reasoning);
 }
 
 #[test]
