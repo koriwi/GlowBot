@@ -353,3 +353,118 @@ async fn test_conversation_history_window_trims() {
     assert_eq!(h_len, 20);
 }
 
+// ---------- max_tool_result_chars / cap_tool_result ----------
+
+#[test]
+fn test_cap_tool_result_no_limit() {
+    let result = cap_tool_result("hello world", None);
+    assert_eq!(result, "hello world");
+}
+
+#[test]
+fn test_cap_tool_result_under_limit() {
+    let result = cap_tool_result("hello", Some(100));
+    assert_eq!(result, "hello");
+}
+
+#[test]
+fn test_cap_tool_result_exactly_at_limit() {
+    let text = "a".repeat(50);
+    let result = cap_tool_result(&text, Some(50));
+    assert_eq!(result, text);
+}
+
+#[test]
+fn test_cap_tool_result_over_limit() {
+    let text = "x".repeat(200);
+    let result = cap_tool_result(&text, Some(100));
+    assert!(result.contains("Error: tool result exceeded the maximum size limit"));
+    assert!(result.contains("200 chars, limit is 100 chars"));
+    assert!(result.contains("jq"));
+    assert!(result.contains("grep"));
+}
+
+#[tokio::test]
+async fn test_dispatch_tool_calls_caps_results_when_limit_set() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let mut cfg = crate::config::basic_config();
+    cfg.conversation.max_tool_result_chars = Some(20);
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_metadata: HashMap::new(),
+        model_order: Vec::new(),
+        last_usage: HashMap::new(),
+        pending_config_changes: HashMap::new(),
+        pending_model_changes: HashMap::new(),
+        model_overrides: HashMap::new(),
+        last_browse_cb: HashMap::new(),
+        _mcp_services: vec![],
+        mcp_peers: HashMap::new(),
+    }));
+
+    // add_task produces a result that includes the description —
+    // use a long description to trigger the cap
+    let tool_calls = vec![ToolCall {
+        id: "call_1".into(),
+        call_type: "function".into(),
+        function: FunctionCall {
+            name: "add_task".into(),
+            arguments: serde_json::json!({"description": "a".repeat(100)}).to_string(),
+        },
+    }];
+    let results = dispatch_tool_calls(&state, "-123", &tool_calls, None, None).await;
+    assert_eq!(results.len(), 1);
+    let capped = results[0].text_content();
+    assert!(capped.contains("Error: tool result exceeded the maximum size limit"));
+    assert!(!capped.contains("aaaa")); // the original description should NOT appear
+}
+
+#[tokio::test]
+async fn test_dispatch_tool_calls_no_cap_when_limit_unset() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let cfg = crate::config::basic_config();
+    cfg.save(&data_dir.join("config.yaml")).unwrap();
+    let state = Arc::new(Mutex::new(BotState {
+        config: cfg,
+        skills: HashMap::new(),
+        llm: Arc::new(MockLlmBackend::new()),
+        data_dir,
+        db: crate::db::Database::open_in_memory().unwrap(),
+        mcp_tools: vec![],
+        model_metadata: HashMap::new(),
+        model_order: Vec::new(),
+        last_usage: HashMap::new(),
+        pending_config_changes: HashMap::new(),
+        pending_model_changes: HashMap::new(),
+        model_overrides: HashMap::new(),
+        last_browse_cb: HashMap::new(),
+        _mcp_services: vec![],
+        mcp_peers: HashMap::new(),
+    }));
+
+    let tool_calls = vec![ToolCall {
+        id: "call_1".into(),
+        call_type: "function".into(),
+        function: FunctionCall {
+            name: "add_task".into(),
+            arguments: serde_json::json!({"description": "a".repeat(100)}).to_string(),
+        },
+    }];
+    let results = dispatch_tool_calls(&state, "-123", &tool_calls, None, None).await;
+    assert_eq!(results.len(), 1);
+    let text = results[0].text_content();
+    // With no limit, the original content should be present
+    assert!(text.contains("Task '"));
+    assert!(text.contains("aa")); // part of the long description
+}
+

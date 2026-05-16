@@ -54,6 +54,7 @@ conversation:
   recent_messages_window_size: 20   # number of recent messages (default: 20)
   heartbeat_recent_messages_window_size: 10   # optional — conversation history messages for heartbeat tasks; falls back to recent_messages_window_size if unset; 0 = no history
   advice_recent_messages_window_size: 5   # number of recent messages sent to advice model via ask_advisor (default: 5)
+  # max_tool_result_chars: 8000           # optional — cap tool result length; results over this limit are replaced with an error telling the LLM to reduce the response (default: no limit)
 
 # MCP servers for additional tools
 # mcp_servers:
@@ -404,7 +405,11 @@ The bot exposes a **bash** tool for raw shell execution.
 - **Memory files should be accessed via `read_memory` / `update_memory` tools**, not raw bash — this guarantees correct YAML frontmatter format.
 - All file paths in bash commands are relative to the data directory (e.g. `chats/123/456.md`).
 
-### 4.10 Tool Call Logging
+### 4.10 Tool Call Result Size Limit
+
+The optional `conversation.max_tool_result_chars` config setting caps tool call results by character length. When set (e.g. `8000`), any tool result exceeding the limit is replaced with an error message telling the LLM the result was too big and suggesting it filters the output (jq, grep, head, awk), narrows its query, or uses a different tool. When unset (default), there is no limit.
+
+### 4.11 Tool Call Logging
 
 Every tool invocation is logged for debugging and audit:
 - Written to `glowbot_data/tool_calls.log` (append-only).
@@ -414,7 +419,7 @@ Every tool invocation is logged for debugging and audit:
 
 ---
 
-### 4.11 Commands & Permissions
+### 4.12 Commands & Permissions
 
 Commands are Telegram bot commands (`/command`) used for control and settings. **On startup, the bot registers these with Telegram via `setMyCommands`** so they appear in the in-chat bot menu and autocomplete.
 

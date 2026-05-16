@@ -66,6 +66,15 @@ pub(crate) async fn dispatch_tool_calls(
     data_dir: Option<&std::path::Path>,
     tg_bot: Option<&teloxide::Bot>,
 ) -> Vec<ChatMessage> {
+    let max_result_chars = {
+        state
+            .lock()
+            .await
+            .config
+            .conversation
+            .max_tool_result_chars
+    };
+
     let mut results = Vec::new();
     for tc in tool_calls {
         let args: serde_json::Value =
@@ -75,9 +84,28 @@ pub(crate) async fn dispatch_tool_calls(
         if let Some(dir) = data_dir {
             log_tool_call_to(dir, &tc.function.name, &tc.function.arguments, &result_text);
         }
-        results.push(ChatMessage::tool_result(&tc.id, &result_text));
+        let final_text = cap_tool_result(&result_text, max_result_chars);
+        results.push(ChatMessage::tool_result(&tc.id, &final_text));
     }
     results
+}
+
+/// If `max_chars` is set and the result exceeds it, replace with an error
+/// message telling the LLM to reduce the response size.
+pub(crate) fn cap_tool_result(result: &str, max_chars: Option<usize>) -> String {
+    let Some(limit) = max_chars else {
+        return result.to_string();
+    };
+    if result.len() <= limit {
+        return result.to_string();
+    }
+    format!(
+        "Error: tool result exceeded the maximum size limit ({} chars, limit is {} chars). \
+         Try reducing the output by filtering it (jq, grep, head, tail, awk), \
+         narrowing your query parameters, or using a different tool.",
+        result.len(),
+        limit
+    )
 }
 
 /// Shared tool dispatch — used by both normal messages and heartbeat tasks.

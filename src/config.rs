@@ -135,6 +135,12 @@ pub struct ConversationConfig {
     /// when the LLM calls the `ask_advisor` tool. Default: 5.
     #[serde(default = "default_advice_recent_messages_window_size")]
     pub advice_recent_messages_window_size: usize,
+    /// Maximum character length for tool call results. When set, tool results exceeding
+    /// this limit are replaced with an error message telling the LLM to reduce the
+    /// response size (via jq, grep, head, narrowing the query, etc.).
+    /// When None (default), there is no limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tool_result_chars: Option<usize>,
 }
 
 fn default_advice_recent_messages_window_size() -> usize {
@@ -147,6 +153,7 @@ impl Default for ConversationConfig {
             recent_messages_window_size: default_recent_messages_window_size(),
             heartbeat_recent_messages_window_size: None,
             advice_recent_messages_window_size: default_advice_recent_messages_window_size(),
+            max_tool_result_chars: None,
         }
     }
 }

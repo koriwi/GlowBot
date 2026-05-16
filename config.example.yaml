@@ -25,6 +25,7 @@ conversation:
   recent_messages_window_size: 20    # number of recent messages loaded from DB as context (default: 20)
   # heartbeat_recent_messages_window_size: 10  # optional — number of recent messages loaded as context for heartbeat tasks; when unset falls back to recent_messages_window_size; set to 0 for no history (default: unset)
   advice_recent_messages_window_size: 5   # number of recent messages sent to advice model via ask_advisor (default: 5)
+  # max_tool_result_chars: 8000       # optional — cap tool result length; results over this limit are replaced with an error asking the LLM to reduce the response (default: no limit)
 
 # Embedding / vector search (RAG) settings
 embedding:
