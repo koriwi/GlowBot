@@ -155,6 +155,8 @@ impl GlowBot {
             Some(text),
             None,
             None,
+            None,
+            None,
             bot_username,
             None,
         )
@@ -270,6 +272,8 @@ pub async fn process_message_impl(
     text: Option<&str>,
     caption: Option<&str>,
     media: Option<&crate::media::IngestedMedia>,
+    sender_name: Option<&str>,
+    sent_at: Option<chrono::DateTime<chrono::Utc>>,
     bot_username: &str,
     tg_bot: Option<&teloxide::Bot>,
 ) -> anyhow::Result<Option<String>> {
@@ -378,6 +382,8 @@ pub async fn process_message_impl(
         text,
         caption,
         media,
+        sender_name,
+        sent_at,
         tools_enabled,
         tg_bot,
     )

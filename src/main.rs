@@ -230,8 +230,10 @@ async fn handle_message(
     let username = msg
         .from
         .as_ref()
-        .and_then(|u| u.username.as_deref())
-        .unwrap_or("unknown");
+        .and_then(|u| u.mention())
+        .unwrap_or_else(|| "unknown".to_string());
+    let sender_name = msg.from.as_ref().map(|u| u.full_name());
+    let sent_at = msg.date;
 
     log::info!(
         "Message from {} ({}) in chat {}: {}",
@@ -298,10 +300,12 @@ async fn handle_message(
         &stop_signals,
         &chat_id,
         &user_id,
-        username,
+        &username,
         text.as_deref(),
         caption.as_deref(),
         media.as_ref(),
+        sender_name.as_deref(),
+        Some(sent_at),
         bot_username,
         Some(&tg_bot),
     )

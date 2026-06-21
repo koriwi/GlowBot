@@ -31,6 +31,8 @@ pub(crate) async fn process_with_llm_impl(
     text: &str,
     caption: Option<&str>,
     media: Option<&crate::media::IngestedMedia>,
+    sender_name: Option<&str>,
+    sent_at: Option<chrono::DateTime<chrono::Utc>>,
     tools_enabled: bool,
     tg_bot: Option<&teloxide::Bot>,
 ) -> anyhow::Result<Option<String>> {
@@ -115,8 +117,19 @@ pub(crate) async fn process_with_llm_impl(
         crate::openrouter::strip_orphaned_tool_results(&hist)
     };
 
-    let current_msg =
-        build_user_message_full(state, chat_id, text, caption, media, username, tg_bot).await;
+    let current_msg = build_user_message_full(
+        state,
+        chat_id,
+        user_id,
+        username,
+        sender_name,
+        sent_at,
+        text,
+        caption,
+        media,
+        tg_bot,
+    )
+    .await;
     let mut turn_messages = vec![current_msg.clone()];
 
     let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
@@ -379,15 +392,21 @@ pub(crate) fn chunk_for_embedding(text: &str, max_chars: usize, allow_split: boo
 async fn build_user_message_full(
     state: &Arc<Mutex<BotState>>,
     chat_id: &str,
+    user_id: &str,
+    username: &str,
+    sender_name: Option<&str>,
+    sent_at: Option<chrono::DateTime<chrono::Utc>>,
     text: &str,
     caption: Option<&str>,
     media: Option<&crate::media::IngestedMedia>,
-    username: &str,
     tg_bot: Option<&teloxide::Bot>,
 ) -> ChatMessage {
+    let metadata_prefix = message_metadata_prefix(user_id, username, sender_name, sent_at);
     let media = match media {
         Some(m) => m,
-        None => return ChatMessage::user_with_name(text, username),
+        None => {
+            return ChatMessage::user_with_name(&format_user_text(&metadata_prefix, text), username)
+        }
     };
 
     let is_image = matches!(media, crate::media::IngestedMedia::Photo { .. });
@@ -453,17 +472,68 @@ async fn build_user_message_full(
     // Build the user message based on capabilities
     if let Some(fp) = file_path {
         if supports_modality {
-            build_native_message(media, caption, text, username, &fp)
+            build_native_message(media, caption, text, username, &metadata_prefix, &fp)
         } else if is_image {
-            build_image_metadata_message(media, caption, text, username, &fp, image_fallback_exists)
+            build_image_metadata_message(
+                media,
+                caption,
+                text,
+                username,
+                &metadata_prefix,
+                &fp,
+                image_fallback_exists,
+            )
         } else if let Some(ref fb_model) = audio_fallback_model {
-            build_audio_fallback_message(media, caption, text, username, &fp, fb_model, &api_key)
-                .await
+            build_audio_fallback_message(
+                media,
+                caption,
+                text,
+                username,
+                &metadata_prefix,
+                &fp,
+                fb_model,
+                &api_key,
+            )
+            .await
         } else {
-            build_text_metadata_message(media, caption, text, username)
+            build_text_metadata_message(media, caption, text, username, &metadata_prefix)
         }
     } else {
-        build_text_metadata_message(media, caption, text, username)
+        build_text_metadata_message(media, caption, text, username, &metadata_prefix)
+    }
+}
+
+fn message_metadata_prefix(
+    user_id: &str,
+    username: &str,
+    sender_name: Option<&str>,
+    sent_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> String {
+    let sent_at = sent_at.unwrap_or_else(chrono::Utc::now).to_rfc3339();
+    let sender_id = if user_id.trim().is_empty() {
+        "unknown"
+    } else {
+        user_id
+    };
+    let sender_username = if username.trim().is_empty() {
+        "unknown"
+    } else {
+        username
+    };
+    let sender_name = sender_name
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("unknown");
+
+    format!(
+        "[Telegram message metadata]\nSent at: {sent_at}\nSender ID: {sender_id}\nSender name: {sender_name}\nSender username: {sender_username}"
+    )
+}
+
+fn format_user_text(metadata_prefix: &str, text: &str) -> String {
+    if text.trim().is_empty() {
+        metadata_prefix.to_string()
+    } else {
+        format!("{metadata_prefix}\n\nMessage:\n{text}")
     }
 }
 
@@ -473,6 +543,7 @@ fn build_native_message(
     caption: Option<&str>,
     text: &str,
     username: &str,
+    metadata_prefix: &str,
     file_path: &std::path::Path,
 ) -> ChatMessage {
     use crate::openrouter::ContentPart;
@@ -481,7 +552,11 @@ fn build_native_message(
     // Tell the LLM where the ingested file is saved so it can use it
     // as a reference_image for generate_image or pass it to other tools.
     parts.push(ContentPart::Text {
-        text: format!("[Ingested file saved to: {}]", file_path.display()),
+        text: format!(
+            "{}\n[Ingested file saved to: {}]\n",
+            metadata_prefix,
+            file_path.display()
+        ),
     });
 
     match media {
@@ -537,6 +612,7 @@ async fn build_audio_fallback_message(
     caption: Option<&str>,
     text: &str,
     username: &str,
+    metadata_prefix: &str,
     file_path: &std::path::Path,
     fallback_model: &str,
     api_key: &str,
@@ -546,7 +622,12 @@ async fn build_audio_fallback_message(
     let fallback_text = call_audio_fallback(&client, fallback_model, file_path).await;
 
     let metadata = media_metadata_text(media);
-    let mut combined = format!("{} File saved to: {}", metadata, file_path.display());
+    let mut combined = format!(
+        "{}\n{} File saved to: {}",
+        metadata_prefix,
+        metadata,
+        file_path.display()
+    );
     if let Some(cap) = caption {
         if !cap.is_empty() {
             combined.push_str(&format!("\nCaption: {}", cap));
@@ -609,11 +690,17 @@ fn build_image_metadata_message(
     caption: Option<&str>,
     text: &str,
     username: &str,
+    metadata_prefix: &str,
     file_path: &std::path::Path,
     has_fallback: bool,
 ) -> ChatMessage {
     let metadata = media_metadata_text(media);
-    let mut combined = format!("{} File saved to: {}", metadata, file_path.display());
+    let mut combined = format!(
+        "{}\n{} File saved to: {}",
+        metadata_prefix,
+        metadata,
+        file_path.display()
+    );
     if has_fallback {
         combined.push_str(" Use the describe_image tool with a specific prompt to get visual details (e.g. portion sizes, text reading, object identification, layout).");
     }
@@ -634,9 +721,10 @@ fn build_text_metadata_message(
     caption: Option<&str>,
     text: &str,
     username: &str,
+    metadata_prefix: &str,
 ) -> ChatMessage {
     let metadata = media_metadata_text(media);
-    let mut combined = metadata;
+    let mut combined = format!("{}\n{}", metadata_prefix, metadata);
     if let Some(cap) = caption {
         if !cap.is_empty() {
             combined.push_str(&format!("\nCaption: {}", cap));

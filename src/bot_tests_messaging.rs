@@ -61,6 +61,58 @@ async fn test_process_message_every_message_mode() {
 }
 
 #[tokio::test]
+async fn test_process_message_includes_sender_and_sent_time_metadata() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("metadata seen".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+                reasoning: None,
+                ..Default::default()
+            },
+            finish_reason: Some("stop".into()),
+        }],
+        ..Default::default()
+    });
+
+    let sent_at = chrono::DateTime::parse_from_rfc3339("2026-06-21T12:34:56Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let result = process_message_impl(
+        &bot.state,
+        &bot.git_repo,
+        &bot.stop_signals,
+        "-123",
+        "456",
+        "@testuser",
+        Some("Hello with metadata"),
+        None,
+        None,
+        Some("Test User"),
+        Some(sent_at),
+        "mybot",
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result, Some("metadata seen".into()));
+
+    let state = bot.state.lock().await;
+    let messages = state.db.load_messages("-123", 10, None).unwrap();
+    let user_message = messages.iter().find(|m| m.role == "user").unwrap();
+    let content = user_message.text_content();
+    assert!(content.contains("[Telegram message metadata]"));
+    assert!(content.contains("Sent at: 2026-06-21T12:34:56+00:00"));
+    assert!(content.contains("Sender ID: 456"));
+    assert!(content.contains("Sender name: Test User"));
+    assert!(content.contains("Sender username: @testuser"));
+    assert!(content.contains("Message:\nHello with metadata"));
+}
+
+#[tokio::test]
 async fn test_process_message_interaction_whitelist_blocks() {
     let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
     // User "789" is not in interaction_whitelist

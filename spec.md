@@ -110,7 +110,8 @@ The data directory is a standalone git repository, not nested inside the applica
 
 - Receives messages via long-polling or webhook (configurable, poll default).
 - Sends responses as plain text or Markdown.
-- Tracks chat context: group vs. DM, user identity (ID + username).
+- Tracks chat context: group vs. DM, user identity (ID + username + display name), and Telegram message sent time.
+- Each non-command message sent to the LLM is prefixed with Telegram metadata (`Sent at`, `Sender ID`, `Sender name`, `Sender username`) before the user's text, so the model can reason about who said what and when.
 - Shows **typing indicator** (`sendChatAction`) while the LLM is processing a response.
 
 #### Interaction modes
@@ -335,7 +336,7 @@ A human-focused todo list — simple items the user wants to remember or track. 
 
 #### Short-term (conversation context)
 
-- Only the **current user message** is sent to the LLM with each request, along with the system prompt. Previous messages are stored persistently in **SQLite** (`glowbot_data/conversations.db`) but not transmitted unless explicitly requested.
+- Only the **current user message** is sent to the LLM with each request, along with the system prompt. The current user message includes a Telegram metadata prefix with sender identity and sent timestamp. Previous messages are stored persistently in **SQLite** (`glowbot_data/conversations.db`) but not transmitted unless explicitly requested.
 - The bot provides a **`get_recent_messages(count)`** tool that queries the database and returns the last N messages. The LLM should call this when it needs to recall earlier parts of the conversation.
 - The `conversation_window` config value controls the query `LIMIT` (default: 20). Older messages remain in the database but are excluded from default context.
 - History **survives bot restarts** because it's stored in SQLite, not in-memory.
