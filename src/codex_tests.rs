@@ -212,6 +212,11 @@ fn helpers_handle_sse_urls_jwts_and_models() {
     let spark = model_info("gpt-5.3-codex-spark");
     assert_eq!(spark.context_length, 128_000);
     assert!(!spark.supports_modality("image"));
+
+    let unknown = model_info("future-codex-model");
+    assert_eq!(unknown.context_length, 0);
+    assert!(!unknown.supports_modality("image"));
+    assert!(!unknown.supports_modality("audio"));
 }
 
 #[tokio::test]

@@ -360,17 +360,15 @@ pub const KNOWN_MODELS: &[(&str, &str)] = &[
 
 /// Build metadata for a configured Codex model without depending on OpenRouter's catalog.
 pub fn model_info(model: &str) -> crate::openrouter::ModelInfo {
-    let context_length = if model.ends_with("codex-spark") {
-        128_000
-    } else if model.starts_with("gpt-5.6") {
-        372_000
-    } else {
-        272_000
-    };
-    let input_modalities = if model.ends_with("codex-spark") {
-        vec!["text".into()]
-    } else {
-        vec!["text".into(), "image".into()]
+    let (context_length, input_modalities) = match model {
+        "gpt-5.3-codex-spark" => (128_000, vec!["text".into()]),
+        "gpt-5.4" | "gpt-5.4-mini" | "gpt-5.5" => (272_000, vec!["text".into(), "image".into()]),
+        "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" => {
+            (372_000, vec!["text".into(), "image".into()])
+        }
+        // Codex's subscription endpoint has no model-metadata API. Avoid
+        // sending unsupported media when a user enters an unlisted model ID.
+        _ => (0, vec!["text".into()]),
     };
     crate::openrouter::ModelInfo {
         id: model.into(),

@@ -60,7 +60,7 @@ docker run \
   glowbot
 ```
 
-Codex OAuth is for chat completions. Embeddings, image generation, and OpenRouter media fallback models still require an OpenRouter configuration/API key.
+Codex OAuth is for chat completions. The built-in Codex capability table allows images for the listed GPT-5.4+ models, treats `gpt-5.3-codex-spark` as text-only, and treats all Codex models as audio-incompatible. Images/audio therefore use the configured fallback path when native support is unavailable. Embeddings, image generation, and OpenRouter media fallback models still require an OpenRouter configuration/API key.
 
 You can also keep OpenRouter as the global default and use Codex only in selected chats or DMs:
 
