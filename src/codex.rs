@@ -5,6 +5,7 @@ use crate::openrouter::{
 };
 use anyhow::Context;
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use tokio::sync::Mutex;
 
 #[path = "codex_auth.rs"]
@@ -203,6 +204,8 @@ fn with_name(text: &str, name: Option<&str>) -> String {
 fn parse_sse_response(body: &str) -> anyhow::Result<ChatCompletionResponse> {
     let mut completed = None;
     let mut api_error = None;
+    let mut completed_items = BTreeMap::new();
+    let mut text_deltas = BTreeMap::<u64, String>::new();
     for data in sse_data(body) {
         if data == "[DONE]" {
             continue;
@@ -210,6 +213,23 @@ fn parse_sse_response(body: &str) -> anyhow::Result<ChatCompletionResponse> {
         let event: Value = serde_json::from_str(&data)
             .with_context(|| format!("Invalid JSON in Codex event: {}", truncate(&data, 300)))?;
         match event.get("type").and_then(Value::as_str) {
+            Some("response.output_item.done") => {
+                if let Some(item) = event.get("item") {
+                    let index = event
+                        .get("output_index")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(completed_items.len() as u64);
+                    completed_items.insert(index, item.clone());
+                }
+            }
+            Some("response.output_text.delta" | "response.refusal.delta") => {
+                if let (Some(index), Some(delta)) = (
+                    event.get("output_index").and_then(Value::as_u64),
+                    event.get("delta").and_then(Value::as_str),
+                ) {
+                    text_deltas.entry(index).or_default().push_str(delta);
+                }
+            }
             Some("response.completed" | "response.incomplete") => {
                 completed = event.get("response").cloned();
             }
@@ -223,7 +243,27 @@ fn parse_sse_response(body: &str) -> anyhow::Result<ChatCompletionResponse> {
             truncate(&error.to_string(), 1000)
         );
     }
-    let response = completed.context("Codex stream ended without a completed response")?;
+    let mut response = completed.context("Codex stream ended without a completed response")?;
+    let output_is_empty = response
+        .get("output")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty);
+    if output_is_empty {
+        let output: Vec<Value> = if completed_items.is_empty() {
+            text_deltas
+                .into_values()
+                .map(|text| {
+                    json!({
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": text}],
+                    })
+                })
+                .collect()
+        } else {
+            completed_items.into_values().collect()
+        };
+        response["output"] = Value::Array(output);
+    }
     response_to_chat_completion(&response)
 }
 

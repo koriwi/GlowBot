@@ -115,6 +115,27 @@ async fn sends_codex_request_and_parses_text_response() {
     assert_eq!(body["input"][0]["content"][0]["text"], "Hi");
 }
 
+#[test]
+fn parses_streamed_text_when_completed_event_omits_output() {
+    let response = parse_sse_response(
+        "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"Hel\"}\n\n\
+         data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"lo\"}\n\n\
+         data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":3,\"output_tokens\":2}}}\n\n",
+    )
+    .unwrap();
+    assert_eq!(
+        response.choices[0].message.content.as_deref(),
+        Some("Hello")
+    );
+
+    let response = parse_sse_response(
+        "data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hi\"}]}}\n\n\
+         data: {\"type\":\"response.completed\",\"response\":{}}\n\n",
+    )
+    .unwrap();
+    assert_eq!(response.choices[0].message.content.as_deref(), Some("Hi"));
+}
+
 #[tokio::test]
 async fn parses_tool_calls_and_replays_provider_state() {
     let response = json!({
