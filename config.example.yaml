@@ -68,7 +68,8 @@ media_dir: "/media"                  # (default: /media)
 dms:
   # "123456789":
   #   name: "Alice"                    # optional, human-readable label (survives config updates)
-  #   model: "anthropic/claude-haiku-4"
+  #   provider: codex                  # optional: openrouter | codex; overrides global provider
+  #   model: "gpt-5.4"                # optional; defaults to the selected provider's global model
   #   commands_enabled: true
   #   system_prompt: "You are talking to the bot owner."
   #   heartbeat_interval_minutes: 30   # optional, override global default; 0 = disabled
@@ -82,7 +83,8 @@ dms:
 chats:
   # "-1234567890":
   #   name: "Team Chat"                 # optional, human-readable label (survives config updates)
-  #   model: "openai/gpt-4o"
+  #   provider: codex                    # optional: openrouter | codex; overrides global provider
+  #   model: "gpt-5.4"                  # optional; defaults to the selected provider's global model
   #   interaction_mode: "every_message"    # "every_message" | "mention_only"
   #   interaction_whitelist: []            # user IDs; empty = everyone allowed
   #   command_whitelist: []                # user IDs allowed to run commands; empty = nobody

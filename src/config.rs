@@ -38,6 +38,9 @@ pub struct ChatConfig {
     /// Optional human-readable name for this chat (survives config updates).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Optional LLM provider override for this chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<LlmProvider>,
     /// Optional model override for this chat.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -84,6 +87,9 @@ pub struct DmConfig {
     /// Optional human-readable name for this DM (survives config updates).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Optional LLM provider override for this DM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<LlmProvider>,
     /// Optional model override for this DM.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,

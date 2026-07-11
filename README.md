@@ -62,6 +62,23 @@ docker run \
 
 Codex OAuth is for chat completions. Embeddings, image generation, and OpenRouter media fallback models still require an OpenRouter configuration/API key.
 
+You can also keep OpenRouter as the global default and use Codex only in selected chats or DMs:
+
+```yaml
+provider: openrouter
+openrouter:
+  api_key: "sk-or-..."
+  model: "anthropic/claude-sonnet-4"
+codex:
+  model: "gpt-5.4"
+  auth_file: "~/.codex/auth.json"
+
+chats:
+  "-1234567890":
+    provider: codex
+    model: "gpt-5.4" # optional; codex.model is used when omitted
+```
+
 ### MCP Servers (optional)
 
 Add external tool servers via the [Model Context Protocol](https://modelcontextprotocol.io):

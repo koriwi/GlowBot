@@ -116,6 +116,7 @@ pub fn handle_command_with_model(
     match command {
         Command::Status => {
             let model = effective_model.unwrap_or_else(|| config.model_for_chat(chat_id));
+            let provider = format!("{:?}", config.provider_for_chat(chat_id)).to_lowercase();
             if chat_id.starts_with('-') {
                 // Group chat
                 let chat = config.chat_config(chat_id);
@@ -125,9 +126,10 @@ pub fn handle_command_with_model(
                     .map(|n| format!("Name: {}\n", n))
                     .unwrap_or_default();
                 format!(
-                    "{}Chat ID: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
+                    "{}Chat ID: {}\nProvider: {}\nModel: {}\nContext usage: {}\nInteraction mode: {:?}\nInteraction whitelist: {}\nCommand whitelist: {}",
                     name_line,
                     chat_id,
+                    provider,
                     model,
                     context_usage,
                     chat.interaction_mode,
@@ -150,9 +152,10 @@ pub fn handle_command_with_model(
                     .map(|n| format!("Name: {}\n", n))
                     .unwrap_or_default();
                 format!(
-                    "{}Chat ID: {}\nModel: {}\nContext usage: {}\nDM commands: {}\nDM system prompt: {}",
+                    "{}Chat ID: {}\nProvider: {}\nModel: {}\nContext usage: {}\nDM commands: {}\nDM system prompt: {}",
                     name_line,
                     chat_id,
+                    provider,
                     model,
                     context_usage,
                     dm.map(|d| if d.commands_enabled { "enabled" } else { "disabled" })

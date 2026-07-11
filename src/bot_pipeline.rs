@@ -84,11 +84,12 @@ pub(crate) async fn process_with_llm_impl(
         }
     };
 
-    let (system_prompt, model) = {
+    let (system_prompt, model, provider) = {
         let s = state.lock().await;
         (
             s.assemble_system_prompt(chat_id, tools_enabled, user_id),
             s.effective_model(chat_id),
+            s.config.provider_for_chat(chat_id),
         )
     };
 
@@ -184,7 +185,7 @@ pub(crate) async fn process_with_llm_impl(
                     round,
                     msg_count
                 );
-                let resp = llm.chat_completion(&request).await?;
+                let resp = llm.chat_completion_for_provider(provider, &request).await?;
                 let usage = resp.usage.clone().unwrap_or_default();
                 log::info!(
                     "pipeline: LLM response received, prompt_tokens={}, completion_tokens={}, has_tool_calls={}",

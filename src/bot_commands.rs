@@ -249,7 +249,9 @@ pub(crate) async fn handle_bot_command_impl(
         match arg {
             None => {
                 // Codex has no OpenRouter catalog or routing specifiers.
-                if !state.lock().await.config.uses_openrouter() {
+                if state.lock().await.config.provider_for_chat(chat_id)
+                    != crate::config::LlmProvider::Openrouter
+                {
                     let s = state.lock().await;
                     let current = s.effective_model(chat_id);
                     let default = s.config.model_for_chat(chat_id);
@@ -294,7 +296,9 @@ pub(crate) async fn handle_bot_command_impl(
                 return Ok(None);
             }
             Some(ref model_arg) if model_arg.starts_with(':') => {
-                if !state.lock().await.config.uses_openrouter() {
+                if state.lock().await.config.provider_for_chat(chat_id)
+                    != crate::config::LlmProvider::Openrouter
+                {
                     return Ok(Some(
                         "Routing specifiers (`:nitro`, `:floor`, `:free`) are only available with OpenRouter."
                             .into(),
@@ -349,7 +353,9 @@ pub(crate) async fn handle_bot_command_impl(
 
     // /models — browse and switch models via inline keyboard
     if matches!(command, crate::commands::Command::Models) {
-        if !state.lock().await.config.uses_openrouter() {
+        if state.lock().await.config.provider_for_chat(chat_id)
+            != crate::config::LlmProvider::Openrouter
+        {
             return Ok(Some(
                 "Codex uses the model configured under `codex.model`. Use `/model <codex-model>` for a temporary override."
                     .into(),
@@ -394,7 +400,8 @@ pub(crate) async fn handle_bot_command_impl(
         {
             let s = state.lock().await;
             let model = s.effective_model(chat_id);
-            let needs_fetch = s.config.uses_openrouter()
+            let needs_fetch = s.config.provider_for_chat(chat_id)
+                == crate::config::LlmProvider::Openrouter
                 && !s
                     .model_metadata
                     .contains_key(crate::openrouter::normalize_model_id(&model));

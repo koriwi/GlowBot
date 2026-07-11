@@ -97,16 +97,19 @@ impl GlowBot {
     #[allow(dead_code)]
     pub async fn fetch_model_metadata(&self) -> anyhow::Result<()> {
         let api_key = {
-            let mut s = self.state.lock().await;
-            if !s.config.uses_openrouter() {
-                let model = s.config.default_model().to_string();
-                s.model_order.push(model.clone());
-                s.model_metadata
+            let mut state = self.state.lock().await;
+            if let Some(codex) = &state.config.codex {
+                let model = codex.model.clone();
+                state.model_order.push(model.clone());
+                state
+                    .model_metadata
                     .insert(model.clone(), crate::codex::model_info(&model));
-                return Ok(());
             }
-            s.config.openrouter.api_key.clone()
+            state.config.openrouter.api_key.clone()
         };
+        if api_key.trim().is_empty() {
+            return Ok(());
+        }
 
         let client = crate::openrouter::OpenRouterClient::new(api_key);
         let models = client.fetch_models().await?;

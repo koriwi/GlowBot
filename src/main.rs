@@ -1,7 +1,6 @@
 use glowbot::bot::GlowBot;
 use glowbot::config::Config;
-use glowbot::config::LlmProvider;
-use glowbot::llm::{CodexBackend, LlmBackend, OpenRouterBackend};
+use glowbot::llm::{CodexBackend, LlmBackend, MultiProviderBackend, OpenRouterBackend};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::sync::Arc;
@@ -29,47 +28,51 @@ async fn run_bot() -> anyhow::Result<()> {
     let openrouter_key = config.openrouter.api_key.clone();
     let provider = config.provider;
 
-    let llm: Arc<dyn LlmBackend> = match provider {
-        LlmProvider::Openrouter => Arc::new(OpenRouterBackend::new(openrouter_key.clone())),
-        LlmProvider::Codex => Arc::new(CodexBackend::new(
-            config.codex.clone().expect("validated Codex config"),
-            Some(openrouter_key.clone()),
-        )),
-    };
+    let openrouter_backend: Option<Arc<dyn LlmBackend>> = (!openrouter_key.trim().is_empty())
+        .then(|| Arc::new(OpenRouterBackend::new(openrouter_key.clone())) as Arc<dyn LlmBackend>);
+    let codex_backend: Option<Arc<dyn LlmBackend>> = config
+        .codex
+        .clone()
+        .map(|codex| Arc::new(CodexBackend::new(codex, None)) as Arc<dyn LlmBackend>);
+    let llm: Arc<dyn LlmBackend> = Arc::new(MultiProviderBackend::new(
+        provider,
+        openrouter_backend,
+        codex_backend,
+    ));
     let bot = GlowBot::new_with_llm(&data_dir, llm).await?;
     let bot = Arc::new(Mutex::new(bot));
 
-    // Populate provider model metadata without blocking startup.
+    // Populate model metadata for every configured provider without blocking startup.
     {
         let state = bot.lock().await.state.clone();
-        match provider {
-            LlmProvider::Openrouter => {
-                let api_key = openrouter_key.clone();
-                tokio::spawn(async move {
-                    let client = glowbot::openrouter::OpenRouterClient::new(api_key);
-                    match client.fetch_models().await {
-                        Ok(models) => {
-                            let mut s = state.lock().await;
-                            for m in models {
-                                s.model_metadata.insert(m.id.clone(), m);
-                            }
-                            log::info!(
-                                "Cached {} model metadata entries from OpenRouter",
-                                s.model_metadata.len()
-                            );
+        if !openrouter_key.trim().is_empty() {
+            let api_key = openrouter_key.clone();
+            let state = state.clone();
+            tokio::spawn(async move {
+                let client = glowbot::openrouter::OpenRouterClient::new(api_key);
+                match client.fetch_models().await {
+                    Ok(models) => {
+                        let mut state = state.lock().await;
+                        for model in models {
+                            state.model_order.push(model.id.clone());
+                            state.model_metadata.insert(model.id.clone(), model);
                         }
-                        Err(e) => log::warn!("Failed to fetch model metadata: {}", e),
+                        log::info!(
+                            "Cached {} model metadata entries from OpenRouter",
+                            state.model_metadata.len()
+                        );
                     }
-                });
-            }
-            LlmProvider::Codex => {
-                let model = config.default_model().to_string();
-                let mut state = state.lock().await;
-                state
-                    .model_metadata
-                    .insert(model.clone(), glowbot::codex::model_info(&model));
-                state.model_order.push(model);
-            }
+                    Err(e) => log::warn!("Failed to fetch model metadata: {}", e),
+                }
+            });
+        }
+        if let Some(codex) = &config.codex {
+            let model = codex.model.clone();
+            let mut state = state.lock().await;
+            state
+                .model_metadata
+                .insert(model.clone(), glowbot::codex::model_info(&model));
+            state.model_order.push(model);
         }
     }
 

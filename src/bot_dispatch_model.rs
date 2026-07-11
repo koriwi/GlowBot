@@ -22,24 +22,25 @@ pub(crate) async fn tool_get_model_info(state: &Arc<Mutex<BotState>>, chat_id: &
     let has_override = s.model_overrides.contains_key(chat_id);
 
     // Determine the base model and any applied specifier
-    let (base_model, specifier) = if s.config.uses_openrouter() {
-        if let Some(pos) = effective.rfind(':') {
-            let maybe_spec = &effective[pos + 1..];
-            let valid: Vec<&str> = crate::openrouter::SPECIFIER_BUTTONS
-                .iter()
-                .map(|(s, _)| *s)
-                .collect();
-            if valid.contains(&maybe_spec) {
-                (effective[..pos].to_string(), Some(maybe_spec.to_string()))
+    let (base_model, specifier) =
+        if s.config.provider_for_chat(chat_id) == crate::config::LlmProvider::Openrouter {
+            if let Some(pos) = effective.rfind(':') {
+                let maybe_spec = &effective[pos + 1..];
+                let valid: Vec<&str> = crate::openrouter::SPECIFIER_BUTTONS
+                    .iter()
+                    .map(|(s, _)| *s)
+                    .collect();
+                if valid.contains(&maybe_spec) {
+                    (effective[..pos].to_string(), Some(maybe_spec.to_string()))
+                } else {
+                    (effective.clone(), None)
+                }
             } else {
                 (effective.clone(), None)
             }
         } else {
             (effective.clone(), None)
-        }
-    } else {
-        (effective.clone(), None)
-    };
+        };
 
     // Get model metadata from cache
     let norm = crate::openrouter::normalize_model_id(&effective);
@@ -52,14 +53,15 @@ pub(crate) async fn tool_get_model_info(state: &Arc<Mutex<BotState>>, chat_id: &
         })
     });
 
-    let available_specifiers: Vec<&str> = if s.config.uses_openrouter() {
-        crate::openrouter::SPECIFIER_BUTTONS
-            .iter()
-            .map(|(s, _)| *s)
-            .collect()
-    } else {
-        vec![]
-    };
+    let available_specifiers: Vec<&str> =
+        if s.config.provider_for_chat(chat_id) == crate::config::LlmProvider::Openrouter {
+            crate::openrouter::SPECIFIER_BUTTONS
+                .iter()
+                .map(|(s, _)| *s)
+                .collect()
+        } else {
+            vec![]
+        };
 
     serde_json::json!({
         "effective_model": effective,
@@ -83,7 +85,10 @@ pub(crate) async fn tool_propose_model_change(
     let model_id = args["model_id"].as_str();
     let specifier = args["specifier"].as_str();
 
-    if specifier.is_some() && !state.lock().await.config.uses_openrouter() {
+    if specifier.is_some()
+        && state.lock().await.config.provider_for_chat(chat_id)
+            != crate::config::LlmProvider::Openrouter
+    {
         return "Error: routing specifiers are only available with OpenRouter.".into();
     }
 

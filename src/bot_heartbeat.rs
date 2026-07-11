@@ -165,7 +165,7 @@ pub async fn run_heartbeat_task(
             date = date,
         );
 
-        let (system_prompt, model, tools, context_limit) = {
+        let (system_prompt, model, tools, context_limit, provider) = {
             let s = state.lock().await;
             let base = s.assemble_system_prompt(&cid, true, "");
             let model = s.effective_model(&cid);
@@ -176,7 +176,8 @@ pub async fn run_heartbeat_task(
                 .get(crate::openrouter::normalize_model_id(&model))
                 .map(|m| m.context_length)
                 .unwrap_or(0);
-            (base, model, tools, ctx)
+            let provider = s.config.provider_for_chat(&cid);
+            (base, model, tools, ctx, provider)
         };
 
         let system_msg = ChatMessage::system(&system_prompt);
@@ -206,7 +207,7 @@ pub async fn run_heartbeat_task(
             };
             let (response, usage) = {
                 let s = state.lock().await;
-                match s.llm.chat_completion(&request).await {
+                match s.llm.chat_completion_for_provider(provider, &request).await {
                     Ok(r) => {
                         let usage = r.usage.clone().unwrap_or_default();
                         (r, usage)
@@ -233,7 +234,13 @@ pub async fn run_heartbeat_task(
                 if tcs.is_empty() {
                     break;
                 }
-                turn_messages.push(ChatMessage::assistant_tool_calls(tcs.clone()));
+                let assistant = if let Some(reasoning) = &choice.message.reasoning {
+                    ChatMessage::assistant_tool_calls_with_reasoning(tcs.clone(), reasoning.clone())
+                } else {
+                    ChatMessage::assistant_tool_calls(tcs.clone())
+                }
+                .with_provider_data(choice.message.provider_data.clone());
+                turn_messages.push(assistant);
                 turn_messages
                     .extend(dispatch_tool_calls(&state, &cid, tcs, None, Some(&tg_bot)).await);
                 continue;
@@ -284,7 +291,7 @@ async fn process_reminder_action(
         date = date,
     );
 
-    let (system_prompt, model, tools, context_limit) = {
+    let (system_prompt, model, tools, context_limit, provider) = {
         let s = state.lock().await;
         let base = s.assemble_system_prompt(&cid, true, "");
         let model = s.effective_model(&cid);
@@ -295,7 +302,8 @@ async fn process_reminder_action(
             .get(crate::openrouter::normalize_model_id(&model))
             .map(|m| m.context_length)
             .unwrap_or(0);
-        (base, model, tools, ctx)
+        let provider = s.config.provider_for_chat(&cid);
+        (base, model, tools, ctx, provider)
     };
 
     let system_msg = ChatMessage::system(&system_prompt);
@@ -328,7 +336,7 @@ async fn process_reminder_action(
         };
         let (response, usage) = {
             let s = state.lock().await;
-            match s.llm.chat_completion(&request).await {
+            match s.llm.chat_completion_for_provider(provider, &request).await {
                 Ok(r) => {
                     let usage = r.usage.clone().unwrap_or_default();
                     (r, usage)
@@ -358,7 +366,13 @@ async fn process_reminder_action(
             if tcs.is_empty() {
                 break;
             }
-            turn_messages.push(ChatMessage::assistant_tool_calls(tcs.clone()));
+            let assistant = if let Some(reasoning) = &choice.message.reasoning {
+                ChatMessage::assistant_tool_calls_with_reasoning(tcs.clone(), reasoning.clone())
+            } else {
+                ChatMessage::assistant_tool_calls(tcs.clone())
+            }
+            .with_provider_data(choice.message.provider_data.clone());
+            turn_messages.push(assistant);
             turn_messages.extend(dispatch_tool_calls(state, &cid, tcs, None, Some(tg_bot)).await);
             continue;
         }

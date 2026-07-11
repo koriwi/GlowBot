@@ -423,7 +423,7 @@ pub(crate) async fn dispatch_tool(
                 return "Error: query required".into();
             }
 
-            let (advice_model, window_size, db) = {
+            let (advice_model, window_size, db, provider) = {
                 let s = state.lock().await;
                 let advice_model = match s.config.advice_model_for_chat(&cid) {
                     Some(m) => m.to_string(),
@@ -431,7 +431,8 @@ pub(crate) async fn dispatch_tool(
                 };
                 let window_size = s.config.conversation.advice_recent_messages_window_size;
                 let db = s.db.clone();
-                (advice_model, window_size, db)
+                let provider = s.config.provider_for_chat(&cid);
+                (advice_model, window_size, db, provider)
             };
 
             let recent_messages = if window_size > 0 {
@@ -497,7 +498,7 @@ pub(crate) async fn dispatch_tool(
             };
 
             let llm = { state.lock().await.llm.clone() };
-            match llm.chat_completion(&request).await {
+            match llm.chat_completion_for_provider(provider, &request).await {
                 Ok(resp) => {
                     let text = resp
                         .choices

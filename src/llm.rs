@@ -1,5 +1,7 @@
+use crate::config::LlmProvider;
 use crate::openrouter::{ChatCompletionRequest, ChatCompletionResponse, OpenRouterClient};
 use async_trait::async_trait;
+use std::sync::Arc;
 
 /// Trait abstracting the LLM backend, allowing mocking in tests.
 #[async_trait]
@@ -8,6 +10,16 @@ pub trait LlmBackend: Send + Sync {
         &self,
         request: &ChatCompletionRequest,
     ) -> anyhow::Result<ChatCompletionResponse>;
+
+    /// Send a completion through a specific provider. Single-provider and mock
+    /// backends use their normal implementation; the production router overrides this.
+    async fn chat_completion_for_provider(
+        &self,
+        _provider: LlmProvider,
+        request: &ChatCompletionRequest,
+    ) -> anyhow::Result<ChatCompletionResponse> {
+        self.chat_completion(request).await
+    }
 
     /// Generate embeddings for a text string.
     async fn embeddings(&self, model: &str, input: &str) -> anyhow::Result<Vec<f32>>;
@@ -72,6 +84,65 @@ impl LlmBackend for CodexBackend {
             None => anyhow::bail!(
                 "Codex subscription authentication does not provide embeddings; configure an OpenRouter API key for RAG"
             ),
+        }
+    }
+}
+
+/// Routes each request to the provider selected for its chat.
+pub struct MultiProviderBackend {
+    default_provider: LlmProvider,
+    openrouter: Option<Arc<dyn LlmBackend>>,
+    codex: Option<Arc<dyn LlmBackend>>,
+}
+
+impl MultiProviderBackend {
+    pub fn new(
+        default_provider: LlmProvider,
+        openrouter: Option<Arc<dyn LlmBackend>>,
+        codex: Option<Arc<dyn LlmBackend>>,
+    ) -> Self {
+        Self {
+            default_provider,
+            openrouter,
+            codex,
+        }
+    }
+
+    fn backend(&self, provider: LlmProvider) -> anyhow::Result<&Arc<dyn LlmBackend>> {
+        match provider {
+            LlmProvider::Openrouter => self.openrouter.as_ref(),
+            LlmProvider::Codex => self.codex.as_ref(),
+        }
+        .ok_or_else(|| anyhow::anyhow!("LLM provider {:?} is not configured", provider))
+    }
+}
+
+#[async_trait]
+impl LlmBackend for MultiProviderBackend {
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> anyhow::Result<ChatCompletionResponse> {
+        self.backend(self.default_provider)?
+            .chat_completion(request)
+            .await
+    }
+
+    async fn chat_completion_for_provider(
+        &self,
+        provider: LlmProvider,
+        request: &ChatCompletionRequest,
+    ) -> anyhow::Result<ChatCompletionResponse> {
+        self.backend(provider)?.chat_completion(request).await
+    }
+
+    async fn embeddings(&self, model: &str, input: &str) -> anyhow::Result<Vec<f32>> {
+        if let Some(openrouter) = &self.openrouter {
+            openrouter.embeddings(model, input).await
+        } else {
+            self.backend(self.default_provider)?
+                .embeddings(model, input)
+                .await
         }
     }
 }
@@ -297,6 +368,62 @@ mod tests {
         let backend = OpenRouterBackend::new("test-key".into());
         // Just verify it constructs successfully
         let _ = backend;
+    }
+
+    #[tokio::test]
+    async fn test_multi_provider_backend_routes_per_request() {
+        let openrouter = Arc::new(mock::MockLlmBackend::new());
+        openrouter.add_response(ChatCompletionResponse {
+            choices: vec![crate::openrouter::Choice {
+                message: crate::openrouter::AssistantMessage {
+                    content: Some("openrouter".into()),
+                    role: Some("assistant".into()),
+                    ..Default::default()
+                },
+                finish_reason: Some("stop".into()),
+            }],
+            ..Default::default()
+        });
+        let codex = Arc::new(mock::MockLlmBackend::new());
+        codex.add_response(ChatCompletionResponse {
+            choices: vec![crate::openrouter::Choice {
+                message: crate::openrouter::AssistantMessage {
+                    content: Some("codex".into()),
+                    role: Some("assistant".into()),
+                    ..Default::default()
+                },
+                finish_reason: Some("stop".into()),
+            }],
+            ..Default::default()
+        });
+        let router =
+            MultiProviderBackend::new(LlmProvider::Openrouter, Some(openrouter), Some(codex));
+        let request = ChatCompletionRequest {
+            model: "model".into(),
+            messages: vec![],
+            tools: None,
+            tool_choice: None,
+            modalities: None,
+            image_config: None,
+        };
+
+        let default = router.chat_completion(&request).await.unwrap();
+        assert_eq!(
+            default.choices[0].message.content.as_deref(),
+            Some("openrouter")
+        );
+        let overridden = router
+            .chat_completion_for_provider(LlmProvider::Codex, &request)
+            .await
+            .unwrap();
+        assert_eq!(
+            overridden.choices[0].message.content.as_deref(),
+            Some("codex")
+        );
+        assert!(MultiProviderBackend::new(LlmProvider::Codex, None, None)
+            .chat_completion(&request)
+            .await
+            .is_err());
     }
 
     #[tokio::test]

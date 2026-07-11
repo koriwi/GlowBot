@@ -14,37 +14,45 @@ impl Config {
     }
 
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
-        match self.provider {
-            LlmProvider::Openrouter => {
-                anyhow::ensure!(
-                    !self.openrouter.api_key.trim().is_empty(),
-                    "openrouter.api_key is required when provider is openrouter"
-                );
-                anyhow::ensure!(
-                    !self.openrouter.model.trim().is_empty(),
-                    "openrouter.model is required when provider is openrouter"
-                );
-            }
-            LlmProvider::Codex => {
-                let codex = self
-                    .codex
-                    .as_ref()
-                    .context("codex configuration is required when provider is codex")?;
-                anyhow::ensure!(!codex.model.trim().is_empty(), "codex.model is required");
-                anyhow::ensure!(
-                    !codex.auth_file.trim().is_empty(),
-                    "codex.auth_file is required"
-                );
-                let uses_openrouter_extras = self.openrouter.embedding_model.is_some()
-                    || self.openrouter.image_fallback_model.is_some()
-                    || self.openrouter.audio_fallback_model.is_some()
-                    || self.openrouter.image_gen_model.is_some();
-                anyhow::ensure!(
-                    !uses_openrouter_extras || !self.openrouter.api_key.trim().is_empty(),
-                    "openrouter.api_key is required for embeddings, image generation, and media fallback models"
-                );
-            }
+        let uses_provider = |provider| {
+            self.provider == provider
+                || self
+                    .chats
+                    .values()
+                    .any(|chat| chat.provider == Some(provider))
+                || self.dms.values().any(|dm| dm.provider == Some(provider))
+        };
+
+        if uses_provider(LlmProvider::Openrouter) {
+            anyhow::ensure!(
+                !self.openrouter.api_key.trim().is_empty(),
+                "openrouter.api_key is required when any chat uses provider openrouter"
+            );
+            anyhow::ensure!(
+                !self.openrouter.model.trim().is_empty(),
+                "openrouter.model is required when any chat uses provider openrouter"
+            );
         }
+        if uses_provider(LlmProvider::Codex) || self.codex.is_some() {
+            let codex = self
+                .codex
+                .as_ref()
+                .context("codex configuration is required when any chat uses provider codex")?;
+            anyhow::ensure!(!codex.model.trim().is_empty(), "codex.model is required");
+            anyhow::ensure!(
+                !codex.auth_file.trim().is_empty(),
+                "codex.auth_file is required"
+            );
+        }
+
+        let uses_openrouter_extras = self.openrouter.embedding_model.is_some()
+            || self.openrouter.image_fallback_model.is_some()
+            || self.openrouter.audio_fallback_model.is_some()
+            || self.openrouter.image_gen_model.is_some();
+        anyhow::ensure!(
+            !uses_openrouter_extras || !self.openrouter.api_key.trim().is_empty(),
+            "openrouter.api_key is required for embeddings, image generation, and media fallback models"
+        );
         Ok(())
     }
 
@@ -66,30 +74,48 @@ impl Config {
         self.dms.get(chat_id)
     }
 
+    /// Get the effective provider for a chat or DM.
+    pub fn provider_for_chat(&self, chat_id: &str) -> LlmProvider {
+        if !chat_id.starts_with('-') {
+            if let Some(provider) = self.dms.get(chat_id).and_then(|dm| dm.provider) {
+                return provider;
+            }
+        }
+        self.chats
+            .get(chat_id)
+            .and_then(|chat| chat.provider)
+            .unwrap_or(self.provider)
+    }
+
     /// Get the effective model for a given chat ID.
-    /// For DMs, checks the `dms` entry first.
+    /// For DMs, checks the `dms` entry first. A provider override without a
+    /// model override uses that provider's global model.
     pub fn model_for_chat(&self, chat_id: &str) -> &str {
         if !chat_id.starts_with('-') {
             if let Some(dm) = self.dms.get(chat_id) {
-                if let Some(ref m) = dm.model {
-                    return m;
+                if let Some(ref model) = dm.model {
+                    return model;
                 }
             }
         }
         self.chats
             .get(chat_id)
-            .and_then(|c| c.model.as_deref())
-            .unwrap_or_else(|| self.default_model())
+            .and_then(|chat| chat.model.as_deref())
+            .unwrap_or_else(|| self.default_model_for_provider(self.provider_for_chat(chat_id)))
     }
 
-    /// Get the configured default model for the selected provider.
+    /// Get the configured default model for the globally selected provider.
     pub fn default_model(&self) -> &str {
-        match self.provider {
+        self.default_model_for_provider(self.provider)
+    }
+
+    pub fn default_model_for_provider(&self, provider: LlmProvider) -> &str {
+        match provider {
             LlmProvider::Openrouter => &self.openrouter.model,
             LlmProvider::Codex => self
                 .codex
                 .as_ref()
-                .map(|c| c.model.as_str())
+                .map(|config| config.model.as_str())
                 .unwrap_or_default(),
         }
     }
@@ -196,7 +222,10 @@ impl Config {
         self.chats
             .get(chat_id)
             .and_then(|c| c.advice_model.as_deref())
-            .or(self.openrouter.advice_model.as_deref())
+            .or_else(|| match self.provider_for_chat(chat_id) {
+                LlmProvider::Openrouter => self.openrouter.advice_model.as_deref(),
+                LlmProvider::Codex => None,
+            })
     }
 
     /// Get the effective heartbeat interval for a chat (global default if not overridden).

@@ -53,6 +53,16 @@ fn test_provider_validation_errors() {
 
     std::fs::write(
         &path,
+        "telegram_token: test\nprovider: openrouter\nopenrouter: {model: test, api_key: key}\nchats: {'-1': {provider: codex}}\n",
+    )
+    .unwrap();
+    assert!(Config::load(&path)
+        .unwrap_err()
+        .to_string()
+        .contains("any chat uses provider codex"));
+
+    std::fs::write(
+        &path,
         "telegram_token: test\nprovider: openrouter\nopenrouter: {model: test, api_key: ''}\n",
     )
     .unwrap();
@@ -138,6 +148,41 @@ fn test_model_for_chat() {
         },
     );
     assert_eq!(config.model_for_chat("-123"), "custom/model");
+}
+
+#[test]
+fn test_provider_override_uses_provider_default_model() {
+    let mut config = basic_config();
+    config.openrouter.advice_model = Some("openai/advisor".into());
+    config.codex = Some(CodexConfig {
+        model: "gpt-5.4".into(),
+        auth_file: "auth.json".into(),
+        reasoning_effort: None,
+        base_url: "https://chatgpt.com/backend-api".into(),
+    });
+    config.chats.insert(
+        "-123".into(),
+        ChatConfig {
+            provider: Some(LlmProvider::Codex),
+            ..Default::default()
+        },
+    );
+    config.dms.insert(
+        "456".into(),
+        DmConfig {
+            provider: Some(LlmProvider::Codex),
+            model: Some("gpt-5.3-codex".into()),
+            ..Default::default()
+        },
+    );
+
+    assert_eq!(config.provider_for_chat("-123"), LlmProvider::Codex);
+    assert_eq!(config.model_for_chat("-123"), "gpt-5.4");
+    assert!(config.advice_model_for_chat("-123").is_none());
+    assert_eq!(config.provider_for_chat("456"), LlmProvider::Codex);
+    assert_eq!(config.model_for_chat("456"), "gpt-5.3-codex");
+    assert_eq!(config.provider_for_chat("-999"), LlmProvider::Openrouter);
+    config.validate().unwrap();
 }
 
 #[test]
