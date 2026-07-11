@@ -185,12 +185,23 @@ impl Default for EmbeddingConfig {
     }
 }
 
+/// LLM provider used for conversation and advisor requests.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmProvider {
+    #[default]
+    Openrouter,
+    Codex,
+}
+
 /// OpenRouter API configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct OpenRouterConfig {
     /// OpenRouter API key.
+    #[serde(default)]
     pub api_key: String,
-    /// Model to use (required).
+    /// Model to use (required when OpenRouter is the conversation provider).
+    #[serde(default)]
     pub model: String,
     /// Model used to describe images when the conversation model
     /// doesn't natively support image input.
@@ -220,13 +231,45 @@ pub struct OpenRouterConfig {
     pub advice_model: Option<String>,
 }
 
+/// OpenAI Codex configuration. Authentication is reused from the official
+/// Codex CLI, so requests count against the user's ChatGPT/Codex subscription.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CodexConfig {
+    /// Codex model to use (for example `gpt-5.4`).
+    pub model: String,
+    /// Path to the Codex CLI auth file created by `codex login`.
+    #[serde(default = "default_codex_auth_file")]
+    pub auth_file: String,
+    /// Optional Responses API reasoning effort (`low`, `medium`, `high`, or `xhigh`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    /// Codex backend base URL. Override only for a compatible proxy or testing.
+    #[serde(default = "default_codex_base_url")]
+    pub base_url: String,
+}
+
+fn default_codex_auth_file() -> String {
+    "~/.codex/auth.json".into()
+}
+
+fn default_codex_base_url() -> String {
+    "https://chatgpt.com/backend-api".into()
+}
+
 /// Global application configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Config {
     /// Telegram bot token.
     pub telegram_token: String,
-    /// OpenRouter configuration.
+    /// LLM provider. Defaults to `openrouter` for backward compatibility.
+    #[serde(default)]
+    pub provider: LlmProvider,
+    /// OpenRouter configuration. Optional when `provider: codex`.
+    #[serde(default)]
     pub openrouter: OpenRouterConfig,
+    /// OpenAI Codex subscription configuration. Required when `provider: codex`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex: Option<CodexConfig>,
     /// Conversation context settings (window sizes for history and advice).
     #[serde(default)]
     pub conversation: ConversationConfig,

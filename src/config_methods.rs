@@ -9,7 +9,43 @@ impl Config {
             .with_context(|| format!("Failed to read config file: {}", path.display()))?;
         let config: Self = serde_yaml::from_str(&data)
             .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
+        config.validate()?;
         Ok(config)
+    }
+
+    pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        match self.provider {
+            LlmProvider::Openrouter => {
+                anyhow::ensure!(
+                    !self.openrouter.api_key.trim().is_empty(),
+                    "openrouter.api_key is required when provider is openrouter"
+                );
+                anyhow::ensure!(
+                    !self.openrouter.model.trim().is_empty(),
+                    "openrouter.model is required when provider is openrouter"
+                );
+            }
+            LlmProvider::Codex => {
+                let codex = self
+                    .codex
+                    .as_ref()
+                    .context("codex configuration is required when provider is codex")?;
+                anyhow::ensure!(!codex.model.trim().is_empty(), "codex.model is required");
+                anyhow::ensure!(
+                    !codex.auth_file.trim().is_empty(),
+                    "codex.auth_file is required"
+                );
+                let uses_openrouter_extras = self.openrouter.embedding_model.is_some()
+                    || self.openrouter.image_fallback_model.is_some()
+                    || self.openrouter.audio_fallback_model.is_some()
+                    || self.openrouter.image_gen_model.is_some();
+                anyhow::ensure!(
+                    !uses_openrouter_extras || !self.openrouter.api_key.trim().is_empty(),
+                    "openrouter.api_key is required for embeddings, image generation, and media fallback models"
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Save configuration to a YAML file.
@@ -43,7 +79,23 @@ impl Config {
         self.chats
             .get(chat_id)
             .and_then(|c| c.model.as_deref())
-            .unwrap_or(&self.openrouter.model)
+            .unwrap_or_else(|| self.default_model())
+    }
+
+    /// Get the configured default model for the selected provider.
+    pub fn default_model(&self) -> &str {
+        match self.provider {
+            LlmProvider::Openrouter => &self.openrouter.model,
+            LlmProvider::Codex => self
+                .codex
+                .as_ref()
+                .map(|c| c.model.as_str())
+                .unwrap_or_default(),
+        }
+    }
+
+    pub fn uses_openrouter(&self) -> bool {
+        self.provider == LlmProvider::Openrouter
     }
 
     /// Check whether the bash tool is enabled for a given chat.
@@ -178,7 +230,12 @@ impl Config {
     pub fn redacted(&self) -> Self {
         let mut c = self.clone();
         c.telegram_token = "[REDACTED]".into();
-        c.openrouter.api_key = "[REDACTED]".into();
+        if !c.openrouter.api_key.is_empty() {
+            c.openrouter.api_key = "[REDACTED]".into();
+        }
+        if let Some(codex) = c.codex.as_mut() {
+            codex.auth_file = "[REDACTED]".into();
+        }
         for server in c.mcp_servers.iter_mut() {
             if server.api_key.is_some() {
                 server.api_key = Some("[REDACTED]".into());
@@ -193,6 +250,7 @@ impl Config {
 pub(crate) fn basic_config() -> Config {
     Config {
         telegram_token: "test-token".into(),
+        provider: LlmProvider::Openrouter,
         openrouter: OpenRouterConfig {
             api_key: "test-key".into(),
             model: "test/model".into(),
@@ -202,6 +260,7 @@ pub(crate) fn basic_config() -> Config {
             embedding_model: None,
             advice_model: None,
         },
+        codex: None,
         conversation: ConversationConfig::default(),
         db: DatabaseConfig::default(),
 

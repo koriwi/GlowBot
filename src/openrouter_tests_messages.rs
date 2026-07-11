@@ -156,6 +156,7 @@ fn test_chat_message_text_content_with_parts() {
         tool_calls: None,
         tool_call_id: None,
         reasoning: None,
+        provider_data: None,
     };
     assert_eq!(msg.text_content(), "Part1 Part2");
 }

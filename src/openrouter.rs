@@ -63,6 +63,10 @@ pub struct ChatMessage {
     /// Reasoning / thinking content from models that support it (e.g. DeepSeek-R1, Claude thinking).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub reasoning: Option<String>,
+    /// Provider-specific state needed only while continuing the current tool turn.
+    /// It is intentionally not serialized to APIs or persisted in SQLite.
+    #[serde(skip)]
+    pub provider_data: Option<serde_json::Value>,
 }
 
 /// Content can be a simple string or an array of content parts.
@@ -102,107 +106,66 @@ pub struct InputAudioDetail {
 }
 
 impl ChatMessage {
-    pub fn system(content: &str) -> Self {
+    fn new(role: &str, content: ChatContent) -> Self {
         Self {
-            role: "system".into(),
-            content: ChatContent::Text(content.to_string()),
+            role: role.into(),
+            content,
             name: None,
             tool_calls: None,
             tool_call_id: None,
             reasoning: None,
+            provider_data: None,
         }
+    }
+
+    pub fn system(content: &str) -> Self {
+        Self::new("system", ChatContent::Text(content.to_string()))
     }
 
     pub fn user(content: &str) -> Self {
-        Self {
-            role: "user".into(),
-            content: ChatContent::Text(content.to_string()),
-            name: None,
-            tool_calls: None,
-            tool_call_id: None,
-            reasoning: None,
-        }
+        Self::new("user", ChatContent::Text(content.to_string()))
     }
 
     pub fn user_with_name(content: &str, name: &str) -> Self {
-        Self {
-            role: "user".into(),
-            content: ChatContent::Text(content.to_string()),
-            name: Some(name.to_string()),
-            tool_calls: None,
-            tool_call_id: None,
-            reasoning: None,
-        }
+        let mut message = Self::user(content);
+        message.name = Some(name.to_string());
+        message
     }
 
     /// Create a user message with multimodal content parts (text, images, audio).
     pub fn user_multimodal(parts: Vec<ContentPart>) -> Self {
-        Self {
-            role: "user".into(),
-            content: ChatContent::Parts(parts),
-            name: None,
-            tool_calls: None,
-            tool_call_id: None,
-            reasoning: None,
-        }
+        Self::new("user", ChatContent::Parts(parts))
     }
 
     /// Create a user message with multimodal content parts and a name.
     pub fn user_multimodal_with_name(parts: Vec<ContentPart>, name: &str) -> Self {
-        Self {
-            role: "user".into(),
-            content: ChatContent::Parts(parts),
-            name: Some(name.to_string()),
-            tool_calls: None,
-            tool_call_id: None,
-            reasoning: None,
-        }
+        let mut message = Self::user_multimodal(parts);
+        message.name = Some(name.to_string());
+        message
     }
 
     pub fn assistant(content: &str) -> Self {
-        Self {
-            role: "assistant".into(),
-            content: ChatContent::Text(content.to_string()),
-            name: None,
-            tool_calls: None,
-            tool_call_id: None,
-            reasoning: None,
-        }
+        Self::new("assistant", ChatContent::Text(content.to_string()))
     }
 
     /// Create an assistant message with reasoning/thinking content.
     pub fn assistant_with_reasoning(content: &str, reasoning: String) -> Self {
-        Self {
-            role: "assistant".into(),
-            content: ChatContent::Text(content.to_string()),
-            name: None,
-            tool_calls: None,
-            tool_call_id: None,
-            reasoning: Some(reasoning),
-        }
+        let mut message = Self::assistant(content);
+        message.reasoning = Some(reasoning);
+        message
     }
 
     pub fn tool_result(tool_call_id: &str, content: &str) -> Self {
-        Self {
-            role: "tool".into(),
-            content: ChatContent::Text(content.to_string()),
-            name: None,
-            tool_calls: None,
-            tool_call_id: Some(tool_call_id.to_string()),
-            reasoning: None,
-        }
+        let mut message = Self::new("tool", ChatContent::Text(content.to_string()));
+        message.tool_call_id = Some(tool_call_id.to_string());
+        message
     }
 
     /// Create an assistant message with tool calls.
     pub fn assistant_tool_calls(tool_calls: Vec<ToolCall>) -> Self {
-        Self {
-            role: "assistant".into(),
-            content: ChatContent::Text(String::new()),
-            name: None,
-            tool_calls: Some(tool_calls),
-            tool_call_id: None,
-            reasoning: None,
-        }
+        let mut message = Self::assistant("");
+        message.tool_calls = Some(tool_calls);
+        message
     }
 
     /// Create an assistant message with tool calls and reasoning.
@@ -210,14 +173,15 @@ impl ChatMessage {
         tool_calls: Vec<ToolCall>,
         reasoning: String,
     ) -> Self {
-        Self {
-            role: "assistant".into(),
-            content: ChatContent::Text(String::new()),
-            name: None,
-            tool_calls: Some(tool_calls),
-            tool_call_id: None,
-            reasoning: Some(reasoning),
-        }
+        let mut message = Self::assistant_tool_calls(tool_calls);
+        message.reasoning = Some(reasoning);
+        message
+    }
+
+    /// Attach opaque provider state while continuing a tool-call turn.
+    pub fn with_provider_data(mut self, provider_data: Option<serde_json::Value>) -> Self {
+        self.provider_data = provider_data;
+        self
     }
 
     /// Extract text content regardless of format.
@@ -461,6 +425,9 @@ pub struct AssistantMessage {
     /// OpenRouter exposes this as `reasoning` on the message object.
     #[serde(default)]
     pub reasoning: Option<String>,
+    /// Provider-specific continuation state (for example encrypted Codex reasoning).
+    #[serde(skip)]
+    pub provider_data: Option<serde_json::Value>,
     pub role: Option<String>,
     /// Generated images from the assistant (when modalities includes "image").
     #[serde(default)]

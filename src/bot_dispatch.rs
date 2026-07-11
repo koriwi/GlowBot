@@ -475,6 +475,7 @@ pub(crate) async fn dispatch_tool(
                     tool_calls: None,
                     tool_call_id: None,
                     reasoning: msg.reasoning.clone(),
+                    provider_data: None,
                 });
             }
 

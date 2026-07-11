@@ -61,6 +61,14 @@ pub(crate) async fn tool_edit_config(
         let s = state.lock().await;
         new_config.telegram_token = s.config.telegram_token.clone();
         new_config.openrouter.api_key = s.config.openrouter.api_key.clone();
+        if let (Some(new_codex), Some(current_codex)) =
+            (new_config.codex.as_mut(), s.config.codex.as_ref())
+        {
+            new_codex.auth_file = current_codex.auth_file.clone();
+        }
+    }
+    if let Err(e) = new_config.validate() {
+        return format!("Error: invalid configuration — {}", e);
     }
 
     // Re-serialize to get canonical YAML for diff and storage

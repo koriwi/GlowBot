@@ -1,6 +1,6 @@
 # GlowBot
 
-A personal Telegram chatbot backed by OpenRouter LLMs, with skills, memory, MCP tool servers, and autonomous background tasks. Runs in a single Docker container with bash as its system tool — safe by container isolation.
+A personal Telegram chatbot backed by OpenRouter LLMs or an OpenAI Codex subscription, with skills, memory, MCP tool servers, and autonomous background tasks. Runs in a single Docker container with bash as its system tool — safe by container isolation.
 
 ## Quick Start
 
@@ -10,11 +10,11 @@ git clone https://github.com/koriwi/GlowBot.git
 cd GlowBot
 mkdir -p glowbot_data
 cp config.example.yaml glowbot_data/config.yaml
-# Edit glowbot_data/config.yaml — fill in your Telegram token and OpenRouter API key
+# Edit glowbot_data/config.yaml — choose OpenRouter or Codex and add credentials
 
 # 2. Build and run
 docker build -t glowbot .
-docker run -v $(pwd)/glowbot_data:/glowbot_data glowbot
+docker run -v "$(pwd)/glowbot_data:/home/glowbot/glowbot_data" glowbot
 
 # Or run natively (requires Rust toolchain)
 cargo run
@@ -32,6 +32,35 @@ openrouter:
   api_key: "sk-or-..."
   model: "anthropic/claude-sonnet-4"
 ```
+
+### OpenAI Codex subscription
+
+GlowBot can use the Codex allowance included with a ChatGPT subscription instead of billing conversation requests through OpenRouter:
+
+```bash
+# Authenticate once with the official Codex CLI
+codex login
+```
+
+```yaml
+telegram_token: "123:abc"
+provider: codex
+codex:
+  model: "gpt-5.4"
+  auth_file: "~/.codex/auth.json"
+  reasoning_effort: "high" # optional
+```
+
+GlowBot reads and automatically refreshes the official Codex CLI credentials. Treat `auth.json` like a password. In Docker, mount the Codex directory so refreshes persist:
+
+```bash
+docker run \
+  -v "$(pwd)/glowbot_data:/home/glowbot/glowbot_data" \
+  -v "$HOME/.codex:/home/glowbot/.codex" \
+  glowbot
+```
+
+Codex OAuth is for chat completions. Embeddings, image generation, and OpenRouter media fallback models still require an OpenRouter configuration/API key.
 
 ### MCP Servers (optional)
 
@@ -143,7 +172,8 @@ Commands must be enabled per-chat via `commands_enabled: true` (except `/stop` w
 
 ## Features
 
-- **Multi-model**: Per-chat and per-DM model selection via OpenRouter
+- **Multiple LLM providers**: OpenRouter API keys or ChatGPT/Codex subscription OAuth
+- **Multi-model**: Per-chat and per-DM model selection
 - **Skills**: Extend the bot with `skill.md` files under `skills/<name>/`
 - **Memory**: Per-user and per-chat Markdown files with YAML frontmatter, plus SQLite-backed conversation history
 - **MCP tools**: Connect to external MCP servers for additional tool access

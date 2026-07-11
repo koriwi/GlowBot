@@ -40,6 +40,42 @@ impl LlmBackend for OpenRouterBackend {
     }
 }
 
+/// OpenAI Codex subscription implementation.
+pub struct CodexBackend {
+    client: crate::codex::CodexClient,
+    openrouter_extras: Option<OpenRouterClient>,
+}
+
+impl CodexBackend {
+    pub fn new(config: crate::config::CodexConfig, openrouter_api_key: Option<String>) -> Self {
+        Self {
+            client: crate::codex::CodexClient::new(config),
+            openrouter_extras: openrouter_api_key
+                .filter(|key| !key.trim().is_empty())
+                .map(OpenRouterClient::new),
+        }
+    }
+}
+
+#[async_trait]
+impl LlmBackend for CodexBackend {
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> anyhow::Result<ChatCompletionResponse> {
+        self.client.chat_completion(request).await
+    }
+
+    async fn embeddings(&self, model: &str, input: &str) -> anyhow::Result<Vec<f32>> {
+        match &self.openrouter_extras {
+            Some(client) => client.embeddings(model, input).await,
+            None => anyhow::bail!(
+                "Codex subscription authentication does not provide embeddings; configure an OpenRouter API key for RAG"
+            ),
+        }
+    }
+}
+
 /// A mock LLM backend for testing.
 #[cfg(test)]
 pub mod mock {
@@ -261,5 +297,19 @@ mod tests {
         let backend = OpenRouterBackend::new("test-key".into());
         // Just verify it constructs successfully
         let _ = backend;
+    }
+
+    #[tokio::test]
+    async fn test_codex_backend_rejects_embeddings() {
+        let backend = CodexBackend::new(
+            crate::config::CodexConfig {
+                model: "gpt-5.4".into(),
+                auth_file: "/tmp/nonexistent-codex-auth.json".into(),
+                reasoning_effort: None,
+                base_url: "https://chatgpt.com/backend-api".into(),
+            },
+            None,
+        );
+        assert!(backend.embeddings("model", "input").await.is_err());
     }
 }

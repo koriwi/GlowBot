@@ -22,14 +22,18 @@ pub(crate) async fn tool_get_model_info(state: &Arc<Mutex<BotState>>, chat_id: &
     let has_override = s.model_overrides.contains_key(chat_id);
 
     // Determine the base model and any applied specifier
-    let (base_model, specifier) = if let Some(pos) = effective.rfind(':') {
-        let maybe_spec = &effective[pos + 1..];
-        let valid: Vec<&str> = crate::openrouter::SPECIFIER_BUTTONS
-            .iter()
-            .map(|(s, _)| *s)
-            .collect();
-        if valid.contains(&maybe_spec) {
-            (effective[..pos].to_string(), Some(maybe_spec.to_string()))
+    let (base_model, specifier) = if s.config.uses_openrouter() {
+        if let Some(pos) = effective.rfind(':') {
+            let maybe_spec = &effective[pos + 1..];
+            let valid: Vec<&str> = crate::openrouter::SPECIFIER_BUTTONS
+                .iter()
+                .map(|(s, _)| *s)
+                .collect();
+            if valid.contains(&maybe_spec) {
+                (effective[..pos].to_string(), Some(maybe_spec.to_string()))
+            } else {
+                (effective.clone(), None)
+            }
         } else {
             (effective.clone(), None)
         }
@@ -48,10 +52,14 @@ pub(crate) async fn tool_get_model_info(state: &Arc<Mutex<BotState>>, chat_id: &
         })
     });
 
-    let available_specifiers: Vec<&str> = crate::openrouter::SPECIFIER_BUTTONS
-        .iter()
-        .map(|(s, _)| *s)
-        .collect();
+    let available_specifiers: Vec<&str> = if s.config.uses_openrouter() {
+        crate::openrouter::SPECIFIER_BUTTONS
+            .iter()
+            .map(|(s, _)| *s)
+            .collect()
+    } else {
+        vec![]
+    };
 
     serde_json::json!({
         "effective_model": effective,
@@ -74,6 +82,10 @@ pub(crate) async fn tool_propose_model_change(
 ) -> String {
     let model_id = args["model_id"].as_str();
     let specifier = args["specifier"].as_str();
+
+    if specifier.is_some() && !state.lock().await.config.uses_openrouter() {
+        return "Error: routing specifiers are only available with OpenRouter.".into();
+    }
 
     // At least one must be provided
     if model_id.is_none() && specifier.is_none() {
@@ -362,6 +374,35 @@ mod tests {
         assert_eq!(v["config_default_model"], "test/model");
         assert!(!v["has_temporary_override"].as_bool().unwrap());
         assert!(v["specifier"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_get_model_info_codex_has_no_specifiers() {
+        let (state, _dir) = make_state().await;
+        {
+            let mut s = state.lock().await;
+            s.config.provider = crate::config::LlmProvider::Codex;
+            s.config.codex = Some(crate::config::CodexConfig {
+                model: "gpt-5.4:nitro".into(),
+                auth_file: "auth.json".into(),
+                reasoning_effort: None,
+                base_url: "https://chatgpt.com/backend-api".into(),
+            });
+        }
+        let result = tool_get_model_info(&state, "-123").await;
+        let value: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(value["base_model"], "gpt-5.4:nitro");
+        assert!(value["specifier"].is_null());
+        assert!(value["available_specifiers"].as_array().unwrap().is_empty());
+
+        let proposed = tool_propose_model_change(
+            &state,
+            "-123",
+            &serde_json::json!({"specifier": "nitro"}),
+            None,
+        )
+        .await;
+        assert!(proposed.contains("only available with OpenRouter"));
     }
 
     #[tokio::test]

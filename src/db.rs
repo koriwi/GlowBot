@@ -118,6 +118,7 @@ impl Database {
                 name: raw.name,
                 tool_calls,
                 tool_call_id: raw.tool_call_id,
+                provider_data: None,
             });
         }
         // rows come back newest-first; reverse to chronological order

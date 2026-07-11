@@ -15,6 +15,76 @@ fn test_config_load_save_roundtrip() {
 }
 
 #[test]
+fn test_codex_config_load_and_provider_defaults() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("config.yaml");
+    std::fs::write(
+        &path,
+        r#"
+telegram_token: test-token
+provider: codex
+codex:
+  model: gpt-5.4
+  auth_file: /tmp/codex-auth.json
+  reasoning_effort: high
+"#,
+    )
+    .unwrap();
+    let config = Config::load(&path).unwrap();
+    assert_eq!(config.provider, LlmProvider::Codex);
+    assert_eq!(config.default_model(), "gpt-5.4");
+    assert!(!config.uses_openrouter());
+    assert_eq!(
+        config.codex.as_ref().unwrap().base_url,
+        "https://chatgpt.com/backend-api"
+    );
+    assert!(config.openrouter.api_key.is_empty());
+
+    let redacted = config.redacted();
+    assert_eq!(redacted.codex.unwrap().auth_file, "[REDACTED]");
+}
+
+#[test]
+fn test_provider_validation_errors() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("config.yaml");
+    std::fs::write(&path, "telegram_token: test\nprovider: codex\n").unwrap();
+    assert!(Config::load(&path).unwrap_err().to_string().contains("codex configuration"));
+
+    std::fs::write(
+        &path,
+        "telegram_token: test\nprovider: openrouter\nopenrouter: {model: test, api_key: ''}\n",
+    )
+    .unwrap();
+    assert!(Config::load(&path).unwrap_err().to_string().contains("api_key"));
+
+    std::fs::write(
+        &path,
+        "telegram_token: test\nprovider: codex\ncodex: {model: '', auth_file: auth.json}\n",
+    )
+    .unwrap();
+    assert!(Config::load(&path).unwrap_err().to_string().contains("codex.model"));
+
+    std::fs::write(
+        &path,
+        "telegram_token: test\nprovider: codex\ncodex: {model: gpt-5.4}\nopenrouter: {api_key: '', model: '', embedding_model: embed}\n",
+    )
+    .unwrap();
+    assert!(Config::load(&path)
+        .unwrap_err()
+        .to_string()
+        .contains("openrouter.api_key"));
+}
+
+#[test]
+fn test_openrouter_is_default_provider() {
+    let config = basic_config();
+    assert_eq!(config.provider, LlmProvider::Openrouter);
+    assert!(config.uses_openrouter());
+    assert_eq!(config.default_model(), "test/model");
+}
+
+#[test]
 fn test_config_load_nonexistent() {
     let result = Config::load(Path::new("/nonexistent/path/config.yaml"));
     assert!(result.is_err());
@@ -103,12 +173,18 @@ fn test_config_save_to_invalid_path() {
 
 #[test]
 fn test_missing_model_is_error() {
-    let yaml = r#"
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("config.yaml");
+    std::fs::write(
+        &path,
+        r#"
 telegram_token: "test-token"
 openrouter:
   api_key: "test-key"
-"#;
-    let result: Result<Config, _> = serde_yaml::from_str(yaml);
+"#,
+    )
+    .unwrap();
+    let result = Config::load(&path);
     assert!(result.is_err());
 }
 

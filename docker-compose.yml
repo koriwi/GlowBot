@@ -5,6 +5,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./glowbot_data:/home/glowbot/glowbot_data
+      # Uncomment after running `codex login` on the host when provider is codex.
+      # Keep writable so GlowBot can persist refreshed OAuth tokens.
+      # - ~/.codex:/home/glowbot/.codex
     environment:
       - GLOWBOT_DATA_DIR=/home/glowbot/glowbot_data
       - RUST_LOG=info

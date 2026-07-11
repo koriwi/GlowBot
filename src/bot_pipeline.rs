@@ -213,14 +213,16 @@ pub(crate) async fn process_with_llm_impl(
                 }
 
                 // Record assistant's tool call message in the turn
-                if let Some(reasoning) = &choice.message.reasoning {
-                    turn_messages.push(ChatMessage::assistant_tool_calls_with_reasoning(
+                let assistant_message = if let Some(reasoning) = &choice.message.reasoning {
+                    ChatMessage::assistant_tool_calls_with_reasoning(
                         tool_calls.clone(),
                         reasoning.clone(),
-                    ));
+                    )
                 } else {
-                    turn_messages.push(ChatMessage::assistant_tool_calls(tool_calls.clone()));
+                    ChatMessage::assistant_tool_calls(tool_calls.clone())
                 }
+                .with_provider_data(choice.message.provider_data.clone());
+                turn_messages.push(assistant_message);
 
                 let data_dir = { state.lock().await.data_dir.clone() };
                 let results = super::bot_dispatch::dispatch_tool_calls(

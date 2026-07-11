@@ -1,6 +1,7 @@
 use glowbot::bot::GlowBot;
 use glowbot::config::Config;
-use glowbot::llm::OpenRouterBackend;
+use glowbot::config::LlmProvider;
+use glowbot::llm::{CodexBackend, LlmBackend, OpenRouterBackend};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::sync::Arc;
@@ -26,34 +27,50 @@ async fn run_bot() -> anyhow::Result<()> {
     let config = Config::load(&data_dir.join("config.yaml"))?;
     let telegram_token = config.telegram_token.clone();
     let openrouter_key = config.openrouter.api_key.clone();
+    let provider = config.provider;
 
-    let llm = Arc::new(OpenRouterBackend::new(openrouter_key.clone()));
+    let llm: Arc<dyn LlmBackend> = match provider {
+        LlmProvider::Openrouter => Arc::new(OpenRouterBackend::new(openrouter_key.clone())),
+        LlmProvider::Codex => Arc::new(CodexBackend::new(
+            config.codex.clone().expect("validated Codex config"),
+            Some(openrouter_key.clone()),
+        )),
+    };
     let bot = GlowBot::new_with_llm(&data_dir, llm).await?;
     let bot = Arc::new(Mutex::new(bot));
 
-    // Fetch model metadata from OpenRouter in the background.
-    // Avoid holding the bot lock during the HTTP call so message processing isn't blocked.
+    // Populate provider model metadata without blocking startup.
     {
-        let api_key = openrouter_key.clone();
         let state = bot.lock().await.state.clone();
-        tokio::spawn(async move {
-            let client = glowbot::openrouter::OpenRouterClient::new(api_key);
-            match client.fetch_models().await {
-                Ok(models) => {
-                    let mut s = state.lock().await;
-                    for m in models {
-                        s.model_metadata.insert(m.id.clone(), m);
+        match provider {
+            LlmProvider::Openrouter => {
+                let api_key = openrouter_key.clone();
+                tokio::spawn(async move {
+                    let client = glowbot::openrouter::OpenRouterClient::new(api_key);
+                    match client.fetch_models().await {
+                        Ok(models) => {
+                            let mut s = state.lock().await;
+                            for m in models {
+                                s.model_metadata.insert(m.id.clone(), m);
+                            }
+                            log::info!(
+                                "Cached {} model metadata entries from OpenRouter",
+                                s.model_metadata.len()
+                            );
+                        }
+                        Err(e) => log::warn!("Failed to fetch model metadata: {}", e),
                     }
-                    log::info!(
-                        "Cached {} model metadata entries from OpenRouter",
-                        s.model_metadata.len()
-                    );
-                }
-                Err(e) => {
-                    log::warn!("Failed to fetch model metadata: {}", e);
-                }
+                });
             }
-        });
+            LlmProvider::Codex => {
+                let model = config.default_model().to_string();
+                let mut state = state.lock().await;
+                state
+                    .model_metadata
+                    .insert(model.clone(), glowbot::codex::model_info(&model));
+                state.model_order.push(model);
+            }
+        }
     }
 
     // Start embedding backfill (cleanup + async background job)

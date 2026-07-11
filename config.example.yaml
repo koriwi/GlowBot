@@ -1,7 +1,10 @@
 # Global
 telegram_token: "your-telegram-bot-token-here"
 
-# OpenRouter
+# Conversation LLM provider: "openrouter" (default) or "codex"
+provider: openrouter
+
+# OpenRouter (required when provider is openrouter)
 openrouter:
   api_key: "your-openrouter-api-key-here"
   model: "your-model-name-here"
@@ -19,6 +22,16 @@ openrouter:
   # Advice model for the ask_advisor tool — when set, the LLM can call a larger/smarter
   # model for advice. No default — tool is disabled when not configured.
   # advice_model: "openai/gpt-4o"
+
+# OpenAI Codex subscription (required when provider is codex).
+# First run `codex login`, then make its auth.json available to GlowBot.
+# Codex OAuth covers conversation/advisor completions, not OpenRouter-only
+# embeddings, image generation, or audio fallback features.
+# codex:
+#   model: "gpt-5.4"
+#   auth_file: "~/.codex/auth.json"
+#   reasoning_effort: "high"       # optional: low | medium | high | xhigh
+#   base_url: "https://chatgpt.com/backend-api"
 
 # Conversation context settings
 conversation:

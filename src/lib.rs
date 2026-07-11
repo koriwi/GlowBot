@@ -1,6 +1,7 @@
 pub mod bash;
 pub mod bot;
 pub mod bot_send;
+pub mod codex;
 pub mod commands;
 pub mod config;
 pub mod db;
