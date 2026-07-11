@@ -181,9 +181,13 @@ fn build_request_body(
 
 fn append_function_calls(input: &mut Vec<Value>, calls: Option<&[ToolCall]>) {
     for call in calls.unwrap_or_default() {
+        // Historic calls may originate from OpenRouter, whose call IDs (for
+        // example `call_function_…`) are not valid Responses `id` values.
+        // The Codex endpoint requires this internal item ID to begin with
+        // `fc`; the user-visible call_id still links it to its tool result.
         input.push(json!({
             "type": "function_call",
-            "id": call.id,
+            "id": format!("fc_{}", uuid::Uuid::new_v4().simple()),
             "call_id": call.id,
             "name": call.function.name,
             "arguments": call.function.arguments,

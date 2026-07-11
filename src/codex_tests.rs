@@ -161,6 +161,36 @@ async fn parses_tool_calls_and_replays_provider_state() {
 }
 
 #[test]
+fn replayed_non_codex_tool_calls_use_a_valid_codex_item_id() {
+    let call = ToolCall {
+        id: "call_function_rkfa35dm1y77_1".into(),
+        call_type: "function".into(),
+        function: FunctionCall {
+            name: "bash".into(),
+            arguments: "{\"command\":\"pwd\"}".into(),
+        },
+    };
+    let body = build_request_body(
+        &ChatCompletionRequest {
+            model: "gpt-5.6-terra".into(),
+            messages: vec![
+                ChatMessage::assistant_tool_calls(vec![call]),
+                ChatMessage::tool_result("call_function_rkfa35dm1y77_1", "/tmp"),
+            ],
+            tools: None,
+            tool_choice: None,
+            modalities: None,
+            image_config: None,
+        },
+        None,
+    )
+    .unwrap();
+    assert!(body["input"][0]["id"].as_str().unwrap().starts_with("fc_"));
+    assert_eq!(body["input"][0]["call_id"], "call_function_rkfa35dm1y77_1");
+    assert_eq!(body["input"][1]["call_id"], "call_function_rkfa35dm1y77_1");
+}
+
+#[test]
 fn request_conversion_supports_names_images_and_rejects_audio() {
     let image = ChatMessage::user_multimodal_with_name(
         vec![
