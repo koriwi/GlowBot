@@ -248,6 +248,71 @@ async fn test_process_message_command_model_direct_with_specifier() {
 }
 
 #[tokio::test]
+async fn test_codex_model_commands_match_openrouter_controls() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    {
+        let mut s = bot.state.lock().await;
+        s.config.codex = Some(crate::config::CodexConfig {
+            model: "gpt-5.4".into(),
+            auth_file: "auth.json".into(),
+            reasoning_effort: None,
+            base_url: "https://chatgpt.com/backend-api".into(),
+        });
+        s.config.chats.get_mut("-123").unwrap().provider = Some(crate::config::LlmProvider::Codex);
+    }
+
+    let info = bot
+        .process_message("-123", "456", "@testuser", "/model", "mybot")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(info.contains("Current Codex model"));
+    assert!(info.contains("gpt-5.4"));
+
+    let unsupported = bot
+        .process_message("-123", "456", "@testuser", "/model :nitro", "mybot")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(unsupported.contains("only available with OpenRouter"));
+
+    let changed = bot
+        .process_message("-123", "456", "@testuser", "/model gpt-5.5", "mybot")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(changed.contains("gpt-5.5"));
+    {
+        let s = bot.state.lock().await;
+        assert_eq!(s.effective_model("-123"), "gpt-5.5");
+        assert!(s.model_metadata.contains_key("gpt-5.5"));
+    }
+
+    let reset = bot
+        .process_message("-123", "456", "@testuser", "/model_default", "mybot")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(reset.contains("gpt-5.4"));
+    let status = bot
+        .process_message("-123", "456", "@testuser", "/status", "mybot")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(status.contains("Provider: codex"));
+    assert!(status.contains("Model: gpt-5.4"));
+
+    // With no Telegram client the picker reports the same limitation as OpenRouter,
+    // rather than treating Codex as unsupported.
+    let picker = bot
+        .process_message("-123", "456", "@testuser", "/models", "mybot")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(picker.contains("no Telegram bot available"));
+}
+
+#[tokio::test]
 async fn test_process_message_command_model_unauthorized() {
     let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
     // User 789 is not in the command whitelist

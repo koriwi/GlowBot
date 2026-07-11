@@ -180,7 +180,10 @@ Common issues and how to spot them:
 
 | Command | Purpose |
 |---------|---------|
-| `/status` | Show current config and context usage for this chat |
+| `/status` | Show active provider, model, config, and context usage for this chat |
+| `/model` | Show or temporarily switch the active provider's model |
+| `/models` | Browse and temporarily switch models (OpenRouter catalog or Codex picker) |
+| `/model_default` | Reset the temporary model override |
 | `/tasks` | List pending heartbeat tasks |
 | `/stop` | Interrupt ongoing LLM processing |
 | `/new` | Reset conversation context (sets a cutoff timestamp) |

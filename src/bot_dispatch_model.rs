@@ -42,16 +42,27 @@ pub(crate) async fn tool_get_model_info(state: &Arc<Mutex<BotState>>, chat_id: &
             (effective.clone(), None)
         };
 
-    // Get model metadata from cache
+    let provider = s.config.provider_for_chat(chat_id);
+    // Get model metadata from cache. Directly entered Codex model IDs are also
+    // useful before they reach the cache, so derive their known subscription metadata.
     let norm = crate::openrouter::normalize_model_id(&effective);
-    let metadata = s.model_metadata.get(norm).map(|m| {
-        serde_json::json!({
-            "display_name": if m.name.is_empty() { &m.id } else { &m.name },
-            "context_length": m.context_length,
-            "is_free": m.pricing.is_free(),
-            "pricing_per_million": m.pricing.format_per_million(),
+    let metadata = s
+        .model_metadata
+        .get(norm)
+        .cloned()
+        .or_else(|| {
+            (provider == crate::config::LlmProvider::Codex)
+                .then(|| crate::codex::model_info(&effective))
         })
-    });
+        .map(|model| {
+            serde_json::json!({
+                "display_name": if model.name.is_empty() { &model.id } else { &model.name },
+                "context_length": model.context_length,
+                "is_free": model.pricing.is_free(),
+                "pricing_per_million": model.pricing.format_per_million(),
+                "billing": if provider == crate::config::LlmProvider::Codex { "subscription" } else { "api" },
+            })
+        });
 
     let available_specifiers: Vec<&str> =
         if s.config.provider_for_chat(chat_id) == crate::config::LlmProvider::Openrouter {
@@ -64,6 +75,7 @@ pub(crate) async fn tool_get_model_info(state: &Arc<Mutex<BotState>>, chat_id: &
         };
 
     serde_json::json!({
+        "provider": format!("{:?}", provider).to_lowercase(),
         "effective_model": effective,
         "base_model": base_model,
         "specifier": specifier,
@@ -259,6 +271,10 @@ pub async fn handle_model_callback_approval(
             // Apply the model override
             {
                 let mut s = state.lock().await;
+                if s.config.provider_for_chat(&pending.chat_id) == crate::config::LlmProvider::Codex
+                {
+                    super::super::bot_models::cache_codex_model(&mut s, &pending.proposed_model);
+                }
                 s.model_overrides
                     .insert(pending.chat_id.clone(), pending.proposed_model.clone());
             }
@@ -388,7 +404,7 @@ mod tests {
             let mut s = state.lock().await;
             s.config.provider = crate::config::LlmProvider::Codex;
             s.config.codex = Some(crate::config::CodexConfig {
-                model: "gpt-5.4:nitro".into(),
+                model: "gpt-5.5".into(),
                 auth_file: "auth.json".into(),
                 reasoning_effort: None,
                 base_url: "https://chatgpt.com/backend-api".into(),
@@ -396,8 +412,10 @@ mod tests {
         }
         let result = tool_get_model_info(&state, "-123").await;
         let value: serde_json::Value = serde_json::from_str(&result).unwrap();
-        assert_eq!(value["base_model"], "gpt-5.4:nitro");
+        assert_eq!(value["provider"], "codex");
+        assert_eq!(value["base_model"], "gpt-5.5");
         assert!(value["specifier"].is_null());
+        assert_eq!(value["model_metadata"]["context_length"], 272_000);
         assert!(value["available_specifiers"].as_array().unwrap().is_empty());
 
         let proposed = tool_propose_model_change(

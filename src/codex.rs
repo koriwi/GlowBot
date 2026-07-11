@@ -346,6 +346,18 @@ fn codex_endpoint(base_url: &str) -> String {
     }
 }
 
+/// Codex models offered by the interactive model picker. Users can still set
+/// another subscription-entitled Codex model with `/model <model-id>`.
+pub const KNOWN_MODELS: &[(&str, &str)] = &[
+    ("gpt-5.3-codex-spark", "GPT-5.3 Codex Spark"),
+    ("gpt-5.4", "GPT-5.4"),
+    ("gpt-5.4-mini", "GPT-5.4 mini"),
+    ("gpt-5.5", "GPT-5.5"),
+    ("gpt-5.6-luna", "GPT-5.6 Luna"),
+    ("gpt-5.6-sol", "GPT-5.6 Sol"),
+    ("gpt-5.6-terra", "GPT-5.6 Terra"),
+];
+
 /// Build metadata for a configured Codex model without depending on OpenRouter's catalog.
 pub fn model_info(model: &str) -> crate::openrouter::ModelInfo {
     let context_length = if model.ends_with("codex-spark") {
@@ -362,7 +374,11 @@ pub fn model_info(model: &str) -> crate::openrouter::ModelInfo {
     };
     crate::openrouter::ModelInfo {
         id: model.into(),
-        name: format!("OpenAI Codex: {model}"),
+        name: KNOWN_MODELS
+            .iter()
+            .find(|(id, _)| *id == model)
+            .map(|(_, name)| format!("OpenAI Codex: {name}"))
+            .unwrap_or_else(|| format!("OpenAI Codex: {model}")),
         created: 0,
         context_length,
         architecture: crate::openrouter::ModelArchitecture { input_modalities },

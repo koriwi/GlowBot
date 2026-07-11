@@ -701,7 +701,7 @@ pub(crate) fn get_model_info_tool_definition() -> ToolDefinition {
         def_type: "function".into(),
         function: FunctionDef {
             name: "get_model_info".into(),
-            description: "Get information about the currently active model for this chat. Returns the effective model (including any routing specifier like :nitro, :floor, :free), the config default model, whether there's a temporary override, the model's context length and pricing (if known from OpenRouter metadata), and the list of available routing specifiers. Use this when the user asks about the current model, or before proposing a model change so you know what's currently set.".into(),
+            description: "Get information about the currently active model and provider for this chat. Returns the effective model, configured provider, provider-specific default model, temporary override status, context length and pricing when known, and any available routing specifiers. OpenRouter supports :nitro, :floor, and :free; Codex does not. Use this when the user asks about the current model, or before proposing a model change.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {},

@@ -73,6 +73,76 @@ pub(crate) async fn send_model_menu(
     Ok(())
 }
 
+/// Cache the known Codex model metadata for interactive selection and status.
+pub(crate) async fn cache_codex_models(state: &Arc<Mutex<BotState>>) {
+    let mut state = state.lock().await;
+    for (id, _) in crate::codex::KNOWN_MODELS {
+        if !state.model_metadata.contains_key(*id) {
+            state.model_order.push((*id).into());
+            state
+                .model_metadata
+                .insert((*id).into(), crate::codex::model_info(id));
+        }
+    }
+}
+
+/// Cache metadata for a directly specified Codex model.
+pub(crate) fn cache_codex_model(state: &mut BotState, model: &str) {
+    if !state.model_metadata.contains_key(model) {
+        state.model_order.push(model.into());
+        state
+            .model_metadata
+            .insert(model.into(), crate::codex::model_info(model));
+    }
+}
+
+/// Send the Codex model picker. It has the same temporary-switch behavior as
+/// OpenRouter's browser, using the subscription models known to GlowBot.
+pub(crate) async fn send_codex_model_menu(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: &str,
+    bot: teloxide::Bot,
+) -> anyhow::Result<()> {
+    cache_codex_models(state).await;
+    let chat = ChatId(chat_id.parse::<i64>()?);
+    let text = format!(
+        "{}\n\nSelect a Codex model:",
+        format_model_status(state, chat_id).await
+    );
+    let rows: Vec<Vec<InlineKeyboardButton>> = crate::codex::KNOWN_MODELS
+        .iter()
+        .map(|(id, label)| vec![InlineKeyboardButton::callback(*label, detail_cb(id))])
+        .collect();
+    bot.send_message(chat, text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(InlineKeyboardMarkup::new(rows))
+        .await?;
+    Ok(())
+}
+
+/// Send Codex model info with picker access (for `/model` without arguments).
+pub(crate) async fn send_codex_model_info(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: &str,
+    bot: teloxide::Bot,
+) -> anyhow::Result<()> {
+    cache_codex_models(state).await;
+    let chat = ChatId(chat_id.parse::<i64>()?);
+    let text = format!(
+        "{}\n\nSet model: `/model <codex-model>`",
+        format_model_status(state, chat_id).await
+    );
+    let keyboard = InlineKeyboardMarkup::new(vec![vec![InlineKeyboardButton::callback(
+        "🔍 Browse Codex Models",
+        "model:menu",
+    )]]);
+    bot.send_message(chat, text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(keyboard)
+        .await?;
+    Ok(())
+}
+
 /// Send a model info message with specifier buttons (for /model without args).
 pub(crate) async fn send_model_info(
     state: &Arc<Mutex<BotState>>,
@@ -124,7 +194,7 @@ pub async fn handle_model_callback(
 
     match parts[1] {
         "menu" => {
-            if let Err(e) = edit_to_menu(state, chat_id, bot, msg_id).await {
+            if let Err(e) = edit_to_active_menu(state, chat_id, bot, msg_id).await {
                 log::error!("Failed to edit to menu: {}", e);
             }
         }
@@ -187,7 +257,7 @@ pub async fn handle_model_callback(
                     Box::pin(handle_model_callback(state, &cb, bot, chat_id, msg_id)).await;
                 }
                 None => {
-                    if let Err(e) = edit_to_menu(state, chat_id, bot, msg_id).await {
+                    if let Err(e) = edit_to_active_menu(state, chat_id, bot, msg_id).await {
                         log::error!("Failed to edit to menu: {}", e);
                     }
                 }
@@ -241,7 +311,26 @@ async fn fetch_models_if_needed(state: &Arc<Mutex<BotState>>) -> anyhow::Result<
     Ok(())
 }
 
-/// Edit message to show the main menu.
+/// Edit a picker message to the active chat provider's model menu.
+async fn edit_to_active_menu(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: ChatId,
+    bot: &teloxide::Bot,
+    msg_id: MessageId,
+) -> anyhow::Result<()> {
+    if state
+        .lock()
+        .await
+        .config
+        .provider_for_chat(&chat_id.to_string())
+        == crate::config::LlmProvider::Codex
+    {
+        return edit_to_codex_menu(state, chat_id, bot, msg_id).await;
+    }
+    edit_to_menu(state, chat_id, bot, msg_id).await
+}
+
+/// Edit message to show the main OpenRouter menu.
 async fn edit_to_menu(
     state: &Arc<Mutex<BotState>>,
     chat_id: ChatId,
@@ -274,6 +363,29 @@ async fn edit_to_menu(
         .reply_markup(keyboard)
         .await?;
 
+    Ok(())
+}
+
+/// Edit message to show the Codex model picker.
+async fn edit_to_codex_menu(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: ChatId,
+    bot: &teloxide::Bot,
+    msg_id: MessageId,
+) -> anyhow::Result<()> {
+    cache_codex_models(state).await;
+    let text = format!(
+        "{}\n\nSelect a Codex model:",
+        format_model_status(state, &chat_id.to_string()).await
+    );
+    let rows: Vec<Vec<InlineKeyboardButton>> = crate::codex::KNOWN_MODELS
+        .iter()
+        .map(|(id, label)| vec![InlineKeyboardButton::callback(*label, detail_cb(id))])
+        .collect();
+    bot.edit_message_text(chat_id, msg_id, text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(InlineKeyboardMarkup::new(rows))
+        .await?;
     Ok(())
 }
 
@@ -544,6 +656,8 @@ async fn edit_to_detail(
         .map(|m| m == model_id)
         .unwrap_or(false);
     let current_config_model = s.config.model_for_chat(&chat_id.to_string()).to_string();
+    let is_codex =
+        s.config.provider_for_chat(&chat_id.to_string()) == crate::config::LlmProvider::Codex;
     drop(s);
 
     let (display_name, context_len, pricing_text) = match model_data {
@@ -555,7 +669,9 @@ async fn edit_to_detail(
             } else {
                 format!("{}k", ctx / 1000)
             };
-            let pricing = if is_free {
+            let pricing = if is_codex {
+                "Included with ChatGPT/Codex subscription".to_string()
+            } else if is_free {
                 "🆓 Free".to_string()
             } else {
                 format!("💲 {} per 1M tokens", formatted_pricing)
@@ -625,8 +741,29 @@ async fn select_model(
     msg_id: MessageId,
     model_id: &str,
 ) -> anyhow::Result<()> {
+    let codex_picker_model_is_invalid = {
+        let s = state.lock().await;
+        s.config.provider_for_chat(&chat_id.to_string()) == crate::config::LlmProvider::Codex
+            && !crate::codex::KNOWN_MODELS
+                .iter()
+                .any(|(id, _)| *id == model_id)
+    };
+    if codex_picker_model_is_invalid {
+        bot.edit_message_text(
+            chat_id,
+            msg_id,
+            "This model is not available in the Codex picker\\. Use `/model <codex\\-model>` to set another subscription model\\.",
+        )
+        .parse_mode(ParseMode::MarkdownV2)
+        .await?;
+        return Ok(());
+    }
+
     {
         let mut s = state.lock().await;
+        if s.config.provider_for_chat(&chat_id.to_string()) == crate::config::LlmProvider::Codex {
+            cache_codex_model(&mut s, model_id);
+        }
         s.model_overrides
             .insert(chat_id.to_string(), model_id.to_string());
     }
@@ -672,6 +809,23 @@ async fn handle_spec_callback(
     msg_id: MessageId,
     specifier: &str,
 ) -> anyhow::Result<()> {
+    if state
+        .lock()
+        .await
+        .config
+        .provider_for_chat(&chat_id.to_string())
+        != crate::config::LlmProvider::Openrouter
+    {
+        bot.edit_message_text(
+            chat_id,
+            msg_id,
+            "Routing specifiers are only available with OpenRouter\\.",
+        )
+        .parse_mode(ParseMode::MarkdownV2)
+        .await?;
+        return Ok(());
+    }
+
     // Validate specifier
     let valid: Vec<&str> = crate::openrouter::SPECIFIER_BUTTONS
         .iter()
@@ -724,21 +878,162 @@ async fn format_model_status(state: &Arc<Mutex<BotState>>, chat_id: &str) -> Str
     let s = state.lock().await;
     let current = s.effective_model(chat_id);
     let config_default = s.config.model_for_chat(chat_id);
+    let provider = s.config.provider_for_chat(chat_id);
     let has_override = s.model_overrides.contains_key(chat_id);
+    let provider_name = format!("{:?}", provider).to_lowercase();
 
     if has_override {
         format!(
-            "🎯 *Current model:* `{}` \\(override\\)\n📌 Config default: `{}`\n\nBrowse models:",
-            current, config_default
+            "🎯 *Current model:* `{}` \\(override\\)\n🏷 Provider: `{}`\n📌 Config default: `{}`\n\nBrowse models:",
+            current, provider_name, config_default
         )
     } else {
-        format!("🎯 *Current model:* `{}`\n\nBrowse models:", current)
+        format!(
+            "🎯 *Current model:* `{}`\n🏷 Provider: `{}`\n\nBrowse models:",
+            current, provider_name
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{ChatConfig, CodexConfig, LlmProvider};
+    use crate::llm::mock::MockLlmBackend;
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn codex_state() -> (Arc<Mutex<BotState>>, TempDir) {
+        let dir = TempDir::new().unwrap();
+        let mut config = crate::config::basic_config();
+        config.codex = Some(CodexConfig {
+            model: "gpt-5.4".into(),
+            auth_file: "auth.json".into(),
+            reasoning_effort: None,
+            base_url: "https://chatgpt.com/backend-api".into(),
+        });
+        config.chats.insert(
+            "-123".into(),
+            ChatConfig {
+                provider: Some(LlmProvider::Codex),
+                ..Default::default()
+            },
+        );
+        (
+            Arc::new(Mutex::new(BotState {
+                config,
+                skills: HashMap::new(),
+                llm: Arc::new(MockLlmBackend::new()),
+                data_dir: dir.path().to_path_buf(),
+                db: crate::db::Database::open_in_memory().unwrap(),
+                mcp_tools: vec![],
+                _mcp_services: vec![],
+                mcp_peers: HashMap::new(),
+                model_metadata: HashMap::new(),
+                model_order: vec![],
+                last_usage: HashMap::new(),
+                pending_config_changes: HashMap::new(),
+                pending_model_changes: HashMap::new(),
+                model_overrides: HashMap::new(),
+                last_browse_cb: HashMap::new(),
+            })),
+            dir,
+        )
+    }
+
+    fn telegram_bot(server: &MockServer) -> teloxide::Bot {
+        teloxide::Bot::new("test-token")
+            .set_api_url(reqwest::Url::parse(&format!("{}/", server.uri())).unwrap())
+    }
+
+    fn telegram_message_response() -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true,
+            "result": {
+                "message_id": 1,
+                "date": 0,
+                "chat": {"id": -123, "type": "group"}
+            }
+        }))
+    }
+
+    #[tokio::test]
+    async fn test_codex_picker_sends_subscription_models_and_caches_metadata() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(telegram_message_response())
+            .mount(&server)
+            .await;
+        let (state, _dir) = codex_state().await;
+
+        send_codex_model_menu(&state, "-123", telegram_bot(&server))
+            .await
+            .unwrap();
+        send_codex_model_info(&state, "-123", telegram_bot(&server))
+            .await
+            .unwrap();
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2);
+        let menu: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert!(menu["text"].as_str().unwrap().contains("Provider: `codex`"));
+        assert!(menu["reply_markup"]["inline_keyboard"]
+            .to_string()
+            .contains("GPT-5.4"));
+        let state = state.lock().await;
+        assert!(state.model_metadata.contains_key("gpt-5.4"));
+        assert!(state.model_metadata.contains_key("gpt-5.6-terra"));
+    }
+
+    #[tokio::test]
+    async fn test_codex_picker_selects_known_models_only() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(telegram_message_response())
+            .mount(&server)
+            .await;
+        let (state, _dir) = codex_state().await;
+        let bot = telegram_bot(&server);
+
+        select_model(&state, ChatId(-123), &bot, MessageId(1), "gpt-5.5")
+            .await
+            .unwrap();
+        {
+            let state = state.lock().await;
+            assert_eq!(state.model_overrides.get("-123").unwrap(), "gpt-5.5");
+            assert!(state.model_metadata.contains_key("gpt-5.5"));
+        }
+
+        select_model(&state, ChatId(-123), &bot, MessageId(1), "openai/gpt-4o")
+            .await
+            .unwrap();
+        assert_eq!(
+            state.lock().await.model_overrides.get("-123").unwrap(),
+            "gpt-5.5"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_codex_picker_rejects_openrouter_specifier_callbacks() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(telegram_message_response())
+            .mount(&server)
+            .await;
+        let (state, _dir) = codex_state().await;
+        handle_spec_callback(
+            &state,
+            ChatId(-123),
+            &telegram_bot(&server),
+            MessageId(1),
+            "nitro",
+        )
+        .await
+        .unwrap();
+        assert!(state.lock().await.model_overrides.is_empty());
+    }
 
     #[test]
     fn test_detail_cb_short_id_uses_full_prefix() {

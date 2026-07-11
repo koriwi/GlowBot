@@ -443,8 +443,8 @@ Commands are Telegram bot commands (`/command`) used for control and settings. *
 | Command | Purpose | Requires |
 |---------|---------|----------|
 | `/status` | Show current config + context usage for this chat | command whitelist |
-| `/model` | Show or set the current model (supports specifiers: `:nitro`, `:floor`, `:free`) | command whitelist |
-| `/models` | Browse and temporarily switch models via inline keyboard | command whitelist |
+| `/model` | Show or set the current model; OpenRouter supports `:nitro`, `:floor`, `:free`, while Codex opens its subscription-model picker | command whitelist |
+| `/models` | Browse and temporarily switch models via inline keyboard (OpenRouter catalog or Codex picker) | command whitelist |
 | `/model_default` | Reset temporary model override to config default (alias: `/model_reset`) | command whitelist |
 | `/tasks` | List all pending tasks for this chat | command whitelist |
 | `/todos` | List all human todos for this chat | command whitelist |
