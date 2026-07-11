@@ -27,38 +27,99 @@ pub(crate) async fn access_token_with_url(
     let _guard = auth_lock.lock().await;
     let path = expand_home(&config.auth_file)?;
     let mut auth = read_auth(&path)?;
-    let access = auth
-        .pointer("/tokens/access_token")
-        .and_then(Value::as_str)
-        .context("Codex auth file has no tokens.access_token; run `codex login`")?;
+    let format = auth_format(&auth)?;
+    let access = stored_token(&auth, format, "access")
+        .context("Codex auth file has no access token; run `codex login` or Pi's `/login`")?;
 
     if token_valid_for(access, 300)? {
         return Ok(access.to_string());
     }
 
-    let refresh = auth
-        .pointer("/tokens/refresh_token")
-        .and_then(Value::as_str)
+    let refresh = stored_token(&auth, format, "refresh")
         .context("Codex access token expired and auth file has no refresh token")?
         .to_string();
     let refreshed = refresh_token(client, &refresh, token_url).await?;
-    let tokens = auth
-        .get_mut("tokens")
-        .and_then(Value::as_object_mut)
-        .context("Codex auth file has an invalid tokens object")?;
-    tokens.insert(
-        "access_token".into(),
-        Value::String(refreshed.access_token.clone()),
-    );
-    if let Some(refresh_token) = refreshed.refresh_token {
-        tokens.insert("refresh_token".into(), Value::String(refresh_token));
-    }
-    if let Some(id_token) = refreshed.id_token {
-        tokens.insert("id_token".into(), Value::String(id_token));
-    }
-    auth["last_refresh"] = Value::String(chrono::Utc::now().to_rfc3339());
+    persist_refreshed_tokens(&mut auth, format, &refreshed)?;
     write_auth(&path, &auth)?;
     Ok(refreshed.access_token)
+}
+
+#[derive(Clone, Copy)]
+enum AuthFormat {
+    CodexCli,
+    Pi,
+}
+
+fn auth_format(auth: &Value) -> anyhow::Result<AuthFormat> {
+    if auth.get("tokens").and_then(Value::as_object).is_some() {
+        Ok(AuthFormat::CodexCli)
+    } else if auth
+        .get("openai-codex")
+        .and_then(Value::as_object)
+        .is_some()
+    {
+        Ok(AuthFormat::Pi)
+    } else {
+        anyhow::bail!(
+            "Unsupported Codex auth file format; use ~/.codex/auth.json or Pi's ~/.pi/agent/auth.json"
+        )
+    }
+}
+
+fn stored_token<'a>(auth: &'a Value, format: AuthFormat, token: &str) -> Option<&'a str> {
+    let (container, key) = match (format, token) {
+        (AuthFormat::CodexCli, "access") => ("tokens", "access_token"),
+        (AuthFormat::CodexCli, "refresh") => ("tokens", "refresh_token"),
+        (AuthFormat::Pi, "access") => ("openai-codex", "access"),
+        (AuthFormat::Pi, "refresh") => ("openai-codex", "refresh"),
+        _ => return None,
+    };
+    auth.get(container)?.get(key)?.as_str()
+}
+
+fn persist_refreshed_tokens(
+    auth: &mut Value,
+    format: AuthFormat,
+    refreshed: &RefreshResponse,
+) -> anyhow::Result<()> {
+    let (container, access_key, refresh_key) = match format {
+        AuthFormat::CodexCli => ("tokens", "access_token", "refresh_token"),
+        AuthFormat::Pi => ("openai-codex", "access", "refresh"),
+    };
+    let tokens = auth
+        .get_mut(container)
+        .and_then(Value::as_object_mut)
+        .context("Codex auth file has an invalid credential object")?;
+    tokens.insert(
+        access_key.into(),
+        Value::String(refreshed.access_token.clone()),
+    );
+    if let Some(refresh_token) = &refreshed.refresh_token {
+        tokens.insert(refresh_key.into(), Value::String(refresh_token.clone()));
+    }
+    if let Some(id_token) = &refreshed.id_token {
+        tokens.insert("id_token".into(), Value::String(id_token.clone()));
+    }
+    match format {
+        AuthFormat::CodexCli => {
+            auth["last_refresh"] = Value::String(chrono::Utc::now().to_rfc3339());
+        }
+        AuthFormat::Pi => {
+            tokens.insert(
+                "expires".into(),
+                Value::from(token_expiry_millis(&refreshed.access_token)?),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn token_expiry_millis(token: &str) -> anyhow::Result<i64> {
+    Ok(jwt_payload(token)?
+        .get("exp")
+        .and_then(Value::as_i64)
+        .context("Codex access token has no expiry")?
+        * 1000)
 }
 
 #[derive(Deserialize)]

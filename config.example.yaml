@@ -24,7 +24,8 @@ openrouter:
   # advice_model: "openai/gpt-4o"
 
 # OpenAI Codex subscription (required when provider is codex).
-# First run `codex login`, then make its auth.json available to GlowBot.
+# First run `codex login`, then make its auth.json available to GlowBot. Alternatively,
+# Pi's ~/.pi/agent/auth.json with an `openai-codex` login is supported directly.
 # Codex OAuth covers conversation/advisor completions, not OpenRouter-only
 # embeddings, image generation, or audio fallback features.
 # codex:

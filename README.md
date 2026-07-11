@@ -51,7 +51,7 @@ codex:
   reasoning_effort: "high" # optional
 ```
 
-GlowBot reads and automatically refreshes the official Codex CLI credentials. Treat `auth.json` like a password. In Docker, mount the Codex directory so refreshes persist:
+GlowBot reads and automatically refreshes the official Codex CLI credentials. It also accepts Pi's `~/.pi/agent/auth.json` directly when its `openai-codex` login is configured; set `auth_file` to that path and mount the Pi directory instead. Treat either file like a password. In Docker, mount the selected credential directory so refreshes persist:
 
 ```bash
 docker run \

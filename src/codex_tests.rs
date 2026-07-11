@@ -36,6 +36,25 @@ fn auth_file(dir: &TempDir, access_token: &str) -> PathBuf {
     path
 }
 
+fn pi_auth_file(dir: &TempDir, access_token: &str) -> PathBuf {
+    let path = dir.path().join("pi-auth.json");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({
+            "openai-codex": {
+                "type": "oauth",
+                "access": access_token,
+                "refresh": "refresh-token",
+                "expires": 0,
+                "accountId": "acct"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    path
+}
+
 fn config(server: &MockServer, auth_file: &Path) -> CodexConfig {
     CodexConfig {
         model: "gpt-5.4".into(),
@@ -250,6 +269,39 @@ async fn refreshes_expired_credentials_and_persists_them() {
     assert_eq!(saved["tokens"]["access_token"], refreshed);
     assert_eq!(saved["tokens"]["refresh_token"], "rotated-refresh");
     assert!(saved["last_refresh"].is_string());
+}
+
+#[tokio::test]
+async fn refreshes_pi_codex_credentials_and_preserves_its_format() {
+    let server = MockServer::start().await;
+    let dir = TempDir::new().unwrap();
+    let expired = jwt(chrono::Utc::now().timestamp() - 1, "acct");
+    let refreshed_expiry = chrono::Utc::now().timestamp() + 3600;
+    let refreshed = jwt(refreshed_expiry, "acct");
+    let auth = pi_auth_file(&dir, &expired);
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "access_token": refreshed,
+            "refresh_token": "rotated-refresh"
+        })))
+        .mount(&server)
+        .await;
+
+    let token = access_token_with_url(
+        &config(&server, &auth),
+        &reqwest::Client::new(),
+        &Mutex::new(()),
+        &format!("{}/oauth/token", server.uri()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(token, refreshed);
+    let saved: Value = serde_json::from_slice(&std::fs::read(&auth).unwrap()).unwrap();
+    assert_eq!(saved["openai-codex"]["access"], refreshed);
+    assert_eq!(saved["openai-codex"]["refresh"], "rotated-refresh");
+    assert_eq!(saved["openai-codex"]["expires"], refreshed_expiry * 1000);
+    assert_eq!(saved["openai-codex"]["type"], "oauth");
 }
 
 #[tokio::test]
