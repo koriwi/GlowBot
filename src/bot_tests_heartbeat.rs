@@ -309,6 +309,8 @@ fn test_context_usage_formatting() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     };

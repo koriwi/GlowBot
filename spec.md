@@ -443,9 +443,10 @@ Commands are Telegram bot commands (`/command`) used for control and settings. *
 | Command | Purpose | Requires |
 |---------|---------|----------|
 | `/status` | Show current config + context usage for this chat | command whitelist |
-| `/model` | Show or set the current model; OpenRouter supports `:nitro`, `:floor`, `:free`, while Codex opens its subscription-model picker | command whitelist |
-| `/models` | Browse and temporarily switch models via inline keyboard (OpenRouter catalog or Codex picker) | command whitelist |
-| `/model_default` | Reset temporary model override to config default (alias: `/model_reset`) | command whitelist |
+| `/codex_usage` | Show Codex subscription allowance and rate-limit reset times | command whitelist |
+| `/model` | Show or set the current model; use `/model codex [model]` or `/model openrouter [model]` to temporarily switch provider; OpenRouter supports `:nitro`, `:floor`, `:free` | command whitelist |
+| `/models` | Choose a provider, then browse and temporarily switch its models via inline keyboard | command whitelist |
+| `/model_default` | Reset temporary model and provider overrides to config defaults (alias: `/model_reset`) | command whitelist |
 | `/tasks` | List all pending tasks for this chat | command whitelist |
 | `/todos` | List all human todos for this chat | command whitelist |
 | `/reminders` | List all pending reminders for this chat | command whitelist |
@@ -471,6 +472,7 @@ Command whitelist: enabled
 
 - `Context usage` shows the last known prompt token count against the model's context limit, with percentage.
 - Before any messages are processed, or if model metadata is unavailable, it shows `unknown`.
+- `/codex_usage` calls Codex's subscription usage endpoint and reports available allowance, reset times, and credit information when OpenAI provides it. It works whenever a `codex` configuration is present, regardless of the active chat provider.
 
 #### Whitelist rules
 

@@ -137,6 +137,45 @@ fn parses_streamed_text_when_completed_event_omits_output() {
 }
 
 #[tokio::test]
+async fn fetches_and_formats_codex_subscription_usage() {
+    let server = MockServer::start().await;
+    let dir = TempDir::new().unwrap();
+    let token = jwt(chrono::Utc::now().timestamp() + 3600, "acct-123");
+    let auth = auth_file(&dir, &token);
+    Mock::given(method("GET"))
+        .and(path("/api/codex/usage"))
+        .and(header("authorization", format!("Bearer {token}")))
+        .and(header("chatgpt-account-id", "acct-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "plan_type": "plus",
+            "rate_limit": {
+                "primary_window": {
+                    "used_percent": 42,
+                    "limit_window_seconds": 18000,
+                    "reset_at": 1_800_000_000
+                },
+                "secondary_window": {
+                    "used_percent": 80,
+                    "limit_window_seconds": 604800,
+                    "reset_at": 1_800_100_000
+                }
+            },
+            "credits": {"unlimited": true}
+        })))
+        .mount(&server)
+        .await;
+
+    let usage = CodexClient::new(config(&server, &auth))
+        .usage()
+        .await
+        .unwrap();
+    assert!(usage.contains("Plan: `plus`"));
+    assert!(usage.contains("Codex 5h: 58% remaining"));
+    assert!(usage.contains("Codex weekly: 20% remaining"));
+    assert!(usage.contains("Credits: unlimited"));
+}
+
+#[tokio::test]
 async fn parses_tool_calls_and_replays_provider_state() {
     let response = json!({
         "output": [

@@ -146,6 +146,8 @@ mod tests {
             pending_config_changes: std::collections::HashMap::new(),
             pending_model_changes: std::collections::HashMap::new(),
             model_overrides: std::collections::HashMap::new(),
+            provider_overrides: std::collections::HashMap::new(),
+            picker_providers: std::collections::HashMap::new(),
             last_browse_cb: std::collections::HashMap::new(),
         }));
         (state, dir)

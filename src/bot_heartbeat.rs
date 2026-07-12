@@ -176,7 +176,7 @@ pub async fn run_heartbeat_task(
                 .get(crate::openrouter::normalize_model_id(&model))
                 .map(|m| m.context_length)
                 .unwrap_or(0);
-            let provider = s.config.provider_for_chat(&cid);
+            let provider = s.effective_provider(&cid);
             (base, model, tools, ctx, provider)
         };
 
@@ -302,7 +302,7 @@ async fn process_reminder_action(
             .get(crate::openrouter::normalize_model_id(&model))
             .map(|m| m.context_length)
             .unwrap_or(0);
-        let provider = s.config.provider_for_chat(&cid);
+        let provider = s.effective_provider(&cid);
         (base, model, tools, ctx, provider)
     };
 

@@ -99,7 +99,8 @@ async fn run_bot() -> anyhow::Result<()> {
     // Register slash commands with Telegram so they show in the menu and autocomplete
     let commands = vec![
         BotCommand::new("status", "📊 Show current config for this chat"),
-        BotCommand::new("model", "🤖 Set or view the current model"),
+        BotCommand::new("codex_usage", "📈 Show Codex subscription allowance"),
+        BotCommand::new("model", "🤖 Set or view the current model/provider"),
         BotCommand::new("models", "🔄 Browse and temporarily switch models"),
         BotCommand::new("model_default", "↩️ Reset model to config default"),
         BotCommand::new("tasks", "📋 Show pending tasks for this chat"),

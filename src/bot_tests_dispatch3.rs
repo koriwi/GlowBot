@@ -234,6 +234,8 @@ fn make_bot_state(cfg: crate::config::Config, data_dir: &std::path::Path) -> Arc
         pending_config_changes: HashMap::new(),
         pending_model_changes: HashMap::new(),
         model_overrides: HashMap::new(),
+        provider_overrides: HashMap::new(),
+        picker_providers: HashMap::new(),
         last_browse_cb: HashMap::new(),
         _mcp_services: vec![],
         mcp_peers: HashMap::new(),

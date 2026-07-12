@@ -51,6 +51,11 @@ pub struct BotState {
     /// Per-chat temporary model overrides set via /models (keyed by chat_id string).
     /// Cleared on /model_default or restart.
     pub model_overrides: HashMap<String, String>,
+    /// Per-chat temporary provider overrides set via /model or /models.
+    /// Cleared on /model_default or restart.
+    pub provider_overrides: HashMap<String, crate::config::LlmProvider>,
+    /// Provider currently being browsed by the interactive model picker.
+    pub picker_providers: HashMap<String, crate::config::LlmProvider>,
     /// Per-chat last browse callback data, used for "Back" navigation
     /// from the model detail view back to the originating browse page.
     pub last_browse_cb: HashMap<String, String>,
@@ -110,10 +115,24 @@ impl BotState {
         )
     }
 
-    /// Get the effective model for a chat, respecting any temporary override.
+    /// Get the effective provider for a chat, respecting any temporary override.
+    pub fn effective_provider(&self, chat_id: &str) -> crate::config::LlmProvider {
+        self.provider_overrides
+            .get(chat_id)
+            .copied()
+            .unwrap_or_else(|| self.config.provider_for_chat(chat_id))
+    }
+
+    /// Get the effective model for a chat, respecting temporary overrides.
     pub fn effective_model(&self, chat_id: &str) -> String {
         if let Some(override_model) = self.model_overrides.get(chat_id) {
             return override_model.clone();
+        }
+        if self.provider_overrides.contains_key(chat_id) {
+            return self
+                .config
+                .default_model_for_provider(self.effective_provider(chat_id))
+                .to_string();
         }
         self.config.model_for_chat(chat_id).to_string()
     }

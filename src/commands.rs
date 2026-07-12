@@ -5,6 +5,8 @@ use crate::config::{ChatConfig, Config};
 pub enum Command {
     /// /status
     Status,
+    /// /codex_usage — show Codex subscription allowance and reset times
+    CodexUsage,
     /// /stop
     Stop,
     /// /tasks
@@ -51,6 +53,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
 
     match cmd {
         "/status" => Some(Command::Status),
+        "/codex_usage" => Some(Command::CodexUsage),
         "/stop" => Some(Command::Stop),
         "/tasks" => Some(Command::Tasks),
         "/todos" => {
@@ -101,7 +104,7 @@ pub fn handle_command(
     chat_id: &str,
     context_usage: &str,
 ) -> String {
-    handle_command_with_model(command, config, chat_id, context_usage, None)
+    handle_command_with_model(command, config, chat_id, context_usage, None, None)
 }
 
 /// Handle a command with an optional effective model override (for /status showing
@@ -112,11 +115,16 @@ pub fn handle_command_with_model(
     chat_id: &str,
     context_usage: &str,
     effective_model: Option<&str>,
+    effective_provider: Option<crate::config::LlmProvider>,
 ) -> String {
     match command {
         Command::Status => {
             let model = effective_model.unwrap_or_else(|| config.model_for_chat(chat_id));
-            let provider = format!("{:?}", config.provider_for_chat(chat_id)).to_lowercase();
+            let provider = format!(
+                "{:?}",
+                effective_provider.unwrap_or_else(|| config.provider_for_chat(chat_id))
+            )
+            .to_lowercase();
             if chat_id.starts_with('-') {
                 // Group chat
                 let chat = config.chat_config(chat_id);
@@ -171,6 +179,7 @@ pub fn handle_command_with_model(
                 )
             }
         }
+        Command::CodexUsage => String::new(), // handled in handle_bot_command
         Command::Stop => "Stop command received.".to_string(),
         Command::Tasks => String::new(), // handled in handle_bot_command
         Command::Todos(_) => String::new(), // handled in handle_bot_command
@@ -194,6 +203,11 @@ mod tests {
     #[test]
     fn test_parse_command_status() {
         assert_eq!(parse_command("/status"), Some(Command::Status));
+        assert_eq!(parse_command("/codex_usage"), Some(Command::CodexUsage));
+        assert_eq!(
+            parse_command("/codex_usage@glowythebot"),
+            Some(Command::CodexUsage)
+        );
     }
 
     #[test]

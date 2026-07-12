@@ -234,6 +234,41 @@ async fn test_process_message_command_model_direct() {
 }
 
 #[tokio::test]
+async fn test_process_message_command_switches_provider_and_model() {
+    let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
+    {
+        let mut s = bot.state.lock().await;
+        s.config.codex = Some(crate::config::CodexConfig {
+            model: "gpt-5.4".into(),
+            auth_file: "auth.json".into(),
+            reasoning_effort: None,
+            base_url: "https://chatgpt.com/backend-api".into(),
+        });
+    }
+
+    let response = bot
+        .process_message("-123", "456", "@testuser", "/model codex gpt-5.6-terra", "mybot")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(response.contains("Provider: `codex`"));
+    let s = bot.state.lock().await;
+    assert_eq!(s.effective_provider("-123"), crate::config::LlmProvider::Codex);
+    assert_eq!(s.effective_model("-123"), "gpt-5.6-terra");
+    drop(s);
+
+    bot.process_message("-123", "456", "@testuser", "/model_default", "mybot")
+        .await
+        .unwrap();
+    let s = bot.state.lock().await;
+    assert_eq!(
+        s.effective_provider("-123"),
+        crate::config::LlmProvider::Openrouter
+    );
+    assert!(s.model_overrides.get("-123").is_none());
+}
+
+#[tokio::test]
 async fn test_process_message_command_model_direct_with_specifier() {
     let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
     let result = bot

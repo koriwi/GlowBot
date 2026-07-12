@@ -89,7 +89,7 @@ pub(crate) async fn process_with_llm_impl(
         (
             s.assemble_system_prompt(chat_id, tools_enabled, user_id),
             s.effective_model(chat_id),
-            s.config.provider_for_chat(chat_id),
+            s.effective_provider(chat_id),
         )
     };
 

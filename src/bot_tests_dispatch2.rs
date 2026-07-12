@@ -20,6 +20,8 @@ async fn test_dispatch_send_message_empty_text() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
@@ -54,6 +56,8 @@ async fn test_dispatch_send_message_no_tg_bot() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
@@ -88,6 +92,8 @@ async fn test_dispatch_send_media_empty_file_path() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
@@ -122,6 +128,8 @@ async fn test_dispatch_send_media_file_not_found() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
@@ -158,6 +166,8 @@ async fn test_dispatch_send_media_no_tg_bot() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
@@ -193,6 +203,8 @@ async fn test_dispatch_send_media_original_quality() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
@@ -232,6 +244,8 @@ fn setup_state_with_media_dir(media_dir: &std::path::Path) -> Arc<Mutex<BotState
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
@@ -378,6 +392,8 @@ async fn test_dispatch_bash_empty_command() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
@@ -413,6 +429,8 @@ async fn test_dispatch_bash_disabled() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
@@ -451,6 +469,8 @@ async fn test_dispatch_read_memory_missing() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));
@@ -485,6 +505,8 @@ async fn test_dispatch_update_memory_no_fields() {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
             _mcp_services: vec![], mcp_peers: HashMap::new(),
     }));

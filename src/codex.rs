@@ -67,6 +67,32 @@ impl CodexClient {
         }
         parse_sse_response(&body_text)
     }
+
+    /// Fetch remaining Codex subscription allowance and reset times.
+    pub async fn usage(&self) -> anyhow::Result<String> {
+        let token = access_token(&self.config, &self.http_client, &self.auth_lock).await?;
+        let account_id = account_id(&token)?;
+        let endpoint = codex_usage_endpoint(&self.config.base_url);
+        let response = self
+            .http_client
+            .get(&endpoint)
+            .bearer_auth(&token)
+            .header("chatgpt-account-id", account_id)
+            .header("originator", "glowbot")
+            .header("User-Agent", "glowbot")
+            .send()
+            .await?;
+        let status = response.status();
+        let body = response.text().await?;
+        if !status.is_success() {
+            anyhow::bail!(
+                "Codex usage request failed ({status}): {}",
+                truncate(&body, 1000)
+            );
+        }
+        let usage: Value = serde_json::from_str(&body).context("Invalid Codex usage response")?;
+        format_usage(&usage)
+    }
 }
 
 fn build_request_body(
@@ -387,6 +413,99 @@ fn codex_endpoint(base_url: &str) -> String {
         format!("{base}/responses")
     } else {
         format!("{base}/codex/responses")
+    }
+}
+
+fn codex_usage_endpoint(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    if base.contains("/backend-api") {
+        format!("{base}/wham/usage")
+    } else {
+        format!("{base}/api/codex/usage")
+    }
+}
+
+fn format_usage(usage: &Value) -> anyhow::Result<String> {
+    let mut lines = vec!["📊 *Codex subscription usage*".to_string()];
+    if let Some(plan) = usage.get("plan_type").and_then(Value::as_str) {
+        lines.push(format!("Plan: `{}`", plan));
+    }
+
+    let mut append_windows = |label: &str, rate_limit: &Value| {
+        for (name, field) in [
+            ("Primary", "primary_window"),
+            ("Secondary", "secondary_window"),
+        ] {
+            let Some(window) = rate_limit.get(field).filter(|value| !value.is_null()) else {
+                continue;
+            };
+            let used = window.get("used_percent").and_then(Value::as_f64);
+            let duration = window
+                .get("limit_window_seconds")
+                .and_then(Value::as_i64)
+                .map(format_window_duration)
+                .unwrap_or_else(|| name.to_string());
+            let reset = window
+                .get("reset_at")
+                .and_then(Value::as_i64)
+                .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
+                .map(|time| time.format("%Y-%m-%d %H:%M UTC").to_string())
+                .unwrap_or_else(|| "unknown".into());
+            if let Some(used) = used {
+                lines.push(format!(
+                    "{} {}: {:.0}% remaining · resets {}",
+                    label,
+                    duration,
+                    (100.0 - used).clamp(0.0, 100.0),
+                    reset
+                ));
+            }
+        }
+    };
+
+    if let Some(rate_limit) = usage.get("rate_limit").filter(|value| !value.is_null()) {
+        append_windows("Codex", rate_limit);
+    }
+    for limit in usage
+        .get("additional_rate_limits")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(rate_limit) = limit.get("rate_limit").filter(|value| !value.is_null()) {
+            let label = limit
+                .get("limit_name")
+                .and_then(Value::as_str)
+                .unwrap_or("Additional");
+            append_windows(label, rate_limit);
+        }
+    }
+    if let Some(credits) = usage.get("credits").filter(|value| !value.is_null()) {
+        if credits
+            .get("unlimited")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            lines.push("Credits: unlimited".into());
+        } else if let Some(balance) = credits.get("balance").and_then(Value::as_str) {
+            lines.push(format!("Credits: {}", balance));
+        }
+    }
+    if lines.len() == 1 {
+        anyhow::bail!("Codex usage response contained no rate-limit information")
+    }
+    Ok(lines.join("\n"))
+}
+
+fn format_window_duration(seconds: i64) -> String {
+    match seconds {
+        300 => "5 min".into(),
+        18_000 => "5h".into(),
+        604_800 => "weekly".into(),
+        value if value % 86_400 == 0 => format!("{}d", value / 86_400),
+        value if value % 3_600 == 0 => format!("{}h", value / 3_600),
+        value if value % 60 == 0 => format!("{} min", value / 60),
+        value => format!("{} sec", value),
     }
 }
 

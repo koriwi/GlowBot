@@ -181,9 +181,10 @@ Common issues and how to spot them:
 | Command | Purpose |
 |---------|---------|
 | `/status` | Show active provider, model, config, and context usage for this chat |
-| `/model` | Show or temporarily switch the active provider's model |
-| `/models` | Browse and temporarily switch models (OpenRouter catalog or Codex picker) |
-| `/model_default` | Reset the temporary model override |
+| `/codex_usage` | Show Codex subscription allowance and reset times |
+| `/model` | Show or temporarily switch model; use `/model codex [model]` or `/model openrouter [model]` to switch provider |
+| `/models` | Choose a provider, then browse and temporarily switch its models |
+| `/model_default` | Reset temporary model and provider overrides |
 | `/tasks` | List pending heartbeat tasks |
 | `/stop` | Interrupt ongoing LLM processing |
 | `/new` | Reset conversation context (sets a cutoff timestamp) |

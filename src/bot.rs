@@ -83,6 +83,8 @@ impl GlowBot {
             pending_config_changes: HashMap::new(),
             pending_model_changes: HashMap::new(),
             model_overrides: HashMap::new(),
+            provider_overrides: HashMap::new(),
+            picker_providers: HashMap::new(),
             last_browse_cb: HashMap::new(),
         };
 

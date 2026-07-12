@@ -23,7 +23,7 @@ pub(crate) async fn tool_get_model_info(state: &Arc<Mutex<BotState>>, chat_id: &
 
     // Determine the base model and any applied specifier
     let (base_model, specifier) =
-        if s.config.provider_for_chat(chat_id) == crate::config::LlmProvider::Openrouter {
+        if s.effective_provider(chat_id) == crate::config::LlmProvider::Openrouter {
             if let Some(pos) = effective.rfind(':') {
                 let maybe_spec = &effective[pos + 1..];
                 let valid: Vec<&str> = crate::openrouter::SPECIFIER_BUTTONS
@@ -42,7 +42,7 @@ pub(crate) async fn tool_get_model_info(state: &Arc<Mutex<BotState>>, chat_id: &
             (effective.clone(), None)
         };
 
-    let provider = s.config.provider_for_chat(chat_id);
+    let provider = s.effective_provider(chat_id);
     // Get model metadata from cache. Directly entered Codex model IDs are also
     // useful before they reach the cache, so derive their known subscription metadata.
     let norm = crate::openrouter::normalize_model_id(&effective);
@@ -65,7 +65,7 @@ pub(crate) async fn tool_get_model_info(state: &Arc<Mutex<BotState>>, chat_id: &
         });
 
     let available_specifiers: Vec<&str> =
-        if s.config.provider_for_chat(chat_id) == crate::config::LlmProvider::Openrouter {
+        if s.effective_provider(chat_id) == crate::config::LlmProvider::Openrouter {
             crate::openrouter::SPECIFIER_BUTTONS
                 .iter()
                 .map(|(s, _)| *s)
@@ -98,8 +98,7 @@ pub(crate) async fn tool_propose_model_change(
     let specifier = args["specifier"].as_str();
 
     if specifier.is_some()
-        && state.lock().await.config.provider_for_chat(chat_id)
-            != crate::config::LlmProvider::Openrouter
+        && state.lock().await.effective_provider(chat_id) != crate::config::LlmProvider::Openrouter
     {
         return "Error: routing specifiers are only available with OpenRouter.".into();
     }
@@ -271,8 +270,7 @@ pub async fn handle_model_callback_approval(
             // Apply the model override
             {
                 let mut s = state.lock().await;
-                if s.config.provider_for_chat(&pending.chat_id) == crate::config::LlmProvider::Codex
-                {
+                if s.effective_provider(&pending.chat_id) == crate::config::LlmProvider::Codex {
                     super::super::bot_models::cache_codex_model(&mut s, &pending.proposed_model);
                 }
                 s.model_overrides
@@ -359,6 +357,8 @@ mod tests {
             pending_config_changes: std::collections::HashMap::new(),
             pending_model_changes: std::collections::HashMap::new(),
             model_overrides: std::collections::HashMap::new(),
+            provider_overrides: std::collections::HashMap::new(),
+            picker_providers: std::collections::HashMap::new(),
             last_browse_cb: std::collections::HashMap::new(),
         }));
         (state, dir)

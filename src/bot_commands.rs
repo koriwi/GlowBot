@@ -54,6 +54,19 @@ pub(crate) async fn handle_bot_command_impl(
         ));
     }
 
+    if matches!(command, crate::commands::Command::CodexUsage) {
+        let codex_config = state.lock().await.config.codex.clone();
+        let Some(codex_config) = codex_config else {
+            return Ok(Some("Codex is not configured for this bot.".into()));
+        };
+        return Ok(Some(
+            crate::codex::CodexClient::new(codex_config)
+                .usage()
+                .await
+                .unwrap_or_else(|error| format!("Failed to fetch Codex usage: {}", error)),
+        ));
+    }
+
     if matches!(command, crate::commands::Command::Tasks) {
         let s = state.lock().await;
         let list = crate::tasks::TaskList::load(&s.chats_dir(), chat_id).unwrap_or_default();
@@ -233,7 +246,8 @@ pub(crate) async fn handle_bot_command_impl(
         {
             let mut s = state.lock().await;
             s.model_overrides.remove(chat_id);
-            if s.config.provider_for_chat(chat_id) == crate::config::LlmProvider::Codex {
+            s.provider_overrides.remove(chat_id);
+            if s.effective_provider(chat_id) == crate::config::LlmProvider::Codex {
                 let model = s.config.model_for_chat(chat_id).to_string();
                 super::bot_models::cache_codex_model(&mut s, &model);
             }
@@ -254,7 +268,7 @@ pub(crate) async fn handle_bot_command_impl(
             None => {
                 // Codex has no OpenRouter routing specifiers, but has an equivalent
                 // interactive subscription-model picker.
-                if state.lock().await.config.provider_for_chat(chat_id)
+                if state.lock().await.effective_provider(chat_id)
                     == crate::config::LlmProvider::Codex
                 {
                     let bot = match tg_bot {
@@ -313,7 +327,7 @@ pub(crate) async fn handle_bot_command_impl(
                 return Ok(None);
             }
             Some(ref model_arg) if model_arg.starts_with(':') => {
-                if state.lock().await.config.provider_for_chat(chat_id)
+                if state.lock().await.effective_provider(chat_id)
                     != crate::config::LlmProvider::Openrouter
                 {
                     return Ok(Some(
@@ -357,23 +371,54 @@ pub(crate) async fn handle_bot_command_impl(
                 )));
             }
             Some(ref model_id) => {
-                // Direct model override
-                {
-                    let mut s = state.lock().await;
-                    if s.config.provider_for_chat(chat_id) == crate::config::LlmProvider::Codex {
-                        super::bot_models::cache_codex_model(&mut s, model_id);
+                // `/model codex [model]` and `/model openrouter [model]` switch
+                // the temporary provider as well as optionally selecting a model.
+                let mut parts = model_id.splitn(2, char::is_whitespace);
+                let provider = match parts.next() {
+                    Some("codex") => Some(crate::config::LlmProvider::Codex),
+                    Some("openrouter") => Some(crate::config::LlmProvider::Openrouter),
+                    _ => None,
+                };
+                let requested_model = parts
+                    .next()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                let mut s = state.lock().await;
+                let provider = provider.unwrap_or_else(|| s.effective_provider(chat_id));
+                if provider == crate::config::LlmProvider::Codex && s.config.codex.is_none() {
+                    return Ok(Some("Codex is not configured for this bot.".into()));
+                }
+                if requested_model.is_some() || model_id == "codex" || model_id == "openrouter" {
+                    s.provider_overrides.insert(chat_id.to_string(), provider);
+                }
+                let selected_model = requested_model.unwrap_or(model_id);
+                if requested_model.is_some() {
+                    s.model_overrides
+                        .insert(chat_id.to_string(), selected_model.to_string());
+                } else if model_id == "codex" || model_id == "openrouter" {
+                    s.model_overrides.remove(chat_id);
+                } else {
+                    if provider == crate::config::LlmProvider::Codex {
+                        super::bot_models::cache_codex_model(&mut s, selected_model);
                     }
                     s.model_overrides
-                        .insert(chat_id.to_string(), model_id.clone());
+                        .insert(chat_id.to_string(), selected_model.to_string());
                 }
-                return Ok(Some(format!("✅ Model set to `{}`", model_id)));
+                let model = s.effective_model(chat_id);
+                if provider == crate::config::LlmProvider::Codex {
+                    super::bot_models::cache_codex_model(&mut s, &model);
+                }
+                return Ok(Some(format!(
+                    "✅ Model set to `{}`\\nProvider: `{}`",
+                    model,
+                    format!("{:?}", provider).to_lowercase(),
+                )));
             }
         }
     }
 
-    // /models — browse and switch models via inline keyboard
+    // /models — choose a provider, then browse and switch its models.
     if matches!(command, crate::commands::Command::Models) {
-        let provider = state.lock().await.config.provider_for_chat(chat_id);
         let bot =
             match tg_bot {
                 Some(b) => b.clone(),
@@ -385,14 +430,7 @@ pub(crate) async fn handle_bot_command_impl(
         let state_clone = Arc::clone(state);
         let cid = chat_id.to_string();
         tokio::spawn(async move {
-            let result = match provider {
-                crate::config::LlmProvider::Openrouter => {
-                    super::bot_models::send_model_menu(&state_clone, &cid, bot).await
-                }
-                crate::config::LlmProvider::Codex => {
-                    super::bot_models::send_codex_model_menu(&state_clone, &cid, bot).await
-                }
-            };
+            let result = super::bot_models::send_provider_model_menu(&state_clone, &cid, bot).await;
             if let Err(error) = result {
                 log::error!("Failed to send model picker: {}", error);
             }
@@ -423,7 +461,7 @@ pub(crate) async fn handle_bot_command_impl(
         {
             let s = state.lock().await;
             let model = s.effective_model(chat_id);
-            let needs_fetch = s.config.provider_for_chat(chat_id)
+            let needs_fetch = s.effective_provider(chat_id)
                 == crate::config::LlmProvider::Openrouter
                 && !s
                     .model_metadata
@@ -458,12 +496,14 @@ pub(crate) async fn handle_bot_command_impl(
             let mut s = state.lock().await;
             let usage = s.context_usage(chat_id);
             let model = s.effective_model(chat_id);
+            let provider = s.effective_provider(chat_id);
             crate::commands::handle_command_with_model(
                 command,
                 &mut s.config,
                 chat_id,
                 &usage,
                 Some(&model),
+                Some(provider),
             )
         };
         return Ok(Some(response));
