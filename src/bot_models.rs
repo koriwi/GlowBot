@@ -1073,6 +1073,21 @@ mod tests {
     }
 
     #[test]
+    fn test_codex_picker_callbacks_fit_telegram_limit() {
+        assert!("model:provider:codex".len() <= MAX_CALLBACK_BYTES);
+        for (model_id, _) in crate::codex::KNOWN_MODELS {
+            assert!(
+                detail_cb(model_id).len() <= MAX_CALLBACK_BYTES,
+                "{model_id}"
+            );
+            assert!(
+                select_cb(model_id).len() <= MAX_CALLBACK_BYTES,
+                "{model_id}"
+            );
+        }
+    }
+
+    #[test]
     fn test_detail_cb_short_id_uses_full_prefix() {
         let id = "openai/gpt-4";
         let cb = detail_cb(id);
