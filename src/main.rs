@@ -96,28 +96,8 @@ async fn run_bot() -> anyhow::Result<()> {
     let bot_username = tg_bot.get_me().await?.username.clone().unwrap_or_default();
     log::info!("Bot username: @{}", bot_username);
 
-    // Register slash commands with Telegram so they show in the menu and autocomplete
-    let commands = vec![
-        BotCommand::new("status", "📊 Show current config for this chat"),
-        BotCommand::new("codex_usage", "📈 Show Codex subscription allowance"),
-        BotCommand::new("model", "🤖 Set or view the current model/provider"),
-        BotCommand::new("models", "🔄 Browse and temporarily switch models"),
-        BotCommand::new("model_default", "↩️ Reset model to config default"),
-        BotCommand::new("tasks", "📋 Show pending tasks for this chat"),
-        BotCommand::new("todos", "✅ Show your todo list for this chat"),
-        BotCommand::new("reminders", "⏰ Show pending reminders for this chat"),
-        BotCommand::new(
-            "new",
-            "🆕 Reset context — messages before now are excluded from conversation",
-        ),
-        BotCommand::new("prompt", "💬 Show the system prompt sent to the LLM"),
-        BotCommand::new("run", "▶️ Run task agent immediately for this chat"),
-        BotCommand::new("tools", "🛠️ Show available tools in this chat"),
-        BotCommand::new("config", "⚙️ Show the current config (redacted)"),
-        BotCommand::new("config_schema", "📝 Show the JSON Schema for config fields"),
-        BotCommand::new("stop", "🛑 Stop the bot"),
-    ];
-    if let Err(e) = tg_bot.set_my_commands(commands).await {
+    // Register slash commands with Telegram so they show in the menu and autocomplete.
+    if let Err(e) = tg_bot.set_my_commands(registered_commands()).await {
         log::warn!("Failed to set bot commands: {}", e);
     } else {
         log::info!("Registered bot commands with Telegram");
@@ -225,6 +205,29 @@ async fn run_bot() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn registered_commands() -> Vec<BotCommand> {
+    vec![
+        BotCommand::new("status", "📊 Show current config for this chat"),
+        BotCommand::new("codex_usage", "📈 Show Codex subscription allowance"),
+        BotCommand::new("model", "🤖 Set or view the current model/provider"),
+        BotCommand::new("models", "🔄 Browse and temporarily switch models"),
+        BotCommand::new("model_default", "↩️ Reset model to config default"),
+        BotCommand::new("tasks", "📋 Show pending tasks for this chat"),
+        BotCommand::new("todos", "✅ Show your todo list for this chat"),
+        BotCommand::new("reminders", "⏰ Show pending reminders for this chat"),
+        BotCommand::new(
+            "new",
+            "🆕 Reset context — messages before now are excluded from conversation",
+        ),
+        BotCommand::new("prompt", "💬 Show the system prompt sent to the LLM"),
+        BotCommand::new("run", "▶️ Run task agent immediately for this chat"),
+        BotCommand::new("tools", "🛠️ Show available tools in this chat"),
+        BotCommand::new("config", "⚙️ Show the current config (redacted)"),
+        BotCommand::new("config_schema", "📝 Show the JSON Schema for config fields"),
+        BotCommand::new("stop", "🛑 Stop the bot"),
+    ]
 }
 
 async fn handle_message(
@@ -509,6 +512,43 @@ async fn run_chat_heartbeat(
 }
 
 /// Handle incoming Telegram callback queries (inline keyboard button presses).
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registered_commands_meet_telegram_limits() {
+        let commands = registered_commands();
+        assert!(
+            commands.len() <= 100,
+            "Telegram permits at most 100 commands"
+        );
+
+        for command in commands {
+            assert!(
+                (1..=32).contains(&command.command.chars().count()),
+                "command `{}` must be 1–32 characters",
+                command.command
+            );
+            assert!(
+                command
+                    .command
+                    .chars()
+                    .all(|character| character.is_ascii_lowercase()
+                        || character.is_ascii_digit()
+                        || character == '_'),
+                "command `{}` contains invalid characters",
+                command.command
+            );
+            assert!(
+                (3..=256).contains(&command.description.chars().count()),
+                "description for `{}` must be 3–256 characters",
+                command.command
+            );
+        }
+    }
+}
+
 async fn handle_callback(
     tg_bot: Bot,
     bot: Arc<Mutex<GlowBot>>,
