@@ -431,40 +431,8 @@ fn format_usage(usage: &Value) -> anyhow::Result<String> {
         lines.push(format!("Plan: `{}`", plan));
     }
 
-    let mut append_windows = |label: &str, rate_limit: &Value| {
-        for (name, field) in [
-            ("Primary", "primary_window"),
-            ("Secondary", "secondary_window"),
-        ] {
-            let Some(window) = rate_limit.get(field).filter(|value| !value.is_null()) else {
-                continue;
-            };
-            let used = window.get("used_percent").and_then(Value::as_f64);
-            let duration = window
-                .get("limit_window_seconds")
-                .and_then(Value::as_i64)
-                .map(format_window_duration)
-                .unwrap_or_else(|| name.to_string());
-            let reset = window
-                .get("reset_at")
-                .and_then(Value::as_i64)
-                .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
-                .map(|time| time.format("%Y-%m-%d %H:%M UTC").to_string())
-                .unwrap_or_else(|| "unknown".into());
-            if let Some(used) = used {
-                lines.push(format!(
-                    "{} {}: {:.0}% remaining · resets {}",
-                    label,
-                    duration,
-                    (100.0 - used).clamp(0.0, 100.0),
-                    reset
-                ));
-            }
-        }
-    };
-
     if let Some(rate_limit) = usage.get("rate_limit").filter(|value| !value.is_null()) {
-        append_windows("Codex", rate_limit);
+        append_usage_windows(&mut lines, "Codex", rate_limit);
     }
     for limit in usage
         .get("additional_rate_limits")
@@ -472,29 +440,68 @@ fn format_usage(usage: &Value) -> anyhow::Result<String> {
         .into_iter()
         .flatten()
     {
-        if let Some(rate_limit) = limit.get("rate_limit").filter(|value| !value.is_null()) {
-            let label = limit
-                .get("limit_name")
-                .and_then(Value::as_str)
-                .unwrap_or("Additional");
-            append_windows(label, rate_limit);
-        }
+        let Some(rate_limit) = limit.get("rate_limit").filter(|value| !value.is_null()) else {
+            continue;
+        };
+        let label = limit
+            .get("limit_name")
+            .and_then(Value::as_str)
+            .unwrap_or("Additional");
+        append_usage_windows(&mut lines, label, rate_limit);
     }
-    if let Some(credits) = usage.get("credits").filter(|value| !value.is_null()) {
-        if credits
-            .get("unlimited")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            lines.push("Credits: unlimited".into());
-        } else if let Some(balance) = credits.get("balance").and_then(Value::as_str) {
-            lines.push(format!("Credits: {}", balance));
-        }
-    }
+    append_credit_balance(&mut lines, usage.get("credits"));
+
     if lines.len() == 1 {
         anyhow::bail!("Codex usage response contained no rate-limit information")
     }
     Ok(lines.join("\n"))
+}
+
+fn append_usage_windows(lines: &mut Vec<String>, label: &str, rate_limit: &Value) {
+    for (fallback_name, field) in [
+        ("Primary", "primary_window"),
+        ("Secondary", "secondary_window"),
+    ] {
+        let Some(window) = rate_limit.get(field).filter(|value| !value.is_null()) else {
+            continue;
+        };
+        let Some(used) = window.get("used_percent").and_then(Value::as_f64) else {
+            continue;
+        };
+        let duration = window
+            .get("limit_window_seconds")
+            .and_then(Value::as_i64)
+            .map(format_window_duration)
+            .unwrap_or_else(|| fallback_name.to_string());
+        let reset = window
+            .get("reset_at")
+            .and_then(Value::as_i64)
+            .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
+            .map(|time| time.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_else(|| "unknown".into());
+        lines.push(format!(
+            "{} {}: {:.0}% remaining · resets {}",
+            label,
+            duration,
+            (100.0 - used).clamp(0.0, 100.0),
+            reset
+        ));
+    }
+}
+
+fn append_credit_balance(lines: &mut Vec<String>, credits: Option<&Value>) {
+    let Some(credits) = credits.filter(|value| !value.is_null()) else {
+        return;
+    };
+    if credits
+        .get("unlimited")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        lines.push("Credits: unlimited".into());
+    } else if let Some(balance) = credits.get("balance").and_then(Value::as_str) {
+        lines.push(format!("Credits: {}", balance));
+    }
 }
 
 fn format_window_duration(seconds: i64) -> String {

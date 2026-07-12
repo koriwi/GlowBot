@@ -120,11 +120,8 @@ pub fn handle_command_with_model(
     match command {
         Command::Status => {
             let model = effective_model.unwrap_or_else(|| config.model_for_chat(chat_id));
-            let provider = format!(
-                "{:?}",
-                effective_provider.unwrap_or_else(|| config.provider_for_chat(chat_id))
-            )
-            .to_lowercase();
+            let provider = effective_provider.unwrap_or_else(|| config.provider_for_chat(chat_id));
+            let provider = format!("{provider:?}").to_lowercase();
             if chat_id.starts_with('-') {
                 // Group chat
                 let chat = config.chat_config(chat_id);

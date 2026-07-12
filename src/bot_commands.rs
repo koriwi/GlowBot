@@ -7,6 +7,20 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+fn provider_model_args(value: &str) -> Option<(crate::config::LlmProvider, Option<&str>)> {
+    let mut parts = value.splitn(2, char::is_whitespace);
+    let provider = match parts.next()? {
+        "codex" => crate::config::LlmProvider::Codex,
+        "openrouter" => crate::config::LlmProvider::Openrouter,
+        _ => return None,
+    };
+    let model = parts
+        .next()
+        .map(str::trim)
+        .filter(|model| !model.is_empty());
+    Some((provider, model))
+}
+
 /// Handle a bot command (free function).
 pub(crate) async fn handle_bot_command_impl(
     state: &Arc<Mutex<BotState>>,
@@ -371,43 +385,37 @@ pub(crate) async fn handle_bot_command_impl(
                 )));
             }
             Some(ref model_id) => {
-                // `/model codex [model]` and `/model openrouter [model]` switch
-                // the temporary provider as well as optionally selecting a model.
-                let mut parts = model_id.splitn(2, char::is_whitespace);
-                let provider = match parts.next() {
-                    Some("codex") => Some(crate::config::LlmProvider::Codex),
-                    Some("openrouter") => Some(crate::config::LlmProvider::Openrouter),
-                    _ => None,
-                };
-                let requested_model = parts
-                    .next()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty());
                 let mut s = state.lock().await;
-                let provider = provider.unwrap_or_else(|| s.effective_provider(chat_id));
-                if provider == crate::config::LlmProvider::Codex && s.config.codex.is_none() {
-                    return Ok(Some("Codex is not configured for this bot.".into()));
-                }
-                if requested_model.is_some() || model_id == "codex" || model_id == "openrouter" {
-                    s.provider_overrides.insert(chat_id.to_string(), provider);
-                }
-                let selected_model = requested_model.unwrap_or(model_id);
-                if requested_model.is_some() {
-                    s.model_overrides
-                        .insert(chat_id.to_string(), selected_model.to_string());
-                } else if model_id == "codex" || model_id == "openrouter" {
-                    s.model_overrides.remove(chat_id);
-                } else {
-                    if provider == crate::config::LlmProvider::Codex {
-                        super::bot_models::cache_codex_model(&mut s, selected_model);
+                let (provider, model) = match provider_model_args(model_id) {
+                    Some((provider, selected_model)) => {
+                        if provider == crate::config::LlmProvider::Codex && s.config.codex.is_none()
+                        {
+                            return Ok(Some("Codex is not configured for this bot.".into()));
+                        }
+                        s.provider_overrides.insert(chat_id.to_string(), provider);
+                        match selected_model {
+                            Some(model) => {
+                                s.model_overrides
+                                    .insert(chat_id.to_string(), model.to_string());
+                            }
+                            None => {
+                                s.model_overrides.remove(chat_id);
+                            }
+                        }
+                        (provider, selected_model)
                     }
-                    s.model_overrides
-                        .insert(chat_id.to_string(), selected_model.to_string());
-                }
-                let model = s.effective_model(chat_id);
+                    None => {
+                        let provider = s.effective_provider(chat_id);
+                        s.model_overrides
+                            .insert(chat_id.to_string(), model_id.to_string());
+                        (provider, Some(model_id.as_str()))
+                    }
+                };
+                let effective_model = s.effective_model(chat_id);
                 if provider == crate::config::LlmProvider::Codex {
-                    super::bot_models::cache_codex_model(&mut s, &model);
+                    super::bot_models::cache_codex_model(&mut s, &effective_model);
                 }
+                let model = model.unwrap_or(&effective_model);
                 return Ok(Some(format!(
                     "✅ Model set to `{}`\\nProvider: `{}`",
                     model,
