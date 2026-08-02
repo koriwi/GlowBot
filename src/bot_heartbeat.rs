@@ -31,6 +31,24 @@ fn check_stopped(
     }
 }
 
+pub(super) fn background_task_prompt(task_id: &str, task_desc: &str, date: &str) -> String {
+    format!(
+        "## Background Task\n\
+        You are processing a scheduled task for this chat.\n\
+        Task: {task_desc}\n\
+        Instructions:\n\
+        - Use your available tools to work on the task.\n\
+        - When the goal is newly completed, call remove_task(\"{task_id}\") to mark it complete.\n\
+        - If completion creates follow-up work, add a task with a materially different next goal, then remove this task.\n\
+        - If the task cannot be completed yet (for example, it is waiting for an external event), leave it pending. Do NOT remove it or add an identical task; it will run again next cycle.\n\
+        - STRICT MESSAGE POLICY: Ignore normal-conversation guidance about sending a heads-up. Never send messages about starting, checking, attempting, making progress, waiting, retrying, or seeing whether the task can be done.\n\
+        - You may call send_message at most ONCE, and only for a terminal outcome: either (a) newly achieved success, when you also remove this task or replace it with a materially different follow-up goal, or (b) a fatal, actionable blocker that the user must know about or resolve (for example, a required service is down and no useful progress is possible).\n\
+        - If the task remains pending, the condition is unchanged, the result is inconclusive, or an error is transient, exit silently without calling send_message.\n\
+        - If the task was already complete before this run (for example, the action was already performed), quietly remove it and exit without calling send_message.\n\
+        Current date: {date}",
+    )
+}
+
 pub async fn run_heartbeat_task(
     state: Arc<Mutex<BotState>>,
     _git_repo: crate::git::GitRepo,
@@ -146,24 +164,7 @@ pub async fn run_heartbeat_task(
         log::info!("Heartbeat chat {}: working on task '{}'", cid, task_id);
 
         let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        let task_header = format!(
-            "## Background Task\n\
-            You are processing a scheduled task for this chat.\n\
-            Task: {task_desc}\n\
-            Instructions:\n\
-            - Use your available tools to complete the task.\n\
-            - When done, call remove_task(\"{task_id}\") to mark it complete.\n\
-            - If the task spawns follow-up work, call add_task(\"...\") for each.\n\
-            - If the task cannot be completed yet (e.g. download still in progress, waiting for external event),\n\
-              just leave it — do NOT remove it, do NOT add a new identical one. It will automatically run again next cycle.\n\
-            - You may send at most ONE message to the chat to report completion or deliver results, using the send_message tool. Do NOT spam progress updates.\n\
-            - If the task has already been completed (e.g. file already downloaded, action already performed, nothing left to do),\n\
-              quietly call remove_task(\"{task_id}\") and exit — do NOT send any message.\n\
-            Current date: {date}",
-            task_desc = task_desc,
-            task_id = task_id,
-            date = date,
-        );
+        let task_header = background_task_prompt(&task_id, &task_desc, &date);
 
         let (system_prompt, model, tools, context_limit, provider) = {
             let s = state.lock().await;

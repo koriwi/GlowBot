@@ -1,5 +1,5 @@
 use super::bot_dispatch::{cap_tool_result, dispatch_tool, dispatch_tool_calls, log_tool_call_to};
-use super::bot_heartbeat::run_heartbeat_task;
+use super::bot_heartbeat::{background_task_prompt, run_heartbeat_task};
 use super::*;
 use crate::llm::mock::MockLlmBackend;
 use crate::openrouter::{

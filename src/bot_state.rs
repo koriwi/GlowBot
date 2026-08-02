@@ -139,8 +139,8 @@ impl BotState {
 
     /// Build the full list of tool definitions including MCP tools.
     /// Filters out MCP servers blacklisted for the given chat.
-    /// `send_message` is always included — in normal conversations it's for
-    /// headsup/intermediate messages; in heartbeat tasks it's for completion reports.
+    /// `send_message` is always included — normal turns may use it for one heads-up;
+    /// scheduled tasks reserve it for terminal success or fatal blockers.
     pub fn build_tools(
         &self,
         include_bash: bool,

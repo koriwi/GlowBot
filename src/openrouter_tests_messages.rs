@@ -120,6 +120,16 @@ fn test_update_memory_tool_definition() {
 }
 
 #[test]
+fn test_send_message_tool_definition_has_terminal_background_policy() {
+    let def = send_message_tool_definition();
+    assert_eq!(def.function.name, "send_message");
+    assert!(def.function.description.contains("NEVER send heads-up"));
+    assert!(def.function.description.contains("newly achieved success"));
+    assert!(def.function.description.contains("fatal, actionable blocker"));
+    assert!(def.function.description.contains("task remains pending"));
+}
+
+#[test]
 fn test_send_media_tool_definition() {
     let def = send_media_tool_definition("/media");
     assert_eq!(def.function.name, "send_media");

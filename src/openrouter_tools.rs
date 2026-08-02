@@ -504,7 +504,7 @@ pub(crate) fn send_message_tool_definition() -> ToolDefinition {
         def_type: "function".into(),
         function: FunctionDef {
             name: "send_message".into(),
-            description: "Send a plain text message to the current chat. In normal conversations, use this ONLY for headsup/intermediate messages (e.g. 'ok, give me a second, taking a look now...') — never for your final answer, which is sent automatically. In background tasks, use this once to report completion or deliver results. Use sparingly.".into(),
+            description: "Send a plain text message to the current chat. In normal user-initiated conversations, use this only for one heads-up/intermediate message (e.g. 'ok, give me a second, taking a look now...'), never for the final answer that is sent automatically. In a scheduled run headed '## Background Task', NEVER send heads-up, progress, waiting, retry, or routine status messages. In such runs, call this at most once and only for newly achieved success when the current task is removed or replaced with a materially different follow-up goal, or for a fatal, actionable blocker that the user must know about or resolve. Stay silent if the task remains pending or nothing materially changed.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -746,7 +746,7 @@ pub(crate) fn describe_image_tool_definition() -> ToolDefinition {
         def_type: "function".into(),
         function: FunctionDef {
             name: "describe_image".into(),
-            description: "Get a detailed description of an image using a vision-capable model. Before calling, send a brief heads-up via send_message to let the user know you're analyzing the image (e.g. 'Let me take a closer look...') — this may take a moment. Use this tool when you need specific visual details that aren't obvious from context — e.g. portion sizes, text reading, object identification, calorie estimation, spatial layout, etc. The image is already saved to disk; provide the file_path from the user's message metadata and a specific prompt requesting exactly what details you need.".into(),
+            description: "Get a detailed description of an image using a vision-capable model. In a normal user-initiated conversation, send a brief heads-up via send_message before calling (e.g. 'Let me take a closer look...') because this may take a moment. NEVER send that heads-up during a scheduled run headed '## Background Task'; follow its strict terminal-only message policy instead. Use this tool when you need specific visual details that aren't obvious from context — e.g. portion sizes, text reading, object identification, calorie estimation, spatial layout, etc. The image is already saved to disk; provide the file_path from the user's message metadata and a specific prompt requesting exactly what details you need.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

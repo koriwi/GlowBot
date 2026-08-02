@@ -1,5 +1,20 @@
 // ---------- heartbeat tests ----------
 
+#[test]
+fn test_background_task_prompt_requires_terminal_messages() {
+    let prompt = background_task_prompt("task-123", "Check whether the export is ready", "2026-06-01");
+
+    assert!(prompt.contains("STRICT MESSAGE POLICY"));
+    assert!(prompt.contains("Never send messages about starting, checking, attempting"));
+    assert!(prompt.contains("newly achieved success"));
+    assert!(prompt.contains("remove this task or replace it"));
+    assert!(prompt.contains("fatal, actionable blocker"));
+    assert!(prompt.contains("a required service is down"));
+    assert!(prompt.contains("error is transient, exit silently"));
+    assert!(prompt.contains("already complete before this run"));
+    assert!(prompt.contains("remove_task(\"task-123\")"));
+}
+
 #[tokio::test]
 async fn test_heartbeat_no_tasks() {
     let dir = TempDir::new().unwrap();

@@ -44,6 +44,8 @@ fn test_describe_image_tool_definition() {
     assert_eq!(def.function.name, "describe_image");
     assert!(def.function.description.contains("vision-capable"));
     assert!(def.function.description.contains("portion sizes"));
+    assert!(def.function.description.contains("NEVER send that heads-up"));
+    assert!(def.function.description.contains("terminal-only message policy"));
 
     let params = &def.function.parameters;
     assert_eq!(params["type"], "object");
