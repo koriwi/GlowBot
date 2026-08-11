@@ -62,7 +62,6 @@ openrouter:
 sms:
   ip_address: "192.168.8.1"
   password: "..."
-  forward_sms_to_telegram: true
 
 # Conversation context settings
 conversation:
@@ -80,6 +79,7 @@ conversation:
 dms:
   "123456789":
     phone_number: "+491701234567"         # optional SMS mapping
+    forward_sms_to_telegram: true          # optional per-DM SMS mirroring; default false
     provider: codex                       # optional, overrides global provider
     model: "gpt-5.4"                    # optional, overrides selected provider default
     commands_enabled: true
@@ -102,7 +102,7 @@ chats:
 
 `/commands` at runtime can modify settings for the active chat (if commands are enabled for that chat).
 
-The optional `sms` object enables Huawei modem polling. Its password is redacted from config display. `dms.<chat_id>.phone_number` maps a phone number to that private Telegram conversation; E.164 format is recommended and duplicate normalized mappings are rejected.
+The optional `sms` object enables Huawei modem polling. Its password is redacted from config display. `dms.<chat_id>.phone_number` maps a phone number to that private Telegram conversation; E.164 format is recommended and duplicate normalized mappings are rejected. `dms.<chat_id>.forward_sms_to_telegram` independently enables SMS mirroring for that conversation and defaults to `false`.
 
 ### 3.2 Git Versioning
 
@@ -140,7 +140,7 @@ The data directory is a standalone git repository, not nested inside the applica
 - SMS from phone numbers not mapped by a `dms.<chat_id>.phone_number` entry are ignored and marked read.
 - Mapped SMS is processed under the mapped positive Telegram chat ID, so Telegram and SMS turns share the same SQLite history, memories, tools, model, and DM configuration.
 - Replies always follow the initiating channel: SMS input gets an SMS reply; Telegram input gets a Telegram reply. The `send_message` tool follows the same rule during a turn.
-- `sms.forward_sms_to_telegram: true` mirrors incoming and successfully sent SMS text to the mapped Telegram DM without duplicating it in LLM history.
+- `dms.<chat_id>.forward_sms_to_telegram: true` mirrors that contact's incoming and successfully sent SMS text to the mapped Telegram DM without duplicating it in LLM history. It defaults to `false` independently for each DM.
 - SMS output is plain text. The SMS-specific system prompt asks for concise ASCII/GSM-safe output without Markdown, emoji, or decorative Unicode. Common Unicode punctuation and Latin diacritics are converted when safe; characters necessary for meaning are preserved.
 - GSM-7 output is split into standalone messages of at most 160 septets (extension-table characters count as two). Necessary non-GSM output is split at 70 UTF-16 units. MMS is not supported or attempted.
 

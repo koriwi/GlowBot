@@ -39,7 +39,6 @@ openrouter:
 # sms:
 #   ip_address: "192.168.8.1"
 #   password: "your-modem-password"
-#   forward_sms_to_telegram: false  # mirror mapped incoming/outgoing SMS in the Telegram DM
 
 # Conversation context settings
 conversation:
@@ -77,6 +76,7 @@ dms:
   # "123456789":
   #   name: "Alice"                    # optional, human-readable label (survives config updates)
   #   phone_number: "+491701234567"    # optional SMS mapping; E.164 format recommended
+  #   forward_sms_to_telegram: true    # optional; mirror this DM's incoming/outgoing SMS (default: false)
   #   provider: codex                  # optional: openrouter | codex; overrides global provider
   #   model: "gpt-5.4"                # optional; defaults to the selected provider's global model
   #   commands_enabled: true

@@ -91,6 +91,9 @@ pub struct DmConfig {
     /// E.164 format (for example `+491701234567`) is recommended.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phone_number: Option<String>,
+    /// Mirror this contact's incoming and outgoing SMS messages to their Telegram DM.
+    #[serde(default)]
+    pub forward_sms_to_telegram: bool,
     /// Optional LLM provider override for this DM.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<LlmProvider>,
@@ -273,9 +276,6 @@ pub struct SmsConfig {
     pub ip_address: String,
     /// Web interface password for the modem's `admin` account.
     pub password: String,
-    /// Mirror mapped incoming and outgoing SMS messages to the corresponding Telegram DM.
-    #[serde(default)]
-    pub forward_sms_to_telegram: bool,
 }
 
 /// Global application configuration.
