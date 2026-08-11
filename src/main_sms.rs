@@ -70,16 +70,7 @@ async fn handle_incoming_sms(
         state
             .config
             .dm_for_phone_number(&message.phone_number)
-            .map(|(chat_id, _)| {
-                (
-                    chat_id.to_string(),
-                    state
-                        .config
-                        .sms
-                        .as_ref()
-                        .is_some_and(|sms| sms.forward_sms_to_telegram),
-                )
-            })
+            .map(|(chat_id, dm)| (chat_id.to_string(), dm.forward_sms_to_telegram))
     };
 
     let Some((chat_id, forward_to_telegram)) = mapping else {

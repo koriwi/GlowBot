@@ -87,17 +87,17 @@ GlowBot can poll and send text-only SMS through a Huawei HiLink modem such as th
 sms:
   ip_address: "192.168.8.1"
   password: "your-modem-password"
-  forward_sms_to_telegram: true
 
 dms:
   "123456789":
     name: "Alice"
     phone_number: "+491701234567"
+    forward_sms_to_telegram: true
 ```
 
 Incoming SMS from unmapped numbers are ignored. Mapped SMS and Telegram messages share one SQLite conversation history, while replies follow the incoming channel. Outgoing SMS is plain text, converts avoidable Unicode punctuation/emoji to GSM-safe text, and splits automatically at 160 GSM-7 septets (or 70 UTF-16 units when non-GSM text is necessary). MMS is not used.
 
-Use E.164 phone numbers (for example `+491701234567`) in the config. The modem is polled every five seconds and reconnects automatically after errors.
+Use E.164 phone numbers (for example `+491701234567`) in the config. Set `forward_sms_to_telegram` separately for each DM that should receive SMS mirrors; it defaults to `false`. The modem is polled every five seconds and reconnects automatically after errors.
 
 ### MCP Servers (optional)
 

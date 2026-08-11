@@ -5,6 +5,7 @@ fn test_dm_config_defaults() {
     let dm = DmConfig::default();
     assert!(dm.model.is_none());
     assert!(dm.phone_number.is_none());
+    assert!(!dm.forward_sms_to_telegram);
     assert!(!dm.commands_enabled);
     assert!(dm.system_prompt.is_empty());
     assert!(dm.heartbeat_interval_minutes.is_none());
@@ -102,12 +103,12 @@ fn test_sms_config_and_phone_mapping() {
     config.sms = Some(SmsConfig {
         ip_address: "192.168.8.1".into(),
         password: "modem-secret".into(),
-        forward_sms_to_telegram: true,
     });
     config.dms.insert(
         "42".into(),
         DmConfig {
             phone_number: Some("+49 170-1234567".into()),
+            forward_sms_to_telegram: true,
             ..Default::default()
         },
     );
@@ -116,6 +117,7 @@ fn test_sms_config_and_phone_mapping() {
     let (chat_id, dm) = config.dm_for_phone_number("00491701234567").unwrap();
     assert_eq!(chat_id, "42");
     assert_eq!(dm.phone_number.as_deref(), Some("+49 170-1234567"));
+    assert!(dm.forward_sms_to_telegram);
 
     let redacted = config.redacted();
     assert_eq!(redacted.sms.unwrap().password, "[REDACTED]");
@@ -127,7 +129,6 @@ fn test_sms_config_validation() {
     config.sms = Some(SmsConfig {
         ip_address: "not-an-ip".into(),
         password: "secret".into(),
-        forward_sms_to_telegram: false,
     });
     assert!(config.validate().unwrap_err().to_string().contains("ip_address"));
 
