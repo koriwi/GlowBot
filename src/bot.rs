@@ -9,16 +9,22 @@ mod bot_commands;
 pub mod bot_dispatch;
 #[path = "bot_heartbeat.rs"]
 mod bot_heartbeat;
+#[path = "bot_message.rs"]
+mod bot_message;
 #[path = "bot_models.rs"]
 pub mod bot_models;
 #[path = "bot_pipeline.rs"]
 mod bot_pipeline;
+#[path = "bot_sms.rs"]
+mod bot_sms;
 #[path = "bot_state.rs"]
 mod bot_state;
 #[path = "bot_todos.rs"]
 pub mod bot_todos;
 use self::bot_commands::handle_bot_command_impl;
 pub use self::bot_heartbeat::run_heartbeat_task;
+pub use self::bot_message::process_message_impl;
+pub use self::bot_sms::process_sms_message_impl;
 pub use self::bot_state::{BotState, PendingConfigChange, PendingModelChange};
 use crate::skills::load_all_skills;
 use std::collections::HashMap;
@@ -272,9 +278,8 @@ impl GlowBot {
     }
 }
 
-/// Process an incoming message (free function, can be called without the GlowBot lock).
 #[allow(clippy::too_many_arguments)]
-pub async fn process_message_impl(
+async fn process_message_for_source(
     state: &Arc<Mutex<BotState>>,
     _git_repo: &GitRepo,
     stop_signals: &Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
@@ -288,6 +293,8 @@ pub async fn process_message_impl(
     sent_at: Option<chrono::DateTime<chrono::Utc>>,
     bot_username: &str,
     tg_bot: Option<&teloxide::Bot>,
+    source: &self::bot_pipeline::MessageSource,
+    reply_sender: Option<&dyn crate::bot_send::TextReplySender>,
 ) -> anyhow::Result<Option<String>> {
     let text = text.unwrap_or("");
     let is_command = text.trim().starts_with('/');
@@ -398,6 +405,8 @@ pub async fn process_message_impl(
         sent_at,
         tools_enabled,
         tg_bot,
+        source,
+        reply_sender,
     )
     .await
 }

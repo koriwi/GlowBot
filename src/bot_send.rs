@@ -1,11 +1,54 @@
+use async_trait::async_trait;
 use teloxide::prelude::*;
 use teloxide::types::{ChatId, ParseMode};
+
+/// Channel-specific sender used by the LLM's `send_message` tool.
+#[async_trait]
+pub trait TextReplySender: Send + Sync {
+    async fn send_text(&self, text: &str) -> anyhow::Result<()>;
+}
+
+/// Telegram implementation of the channel-specific sender.
+pub struct TelegramReplySender<'a> {
+    bot: &'a teloxide::Bot,
+    chat_id: ChatId,
+}
+
+impl<'a> TelegramReplySender<'a> {
+    pub fn new(bot: &'a teloxide::Bot, chat_id: ChatId) -> Self {
+        Self { bot, chat_id }
+    }
+}
+
+#[async_trait]
+impl TextReplySender for TelegramReplySender<'_> {
+    async fn send_text(&self, text: &str) -> anyhow::Result<()> {
+        send_message(self.bot, self.chat_id, text).await;
+        Ok(())
+    }
+}
 
 /// Maximum number of characters per Telegram message chunk.
 /// 4096 is the Telegram hard limit; we use 4000 to leave breathing room
 /// for MarkdownV2 escaping overhead (special chars like `.`, `!`, `-` get
 /// backslash-escaped, which can inflate the byte count).
 const MAX_CHUNK_CHARS: usize = 4000;
+
+/// Send literal plain text without interpreting user-supplied content as Markdown.
+pub async fn send_plain_message(bot: &teloxide::Bot, chat_id: ChatId, text: &str) {
+    let chunks = split_for_telegram(text, MAX_CHUNK_CHARS);
+    let total = chunks.len();
+    for (index, chunk) in chunks.iter().enumerate() {
+        let message = if total > 1 {
+            format!("Part {}/{}\n\n{}", index + 1, total, chunk)
+        } else {
+            chunk.clone()
+        };
+        if let Err(error) = bot.send_message(chat_id, message).await {
+            log::warn!("Failed to send plain Telegram message: {error}");
+        }
+    }
+}
 
 /// Send a text message to a Telegram chat, automatically splitting
 /// into multiple messages if the text exceeds the character limit.

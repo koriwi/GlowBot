@@ -34,6 +34,13 @@ openrouter:
 #   reasoning_effort: "high"       # optional: low | medium | high | xhigh
 #   base_url: "https://chatgpt.com/backend-api"
 
+# Optional Huawei HiLink modem for the text-only SMS channel.
+# The modem web password is sensitive; keep the real value only in glowbot_data/config.yaml.
+# sms:
+#   ip_address: "192.168.8.1"
+#   password: "your-modem-password"
+#   forward_sms_to_telegram: false  # mirror mapped incoming/outgoing SMS in the Telegram DM
+
 # Conversation context settings
 conversation:
   recent_messages_window_size: 20    # number of recent messages loaded from DB as context (default: 20)
@@ -69,6 +76,7 @@ media_dir: "/media"                  # (default: /media)
 dms:
   # "123456789":
   #   name: "Alice"                    # optional, human-readable label (survives config updates)
+  #   phone_number: "+491701234567"    # optional SMS mapping; E.164 format recommended
   #   provider: codex                  # optional: openrouter | codex; overrides global provider
   #   model: "gpt-5.4"                # optional; defaults to the selected provider's global model
   #   commands_enabled: true

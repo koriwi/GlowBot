@@ -1,0 +1,161 @@
+use glowbot::bot::GlowBot;
+use glowbot::bot_send::TextReplySender;
+use glowbot::config::SmsConfig;
+use glowbot::sms::{HuaweiSmsGateway, IncomingSms, SmsGateway, SmsReplySender};
+use std::collections::HashMap;
+use std::sync::Arc;
+use teloxide::types::ChatId;
+use tokio::sync::Mutex;
+
+pub type ChatLocks = Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>;
+
+pub async fn run_sms_loop(
+    bot: Arc<Mutex<GlowBot>>,
+    tg_bot: teloxide::Bot,
+    chat_locks: ChatLocks,
+    sms_config: SmsConfig,
+) {
+    loop {
+        match HuaweiSmsGateway::connect(&sms_config).await {
+            Ok(gateway) => {
+                log::info!(
+                    "SMS channel connected to Huawei modem at {}",
+                    sms_config.ip_address
+                );
+                let gateway: Arc<dyn SmsGateway> = Arc::new(gateway);
+                if let Err(error) = poll_connected_gateway(
+                    Arc::clone(&bot),
+                    tg_bot.clone(),
+                    Arc::clone(&chat_locks),
+                    gateway,
+                )
+                .await
+                {
+                    log::warn!("SMS modem polling failed: {error}; reconnecting in 15s");
+                }
+            }
+            Err(error) => {
+                log::warn!("Failed to connect SMS channel: {error}; retrying in 15s");
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+    }
+}
+
+async fn poll_connected_gateway(
+    bot: Arc<Mutex<GlowBot>>,
+    tg_bot: teloxide::Bot,
+    chat_locks: ChatLocks,
+    gateway: Arc<dyn SmsGateway>,
+) -> anyhow::Result<()> {
+    loop {
+        let messages = gateway.unread_messages().await?;
+        for message in messages {
+            handle_incoming_sms(&bot, &tg_bot, &chat_locks, Arc::clone(&gateway), &message).await;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+}
+
+async fn handle_incoming_sms(
+    bot: &Arc<Mutex<GlowBot>>,
+    tg_bot: &teloxide::Bot,
+    chat_locks: &ChatLocks,
+    gateway: Arc<dyn SmsGateway>,
+    message: &IncomingSms,
+) {
+    let mapping = {
+        let inner = bot.lock().await;
+        let state = inner.state.lock().await;
+        state
+            .config
+            .dm_for_phone_number(&message.phone_number)
+            .map(|(chat_id, _)| {
+                (
+                    chat_id.to_string(),
+                    state
+                        .config
+                        .sms
+                        .as_ref()
+                        .is_some_and(|sms| sms.forward_sms_to_telegram),
+                )
+            })
+    };
+
+    let Some((chat_id, forward_to_telegram)) = mapping else {
+        log::info!("Ignoring SMS from unknown number {}", message.phone_number);
+        if let Err(error) = gateway.mark_read(&message.id).await {
+            log::warn!("Failed to mark ignored SMS {} as read: {error}", message.id);
+        }
+        return;
+    };
+    let Ok(chat_id_i64) = chat_id.parse::<i64>() else {
+        log::error!("Mapped SMS chat ID '{}' is not a Telegram chat ID", chat_id);
+        return;
+    };
+
+    let telegram_forward = forward_to_telegram.then(|| (tg_bot.clone(), ChatId(chat_id_i64)));
+    let reply_sender = SmsReplySender::new(
+        Arc::clone(&gateway),
+        message.phone_number.clone(),
+        telegram_forward,
+    );
+
+    let chat_lock = {
+        let mut locks = chat_locks.lock().unwrap_or_else(|error| error.into_inner());
+        locks
+            .entry(chat_id.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    };
+    let _guard = chat_lock.lock().await;
+
+    reply_sender.forward_incoming(message).await;
+    let (state, git_repo, stop_signals) = {
+        let inner = bot.lock().await;
+        (
+            inner.state.clone(),
+            inner.git_repo.clone(),
+            inner.stop_signals.clone(),
+        )
+    };
+
+    let result = glowbot::bot::process_sms_message_impl(
+        &state,
+        &git_repo,
+        &stop_signals,
+        &chat_id,
+        &message.phone_number,
+        &message.text,
+        &message.modem_date,
+        &reply_sender,
+    )
+    .await;
+
+    let delivered = match result {
+        Ok(Some(response)) => match reply_sender.send_text(&response).await {
+            Ok(()) => true,
+            Err(error) => {
+                log::error!("Failed to reply to SMS {}: {error}", message.id);
+                false
+            }
+        },
+        Ok(None) => {
+            log::warn!("Mapped SMS {} produced no reply", message.id);
+            true
+        }
+        Err(error) => {
+            log::error!("Failed to process SMS {}: {error}", message.id);
+            false
+        }
+    };
+
+    if delivered {
+        if let Err(error) = gateway.mark_read(&message.id).await {
+            log::warn!(
+                "Failed to mark processed SMS {} as read: {error}",
+                message.id
+            );
+        }
+    }
+}

@@ -4,6 +4,7 @@
 fn test_dm_config_defaults() {
     let dm = DmConfig::default();
     assert!(dm.model.is_none());
+    assert!(dm.phone_number.is_none());
     assert!(!dm.commands_enabled);
     assert!(dm.system_prompt.is_empty());
     assert!(dm.heartbeat_interval_minutes.is_none());
@@ -93,6 +94,77 @@ fn test_config_load_save_with_dms() {
     let loaded = Config::load(&path).unwrap();
     assert!(loaded.dms.contains_key("42"));
     assert!(loaded.dms.get("42").unwrap().commands_enabled);
+}
+
+#[test]
+fn test_sms_config_and_phone_mapping() {
+    let mut config = basic_config();
+    config.sms = Some(SmsConfig {
+        ip_address: "192.168.8.1".into(),
+        password: "modem-secret".into(),
+        forward_sms_to_telegram: true,
+    });
+    config.dms.insert(
+        "42".into(),
+        DmConfig {
+            phone_number: Some("+49 170-1234567".into()),
+            ..Default::default()
+        },
+    );
+
+    config.validate().unwrap();
+    let (chat_id, dm) = config.dm_for_phone_number("00491701234567").unwrap();
+    assert_eq!(chat_id, "42");
+    assert_eq!(dm.phone_number.as_deref(), Some("+49 170-1234567"));
+
+    let redacted = config.redacted();
+    assert_eq!(redacted.sms.unwrap().password, "[REDACTED]");
+}
+
+#[test]
+fn test_sms_config_validation() {
+    let mut config = basic_config();
+    config.sms = Some(SmsConfig {
+        ip_address: "not-an-ip".into(),
+        password: "secret".into(),
+        forward_sms_to_telegram: false,
+    });
+    assert!(config.validate().unwrap_err().to_string().contains("ip_address"));
+
+    config.sms.as_mut().unwrap().ip_address = "192.168.8.1".into();
+    config.sms.as_mut().unwrap().password.clear();
+    assert!(config.validate().unwrap_err().to_string().contains("password"));
+}
+
+#[test]
+fn test_duplicate_and_invalid_phone_mappings_are_rejected() {
+    let mut config = basic_config();
+    config.dms.insert(
+        "1".into(),
+        DmConfig {
+            phone_number: Some("+49 170 123".into()),
+            ..Default::default()
+        },
+    );
+    config.dms.insert(
+        "2".into(),
+        DmConfig {
+            phone_number: Some("0049170123".into()),
+            ..Default::default()
+        },
+    );
+    assert!(config
+        .validate()
+        .unwrap_err()
+        .to_string()
+        .contains("more than one"));
+
+    config.dms.get_mut("2").unwrap().phone_number = Some("invalid".into());
+    assert!(config
+        .validate()
+        .unwrap_err()
+        .to_string()
+        .contains("must contain digits"));
 }
 
 #[test]

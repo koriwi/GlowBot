@@ -53,6 +53,32 @@ impl Config {
             !uses_openrouter_extras || !self.openrouter.api_key.trim().is_empty(),
             "openrouter.api_key is required for embeddings, image generation, and media fallback models"
         );
+
+        if let Some(sms) = &self.sms {
+            anyhow::ensure!(
+                sms.ip_address.parse::<std::net::IpAddr>().is_ok(),
+                "sms.ip_address must be a valid IPv4 or IPv6 address"
+            );
+            anyhow::ensure!(
+                !sms.password.trim().is_empty(),
+                "sms.password must not be empty"
+            );
+        }
+
+        let mut phone_mappings = std::collections::HashSet::new();
+        for (chat_id, dm) in &self.dms {
+            if let Some(phone_number) = &dm.phone_number {
+                let normalized = crate::sms::normalize_phone_number(phone_number);
+                anyhow::ensure!(
+                    !normalized.is_empty(),
+                    "dms.{chat_id}.phone_number must contain digits"
+                );
+                anyhow::ensure!(
+                    phone_mappings.insert(normalized),
+                    "phone number {phone_number} is mapped to more than one private chat"
+                );
+            }
+        }
         Ok(())
     }
 
@@ -72,6 +98,16 @@ impl Config {
     /// Get the DM config for a given chat ID, if any.
     pub fn dm_config(&self, chat_id: &str) -> Option<&DmConfig> {
         self.dms.get(chat_id)
+    }
+
+    /// Find the Telegram DM mapped to an SMS phone number.
+    pub fn dm_for_phone_number(&self, phone_number: &str) -> Option<(&str, &DmConfig)> {
+        let wanted = crate::sms::normalize_phone_number(phone_number);
+        self.dms.iter().find_map(|(chat_id, dm)| {
+            let configured = dm.phone_number.as_deref()?;
+            (crate::sms::normalize_phone_number(configured) == wanted)
+                .then_some((chat_id.as_str(), dm))
+        })
     }
 
     /// Get the effective provider for a chat or DM.
@@ -265,6 +301,9 @@ impl Config {
         if let Some(codex) = c.codex.as_mut() {
             codex.auth_file = "[REDACTED]".into();
         }
+        if let Some(sms) = c.sms.as_mut() {
+            sms.password = "[REDACTED]".into();
+        }
         for server in c.mcp_servers.iter_mut() {
             if server.api_key.is_some() {
                 server.api_key = Some("[REDACTED]".into());
@@ -291,6 +330,7 @@ pub(crate) fn basic_config() -> Config {
         },
         codex: None,
         conversation: ConversationConfig::default(),
+        sms: None,
         db: DatabaseConfig::default(),
 
         mcp_servers: vec![],
