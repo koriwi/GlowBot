@@ -8,6 +8,8 @@ WORKDIR /app
 # then copy real source and build the app. This way dependency compilation
 # is cached in a Docker layer and only re-runs when Cargo.toml changes.
 COPY Cargo.toml Cargo.lock ./
+# Local Huawei API compatibility patch is a path dependency.
+COPY vendor ./vendor
 RUN mkdir src && \
     echo 'fn main() {}' > src/main.rs && \
     echo '' > src/lib.rs && \

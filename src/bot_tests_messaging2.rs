@@ -151,6 +151,145 @@ async fn test_dm_always_responds_even_in_mention_only_mode() {
     assert_eq!(result, Some("DM response!".into()));
 }
 
+#[derive(Default)]
+struct RecordingTextReplySender {
+    messages: std::sync::Mutex<Vec<String>>,
+}
+
+#[async_trait::async_trait]
+impl crate::bot_send::TextReplySender for RecordingTextReplySender {
+    async fn send_text(&self, text: &str) -> anyhow::Result<()> {
+        self.messages.lock().unwrap().push(text.to_string());
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn test_sms_and_telegram_share_dm_conversation_history() {
+    let (bot, _dir, mock) = setup_test_bot().await;
+    bot.state.lock().await.config.dms.insert(
+        "123".into(),
+        crate::config::DmConfig {
+            name: Some("Alice".into()),
+            phone_number: Some("+49123".into()),
+            ..Default::default()
+        },
+    );
+    for response in ["telegram reply", "sms “reply” 😀"] {
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: Some(response.into()),
+                    tool_calls: None,
+                    role: Some("assistant".into()),
+                    reasoning: None,
+                    ..Default::default()
+                },
+                finish_reason: Some("stop".into()),
+            }],
+            ..Default::default()
+        });
+    }
+
+    bot.process_message("123", "123", "@alice", "from telegram", "mybot")
+        .await
+        .unwrap();
+    let sender = RecordingTextReplySender::default();
+    let response = process_sms_message_impl(
+        &bot.state,
+        &bot.git_repo,
+        &bot.stop_signals,
+        "123",
+        "+49 123",
+        "from sms",
+        "2026-08-11 12:00:00",
+        &sender,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.as_deref(), Some("sms \"reply\" "));
+
+    let state = bot.state.lock().await;
+    let messages = state.db.load_messages("123", 10, None).unwrap();
+    assert_eq!(messages.len(), 4);
+    let user_messages: Vec<_> = messages
+        .iter()
+        .filter(|message| message.role == "user")
+        .map(ChatMessage::text_content)
+        .collect();
+    assert!(user_messages[0].contains("[Telegram message metadata]"));
+    assert!(user_messages[0].contains("from telegram"));
+    assert!(user_messages[1].contains("[SMS message metadata]"));
+    assert!(user_messages[1].contains("Sender phone: +49 123"));
+    assert!(user_messages[1].contains("Modem date: 2026-08-11 12:00:00"));
+    assert!(user_messages[1].contains("Mapped Telegram chat ID: 123"));
+    assert!(user_messages[1].contains("from sms"));
+    assert_eq!(messages.last().unwrap().text_content(), "sms \"reply\" ");
+}
+
+#[tokio::test]
+async fn test_sms_send_message_tool_uses_sms_reply_sender() {
+    let (bot, _dir, mock) = setup_test_bot().await;
+    bot.state
+        .lock()
+        .await
+        .config
+        .dms
+        .insert("123".into(), crate::config::DmConfig::default());
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "sms_tool".into(),
+                    call_type: "function".into(),
+                    function: FunctionCall {
+                        name: "send_message".into(),
+                        arguments: r#"{"text":"Working on it"}"#.into(),
+                    },
+                }]),
+                role: Some("assistant".into()),
+                reasoning: None,
+                ..Default::default()
+            },
+            finish_reason: Some("tool_calls".into()),
+        }],
+        ..Default::default()
+    });
+    mock.add_response(ChatCompletionResponse {
+        choices: vec![Choice {
+            message: AssistantMessage {
+                content: Some("Done".into()),
+                tool_calls: None,
+                role: Some("assistant".into()),
+                reasoning: None,
+                ..Default::default()
+            },
+            finish_reason: Some("stop".into()),
+        }],
+        ..Default::default()
+    });
+
+    let sender = RecordingTextReplySender::default();
+    let response = process_sms_message_impl(
+        &bot.state,
+        &bot.git_repo,
+        &bot.stop_signals,
+        "123",
+        "+49123",
+        "do something",
+        "2026-08-11 12:00:00",
+        &sender,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.as_deref(), Some("Done"));
+    assert_eq!(
+        sender.messages.lock().unwrap().as_slice(),
+        &["Working on it"]
+    );
+}
+
 #[tokio::test]
 async fn test_process_message_with_read_memory_tool() {
     let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;

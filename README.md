@@ -1,6 +1,6 @@
 # GlowBot
 
-A personal Telegram chatbot backed by OpenRouter LLMs or an OpenAI Codex subscription, with skills, memory, MCP tool servers, and autonomous background tasks. Runs in a single Docker container with bash as its system tool — safe by container isolation.
+A personal Telegram and SMS chatbot backed by OpenRouter LLMs or an OpenAI Codex subscription, with skills, memory, MCP tool servers, and autonomous background tasks. Runs in a single Docker container with bash as its system tool — safe by container isolation.
 
 ## Quick Start
 
@@ -78,6 +78,26 @@ chats:
     provider: codex
     model: "gpt-5.4" # optional; codex.model is used when omitted
 ```
+
+### SMS via Huawei modem (optional)
+
+GlowBot can poll and send text-only SMS through a Huawei HiLink modem such as the B311. Map each allowed phone number to an existing private Telegram chat ID:
+
+```yaml
+sms:
+  ip_address: "192.168.8.1"
+  password: "your-modem-password"
+  forward_sms_to_telegram: true
+
+dms:
+  "123456789":
+    name: "Alice"
+    phone_number: "+491701234567"
+```
+
+Incoming SMS from unmapped numbers are ignored. Mapped SMS and Telegram messages share one SQLite conversation history, while replies follow the incoming channel. Outgoing SMS is plain text, converts avoidable Unicode punctuation/emoji to GSM-safe text, and splits automatically at 160 GSM-7 septets (or 70 UTF-16 units when non-GSM text is necessary). MMS is not used.
+
+Use E.164 phone numbers (for example `+491701234567`) in the config. The modem is polled every five seconds and reconnects automatically after errors.
 
 ### MCP Servers (optional)
 
@@ -204,6 +224,7 @@ Commands must be enabled per-chat via `commands_enabled: true` (except `/stop` w
 - **RAG search**: Semantic search over conversation history (requires embedding model)
 - **Git auto-commit**: Every config/memory/skill write triggers `git add` → `commit` → `push`
 - **MarkdownV2 rendering**: Proper Telegram MarkdownV2 output with fallback to plain text
+- **SMS channel**: Huawei B311/HiLink inbound and outbound text messaging with shared DM history
 
 ## Development
 

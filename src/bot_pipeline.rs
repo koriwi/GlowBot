@@ -8,6 +8,16 @@ use std::sync::Arc;
 use teloxide::prelude::*;
 use tokio::sync::Mutex;
 
+/// Origin metadata used in persisted user messages and channel-specific prompting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum MessageSource {
+    Telegram,
+    Sms {
+        phone_number: String,
+        modem_date: String,
+    },
+}
+
 /// RAII guard that stops the typing indicator refresher on drop.
 struct TypingGuard {
     flag: Arc<std::sync::atomic::AtomicBool>,
@@ -35,6 +45,8 @@ pub(crate) async fn process_with_llm_impl(
     sent_at: Option<chrono::DateTime<chrono::Utc>>,
     tools_enabled: bool,
     tg_bot: Option<&teloxide::Bot>,
+    source: &MessageSource,
+    reply_sender: Option<&dyn crate::bot_send::TextReplySender>,
 ) -> anyhow::Result<Option<String>> {
     log::info!(
         "pipeline: starting LLM processing for chat={}, user={}, text=\"{}\", has_media={}",
@@ -84,7 +96,7 @@ pub(crate) async fn process_with_llm_impl(
         }
     };
 
-    let (system_prompt, model, provider) = {
+    let (mut system_prompt, model, provider) = {
         let s = state.lock().await;
         (
             s.assemble_system_prompt(chat_id, tools_enabled, user_id),
@@ -92,6 +104,15 @@ pub(crate) async fn process_with_llm_impl(
             s.effective_provider(chat_id),
         )
     };
+    if matches!(source, MessageSource::Sms { .. }) {
+        system_prompt.push_str(
+            "\n\n## Current channel: SMS\n\
+             The current user message arrived by SMS and your reply will be sent by SMS. \
+             Keep the final reply concise and plain text. Avoid Markdown, emoji, decorative symbols, \
+             and non-GSM characters unless they are necessary to preserve meaning. Long replies are \
+             split into separate text-only SMS messages automatically.",
+        );
+    }
 
     // Ensure user has a memory file
     ensure_memory_exists_impl(state, chat_id, user_id, username).await?;
@@ -129,6 +150,7 @@ pub(crate) async fn process_with_llm_impl(
         caption,
         media,
         tg_bot,
+        source,
     )
     .await;
     let mut turn_messages = vec![current_msg.clone()];
@@ -226,12 +248,13 @@ pub(crate) async fn process_with_llm_impl(
                 turn_messages.push(assistant_message);
 
                 let data_dir = { state.lock().await.data_dir.clone() };
-                let results = super::bot_dispatch::dispatch_tool_calls(
+                let results = super::bot_dispatch::dispatch_tool_calls_with_sender(
                     state,
                     chat_id,
                     tool_calls,
                     Some(&data_dir),
                     tg_bot,
+                    reply_sender,
                 )
                 .await;
                 turn_messages.extend(results);
@@ -253,6 +276,19 @@ pub(crate) async fn process_with_llm_impl(
             }),
             final_reasoning,
         )
+    };
+
+    // Persist and return the text that is actually deliverable on the active channel.
+    // This keeps shared Telegram/SMS history faithful to what the SMS recipient saw.
+    let result = if matches!(source, MessageSource::Sms { .. }) {
+        let prepared = crate::sms::prepare_sms_text(&result);
+        if prepared.trim().is_empty() {
+            "I could not format that reply as a text message.".to_string()
+        } else {
+            prepared
+        }
+    } else {
+        result
     };
 
     // Record final assistant message in the turn
@@ -392,6 +428,7 @@ pub(crate) fn chunk_for_embedding(text: &str, max_chars: usize, allow_split: boo
 /// - Non-native image: metadata + file path so the LLM can use the describe_image tool
 /// - Native audio: downloads audio, encodes as base64, builds user_multimodal
 /// - Non-native audio: calls audio_fallback_model to transcribe, builds text message
+#[allow(clippy::too_many_arguments)]
 async fn build_user_message_full(
     state: &Arc<Mutex<BotState>>,
     chat_id: &str,
@@ -403,8 +440,9 @@ async fn build_user_message_full(
     caption: Option<&str>,
     media: Option<&crate::media::IngestedMedia>,
     tg_bot: Option<&teloxide::Bot>,
+    source: &MessageSource,
 ) -> ChatMessage {
-    let metadata_prefix = message_metadata_prefix(user_id, username, sender_name, sent_at);
+    let metadata_prefix = message_metadata_prefix(user_id, username, sender_name, sent_at, source);
     let media = match media {
         Some(m) => m,
         None => {
@@ -511,6 +549,7 @@ fn message_metadata_prefix(
     username: &str,
     sender_name: Option<&str>,
     sent_at: Option<chrono::DateTime<chrono::Utc>>,
+    source: &MessageSource,
 ) -> String {
     let sent_at = sent_at.unwrap_or_else(chrono::Utc::now).to_rfc3339();
     let sender_id = if user_id.trim().is_empty() {
@@ -527,9 +566,17 @@ fn message_metadata_prefix(
         .filter(|name| !name.trim().is_empty())
         .unwrap_or("unknown");
 
-    format!(
-        "[Telegram message metadata]\nSent at: {sent_at}\nSender ID: {sender_id}\nSender name: {sender_name}\nSender username: {sender_username}"
-    )
+    match source {
+        MessageSource::Telegram => format!(
+            "[Telegram message metadata]\nSent at: {sent_at}\nSender ID: {sender_id}\nSender name: {sender_name}\nSender username: {sender_username}"
+        ),
+        MessageSource::Sms {
+            phone_number,
+            modem_date,
+        } => format!(
+            "[SMS message metadata]\nReceived by bot at: {sent_at}\nModem date: {modem_date}\nSender phone: {phone_number}\nMapped Telegram chat ID: {sender_id}\nSender name: {sender_name}"
+        ),
+    }
 }
 
 fn format_user_text(metadata_prefix: &str, text: &str) -> String {
@@ -610,6 +657,7 @@ fn build_native_message(
 }
 
 /// Build a ChatMessage where audio is transcribed via a fallback model.
+#[allow(clippy::too_many_arguments)]
 async fn build_audio_fallback_message(
     media: &crate::media::IngestedMedia,
     caption: Option<&str>,

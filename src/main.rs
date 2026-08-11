@@ -1,3 +1,6 @@
+#[path = "main_sms.rs"]
+mod main_sms;
+
 use glowbot::bot::GlowBot;
 use glowbot::config::Config;
 use glowbot::llm::{CodexBackend, LlmBackend, MultiProviderBackend, OpenRouterBackend};
@@ -112,8 +115,18 @@ async fn run_bot() -> anyhow::Result<()> {
 
     // Per-chat locks: ensures only one message per chat is processed at a time,
     // while /stop commands can bypass the lock to signal cancellation.
-    let chat_locks: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
-        Arc::new(std::sync::Mutex::new(HashMap::new()));
+    let chat_locks: main_sms::ChatLocks = Arc::new(std::sync::Mutex::new(HashMap::new()));
+
+    // Poll the optional Huawei modem independently from Telegram. Both channels
+    // share the same per-chat locks and SQLite conversation history.
+    if let Some(sms_config) = config.sms.clone() {
+        let sms_bot = Arc::clone(&bot);
+        let sms_tg = tg_bot.clone();
+        let sms_locks = Arc::clone(&chat_locks);
+        tokio::spawn(async move {
+            main_sms::run_sms_loop(sms_bot, sms_tg, sms_locks, sms_config).await;
+        });
+    }
 
     log::info!("GlowBot is ready. Starting long-polling...");
 

@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-GlowBot is a personal Telegram chatbot inspired by OpenCLAW, built for a small private audience (me and friends). It connects to group chats and direct messages, uses either OpenRouter.ai or an OpenAI Codex subscription as its LLM backend, and augments itself with a skill system and persistent per-user memory.
+GlowBot is a personal Telegram and SMS chatbot inspired by OpenCLAW, built for a small private audience (me and friends). It connects to Telegram group chats and private conversations over Telegram or SMS, uses either OpenRouter.ai or an OpenAI Codex subscription as its LLM backend, and augments itself with a skill system and persistent per-user memory.
 
 The bot runs in Docker with raw bash access as its sole system tool — safe by container isolation.
 
@@ -14,7 +14,7 @@ The bot runs in Docker with raw bash access as its sole system tool — safe by 
 |-------|--------|
 | Language | Rust (stable) |
 | Configuration | YAML |
-| Messaging | Telegram Bot API |
+| Messaging | Telegram Bot API + SMS through Huawei HiLink modems |
 | LLM Backend | OpenRouter.ai or OpenAI Codex subscription |
 | Memory (later) | SQLite + vector extension (RAG) |
 | Deployment | Docker (single container) |
@@ -58,6 +58,12 @@ openrouter:
 #   auth_file: "~/.codex/auth.json"
 #   reasoning_effort: "high"       # optional
 
+# Optional Huawei modem for text-only SMS
+sms:
+  ip_address: "192.168.8.1"
+  password: "..."
+  forward_sms_to_telegram: true
+
 # Conversation context settings
 conversation:
   recent_messages_window_size: 20   # number of recent messages (default: 20)
@@ -73,6 +79,7 @@ conversation:
 
 dms:
   "123456789":
+    phone_number: "+491701234567"         # optional SMS mapping
     provider: codex                       # optional, overrides global provider
     model: "gpt-5.4"                    # optional, overrides selected provider default
     commands_enabled: true
@@ -94,6 +101,8 @@ chats:
 ```
 
 `/commands` at runtime can modify settings for the active chat (if commands are enabled for that chat).
+
+The optional `sms` object enables Huawei modem polling. Its password is redacted from config display. `dms.<chat_id>.phone_number` maps a phone number to that private Telegram conversation; E.164 format is recommended and duplicate normalized mappings are rejected.
 
 ### 3.2 Git Versioning
 
@@ -121,8 +130,19 @@ The data directory is a standalone git repository, not nested inside the applica
 - Receives messages via long-polling or webhook (configurable, poll default).
 - Sends responses as plain text or Markdown.
 - Tracks chat context: group vs. DM, user identity (ID + username + display name), and Telegram message sent time.
-- Each non-command message sent to the LLM is prefixed with Telegram metadata (`Sent at`, `Sender ID`, `Sender name`, `Sender username`) before the user's text, so the model can reason about who said what and when.
+- Each non-command message sent to the LLM is prefixed with channel metadata. Telegram includes sent time and sender identity; SMS includes modem date, sender phone number, and mapped Telegram chat ID.
 - Shows **typing indicator** (`sendChatAction`) while the LLM is processing a response.
+
+#### SMS channel
+
+- The optional SMS channel uses `huawei-dongle-api` with a small vendored patch for the missing typed `send-sms` endpoint, supporting Huawei HiLink devices such as the B311.
+- The modem inbox is polled every five seconds. Authentication and reconnection are automatic.
+- SMS from phone numbers not mapped by a `dms.<chat_id>.phone_number` entry are ignored and marked read.
+- Mapped SMS is processed under the mapped positive Telegram chat ID, so Telegram and SMS turns share the same SQLite history, memories, tools, model, and DM configuration.
+- Replies always follow the initiating channel: SMS input gets an SMS reply; Telegram input gets a Telegram reply. The `send_message` tool follows the same rule during a turn.
+- `sms.forward_sms_to_telegram: true` mirrors incoming and successfully sent SMS text to the mapped Telegram DM without duplicating it in LLM history.
+- SMS output is plain text. The SMS-specific system prompt asks for concise ASCII/GSM-safe output without Markdown, emoji, or decorative Unicode. Common Unicode punctuation and Latin diacritics are converted when safe; characters necessary for meaning are preserved.
+- GSM-7 output is split into standalone messages of at most 160 septets (extension-table characters count as two). Necessary non-GSM output is split at 70 UTF-16 units. MMS is not supported or attempted.
 
 #### Interaction modes
 
@@ -351,7 +371,7 @@ A human-focused todo list — simple items the user wants to remember or track. 
 
 #### Short-term (conversation context)
 
-- Only the **current user message** is sent to the LLM with each request, along with the system prompt. The current user message includes a Telegram metadata prefix with sender identity and sent timestamp. Previous messages are stored persistently in **SQLite** (`glowbot_data/conversations.db`) but not transmitted unless explicitly requested.
+- Only the **current user message** is sent to the LLM with each request, along with the system prompt. The current user message includes channel-specific metadata (Telegram identity/timestamp or SMS phone/modem date/mapping). Previous messages are stored persistently in **SQLite** (`glowbot_data/conversations.db`) but not transmitted unless explicitly requested.
 - The bot provides a **`get_recent_messages(count)`** tool that queries the database and returns the last N messages. The LLM should call this when it needs to recall earlier parts of the conversation.
 - The `conversation_window` config value controls the query `LIMIT` (default: 20). Older messages remain in the database but are excluded from default context.
 - History **survives bot restarts** because it's stored in SQLite, not in-memory.
@@ -490,6 +510,7 @@ Whitelists contain Telegram user IDs.
 ### Must have
 
 - [x] Telegram messaging (groups + DMs, long-polling)
+- [x] Text-only SMS messaging through Huawei HiLink modems with shared DM history and channel-matched replies
 - [x] OpenRouter LLM integration with multi-turn tool-use loop
 - [x] OpenAI Codex subscription integration using official Codex CLI OAuth credentials
 - [x] Per-chat and per-DM provider overrides between OpenRouter and Codex
@@ -525,6 +546,7 @@ Whitelists contain Telegram user IDs.
 - Skill compilation by the bot
 - Message embedding / RAG / SQLite vector
 - Webhook mode (polling only)
+- MMS sending
 - Obsidian-like `.md` knowledge base
 
 ---

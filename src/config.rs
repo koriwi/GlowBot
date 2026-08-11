@@ -87,6 +87,10 @@ pub struct DmConfig {
     /// Optional human-readable name for this DM (survives config updates).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Optional phone number mapped to this private chat for SMS routing.
+    /// E.164 format (for example `+491701234567`) is recommended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phone_number: Option<String>,
     /// Optional LLM provider override for this DM.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<LlmProvider>,
@@ -262,6 +266,18 @@ fn default_codex_base_url() -> String {
     "https://chatgpt.com/backend-api".into()
 }
 
+/// Huawei modem configuration for the optional SMS channel.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SmsConfig {
+    /// IP address of the Huawei modem (for example `192.168.8.1`).
+    pub ip_address: String,
+    /// Web interface password for the modem's `admin` account.
+    pub password: String,
+    /// Mirror mapped incoming and outgoing SMS messages to the corresponding Telegram DM.
+    #[serde(default)]
+    pub forward_sms_to_telegram: bool,
+}
+
 /// Global application configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Config {
@@ -279,6 +295,9 @@ pub struct Config {
     /// Conversation context settings (window sizes for history and advice).
     #[serde(default)]
     pub conversation: ConversationConfig,
+    /// Optional Huawei modem configuration. When absent, the SMS channel is disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sms: Option<SmsConfig>,
 
     /// Per-chat configuration overrides for groups, keyed by chat ID string (negative).
     #[serde(default)]

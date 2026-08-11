@@ -13,6 +13,7 @@ pub mod memory;
 pub mod openrouter;
 pub mod reminders;
 pub mod skills;
+pub mod sms;
 pub mod system_prompt;
 pub mod tasks;
 pub mod todos;

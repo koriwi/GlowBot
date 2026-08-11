@@ -72,14 +72,48 @@ pub(crate) async fn dispatch_tool_calls(
     data_dir: Option<&std::path::Path>,
     tg_bot: Option<&teloxide::Bot>,
 ) -> Vec<ChatMessage> {
+    let telegram_sender = tg_bot.and_then(|bot| {
+        chat_id
+            .parse::<i64>()
+            .ok()
+            .map(|id| crate::bot_send::TelegramReplySender::new(bot, ChatId(id)))
+    });
+    dispatch_tool_calls_with_sender(
+        state,
+        chat_id,
+        tool_calls,
+        data_dir,
+        tg_bot,
+        telegram_sender
+            .as_ref()
+            .map(|sender| sender as &dyn crate::bot_send::TextReplySender),
+    )
+    .await
+}
+
+pub(crate) async fn dispatch_tool_calls_with_sender(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: &str,
+    tool_calls: &[ToolCall],
+    data_dir: Option<&std::path::Path>,
+    tg_bot: Option<&teloxide::Bot>,
+    reply_sender: Option<&dyn crate::bot_send::TextReplySender>,
+) -> Vec<ChatMessage> {
     let max_result_chars = state.lock().await.config.conversation.max_tool_result_chars;
 
     let mut results = Vec::new();
     for tc in tool_calls {
         let args: serde_json::Value =
             serde_json::from_str(&tc.function.arguments).unwrap_or_default();
-        let result_text =
-            dispatch_tool(state, chat_id, tc.function.name.as_str(), &args, tg_bot).await;
+        let result_text = dispatch_tool_with_sender(
+            state,
+            chat_id,
+            tc.function.name.as_str(),
+            &args,
+            tg_bot,
+            reply_sender,
+        )
+        .await;
         if let Some(dir) = data_dir {
             log_tool_call_to(dir, &tc.function.name, &tc.function.arguments, &result_text);
         }
@@ -108,12 +142,40 @@ pub(crate) fn cap_tool_result(result: &str, max_chars: Option<usize>) -> String 
 }
 
 /// Shared tool dispatch — used by both normal messages and heartbeat tasks.
+#[allow(dead_code)]
 pub(crate) async fn dispatch_tool(
     state: &Arc<Mutex<BotState>>,
     chat_id: &str,
     tool_name: &str,
     args: &serde_json::Value,
     tg_bot: Option<&teloxide::Bot>,
+) -> String {
+    let telegram_sender = tg_bot.and_then(|bot| {
+        chat_id
+            .parse::<i64>()
+            .ok()
+            .map(|id| crate::bot_send::TelegramReplySender::new(bot, ChatId(id)))
+    });
+    dispatch_tool_with_sender(
+        state,
+        chat_id,
+        tool_name,
+        args,
+        tg_bot,
+        telegram_sender
+            .as_ref()
+            .map(|sender| sender as &dyn crate::bot_send::TextReplySender),
+    )
+    .await
+}
+
+async fn dispatch_tool_with_sender(
+    state: &Arc<Mutex<BotState>>,
+    chat_id: &str,
+    tool_name: &str,
+    args: &serde_json::Value,
+    tg_bot: Option<&teloxide::Bot>,
+    reply_sender: Option<&dyn crate::bot_send::TextReplySender>,
 ) -> String {
     let cid = chat_id.to_string();
     match tool_name {
@@ -122,13 +184,13 @@ pub(crate) async fn dispatch_tool(
             if text.is_empty() {
                 return "Error: text required".into();
             }
-            if let Some(bot) = tg_bot {
-                let Ok(chat_id_i64) = cid.parse::<i64>() else {
-                    return format!("Error: invalid chat_id '{}'", cid);
-                };
-                let chat = ChatId(chat_id_i64);
-                crate::bot_send::send_message(bot, chat, text).await;
-                "Message sent.".into()
+            if let Some(sender) = reply_sender {
+                match sender.send_text(text).await {
+                    Ok(()) => "Message sent.".into(),
+                    Err(error) => format!("Error sending message: {error}"),
+                }
+            } else if tg_bot.is_some() && cid.parse::<i64>().is_err() {
+                format!("Error: invalid chat_id '{}'", cid)
             } else {
                 "Error: send_message not available in this context.".into()
             }
