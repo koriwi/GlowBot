@@ -3,9 +3,12 @@ use crate::config::SmsConfig;
 use anyhow::Context;
 use async_trait::async_trait;
 use huawei_dongle_api::models::{SmsBoxType, SmsListRequest, SmsSendRequest, SmsSortType};
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use teloxide::types::ChatId;
 
+const SMS_DEDUP_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const GSM_BASIC: &str = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
 const GSM_EXTENSION: &str = "^{}\\[~]|€";
 const GSM_SEGMENT_SEPTETS: usize = 160;
@@ -18,6 +21,44 @@ pub struct IncomingSms {
     pub phone_number: String,
     pub text: String,
     pub modem_date: String,
+}
+
+/// Suppresses modem inbox entries that remain marked unread briefly after they
+/// have already been processed. Entries are remembered only after successful
+/// delivery, so genuine processing failures can still be retried.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SmsFingerprint {
+    phone_number: String,
+    text: String,
+    modem_date: String,
+}
+
+impl From<&IncomingSms> for SmsFingerprint {
+    fn from(message: &IncomingSms) -> Self {
+        Self {
+            phone_number: normalize_phone_number(&message.phone_number),
+            text: message.text.clone(),
+            modem_date: message.modem_date.clone(),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct SmsDeduplicator {
+    processed: HashMap<SmsFingerprint, Instant>,
+}
+
+impl SmsDeduplicator {
+    pub fn is_duplicate(&mut self, message: &IncomingSms) -> bool {
+        let now = Instant::now();
+        self.processed
+            .retain(|_, seen_at| now.duration_since(*seen_at) < SMS_DEDUP_RETENTION);
+        self.processed.contains_key(&message.into())
+    }
+
+    pub fn remember(&mut self, message: &IncomingSms) {
+        self.processed.insert(message.into(), Instant::now());
+    }
 }
 
 /// Modem abstraction used by the SMS poller and reply sender.

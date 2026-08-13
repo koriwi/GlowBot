@@ -1,7 +1,7 @@
 use glowbot::bot::GlowBot;
 use glowbot::bot_send::TextReplySender;
 use glowbot::config::SmsConfig;
-use glowbot::sms::{HuaweiSmsGateway, IncomingSms, SmsGateway, SmsReplySender};
+use glowbot::sms::{HuaweiSmsGateway, IncomingSms, SmsDeduplicator, SmsGateway, SmsReplySender};
 use std::collections::HashMap;
 use std::sync::Arc;
 use teloxide::types::ChatId;
@@ -48,10 +48,22 @@ async fn poll_connected_gateway(
     chat_locks: ChatLocks,
     gateway: Arc<dyn SmsGateway>,
 ) -> anyhow::Result<()> {
+    let mut deduplicator = SmsDeduplicator::default();
     loop {
         let messages = gateway.unread_messages().await?;
         for message in messages {
-            handle_incoming_sms(&bot, &tg_bot, &chat_locks, Arc::clone(&gateway), &message).await;
+            if deduplicator.is_duplicate(&message) {
+                log::debug!(
+                    "Ignoring already processed SMS {} from {}",
+                    message.id,
+                    message.phone_number
+                );
+                continue;
+            }
+            if handle_incoming_sms(&bot, &tg_bot, &chat_locks, Arc::clone(&gateway), &message).await
+            {
+                deduplicator.remember(&message);
+            }
         }
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
@@ -63,7 +75,7 @@ async fn handle_incoming_sms(
     chat_locks: &ChatLocks,
     gateway: Arc<dyn SmsGateway>,
     message: &IncomingSms,
-) {
+) -> bool {
     let mapping = {
         let inner = bot.lock().await;
         let state = inner.state.lock().await;
@@ -78,11 +90,11 @@ async fn handle_incoming_sms(
         if let Err(error) = gateway.mark_read(&message.id).await {
             log::warn!("Failed to mark ignored SMS {} as read: {error}", message.id);
         }
-        return;
+        return true;
     };
     let Ok(chat_id_i64) = chat_id.parse::<i64>() else {
         log::error!("Mapped SMS chat ID '{}' is not a Telegram chat ID", chat_id);
-        return;
+        return false;
     };
 
     let telegram_forward = forward_to_telegram.then(|| (tg_bot.clone(), ChatId(chat_id_i64)));
@@ -143,10 +155,13 @@ async fn handle_incoming_sms(
 
     if delivered {
         if let Err(error) = gateway.mark_read(&message.id).await {
+            // Delivery has already happened; remember the message even if this
+            // modem update failed so the next poll cannot trigger the LLM again.
             log::warn!(
                 "Failed to mark processed SMS {} as read: {error}",
                 message.id
             );
         }
     }
+    delivered
 }

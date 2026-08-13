@@ -176,6 +176,7 @@ pub(crate) async fn process_with_llm_impl(
     let (result, final_reasoning) = {
         let mut final_text = None;
         let mut final_reasoning = None;
+        let mut dispatch_policy = super::bot_dispatch::ToolDispatchPolicy::normal();
         for round in 0..max_tool_rounds {
             if check_stopped() {
                 return Ok(Some("⏹ Stopped.".into()));
@@ -255,6 +256,7 @@ pub(crate) async fn process_with_llm_impl(
                     Some(&data_dir),
                     tg_bot,
                     reply_sender,
+                    &mut dispatch_policy,
                 )
                 .await;
                 turn_messages.extend(results);

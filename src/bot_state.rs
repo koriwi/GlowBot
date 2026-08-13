@@ -146,6 +146,26 @@ impl BotState {
         include_bash: bool,
         chat_id: &str,
     ) -> Vec<crate::openrouter::ToolDefinition> {
+        self.build_tools_for_context(include_bash, chat_id, false)
+    }
+
+    /// Build tools for a scheduled run. Runtime enforcement is paired with
+    /// removing `send_message` from the model's choices: the heartbeat runner
+    /// decides itself whether a terminal success should be announced.
+    pub fn build_background_tools(
+        &self,
+        include_bash: bool,
+        chat_id: &str,
+    ) -> Vec<crate::openrouter::ToolDefinition> {
+        self.build_tools_for_context(include_bash, chat_id, true)
+    }
+
+    fn build_tools_for_context(
+        &self,
+        include_bash: bool,
+        chat_id: &str,
+        background: bool,
+    ) -> Vec<crate::openrouter::ToolDefinition> {
         let mut t = crate::openrouter::all_tool_definitions(
             include_bash,
             self.config.openrouter.embedding_model.as_deref(),
@@ -154,6 +174,9 @@ impl BotState {
             self.config.image_fallback_model_for_chat(chat_id),
             self.config.advice_model_for_chat(chat_id),
         );
+        if background {
+            t.retain(|tool| tool.function.name != "send_message");
+        }
         let mut blacklisted_counts: HashMap<&str, usize> = HashMap::new();
         for mt in &self.mcp_tools {
             if !self.config.is_mcp_server_allowed(chat_id, &mt.server_name) {

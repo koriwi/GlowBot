@@ -1,4 +1,7 @@
-use super::bot_dispatch::{cap_tool_result, dispatch_tool, dispatch_tool_calls, log_tool_call_to};
+use super::bot_dispatch::{
+    cap_tool_result, dispatch_tool, dispatch_tool_calls, dispatch_tool_calls_with_sender,
+    log_tool_call_to, ToolDispatchPolicy,
+};
 use super::bot_heartbeat::{background_task_prompt, run_heartbeat_task};
 use super::*;
 use crate::llm::mock::MockLlmBackend;

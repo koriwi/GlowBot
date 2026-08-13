@@ -2,6 +2,20 @@ use super::BotState;
 use crate::openrouter::{ChatMessage, ToolCall};
 use std::io::Write;
 use std::sync::Arc;
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ToolDispatchPolicy {
+    Normal { send_message_attempted: bool },
+    Background,
+}
+
+impl ToolDispatchPolicy {
+    pub(crate) fn normal() -> Self {
+        Self::Normal {
+            send_message_attempted: false,
+        }
+    }
+}
 use teloxide::prelude::*;
 use tokio::sync::Mutex;
 
@@ -65,6 +79,7 @@ pub(crate) fn log_tool_call_to(
 
 /// Dispatch a batch of tool calls and return the result messages.
 /// Optionally logs each call if `data_dir` is provided.
+#[allow(dead_code)]
 pub(crate) async fn dispatch_tool_calls(
     state: &Arc<Mutex<BotState>>,
     chat_id: &str,
@@ -78,6 +93,7 @@ pub(crate) async fn dispatch_tool_calls(
             .ok()
             .map(|id| crate::bot_send::TelegramReplySender::new(bot, ChatId(id)))
     });
+    let mut policy = ToolDispatchPolicy::normal();
     dispatch_tool_calls_with_sender(
         state,
         chat_id,
@@ -87,6 +103,7 @@ pub(crate) async fn dispatch_tool_calls(
         telegram_sender
             .as_ref()
             .map(|sender| sender as &dyn crate::bot_send::TextReplySender),
+        &mut policy,
     )
     .await
 }
@@ -98,6 +115,7 @@ pub(crate) async fn dispatch_tool_calls_with_sender(
     data_dir: Option<&std::path::Path>,
     tg_bot: Option<&teloxide::Bot>,
     reply_sender: Option<&dyn crate::bot_send::TextReplySender>,
+    policy: &mut ToolDispatchPolicy,
 ) -> Vec<ChatMessage> {
     let max_result_chars = state.lock().await.config.conversation.max_tool_result_chars;
 
@@ -105,15 +123,43 @@ pub(crate) async fn dispatch_tool_calls_with_sender(
     for tc in tool_calls {
         let args: serde_json::Value =
             serde_json::from_str(&tc.function.arguments).unwrap_or_default();
-        let result_text = dispatch_tool_with_sender(
-            state,
-            chat_id,
-            tc.function.name.as_str(),
-            &args,
-            tg_bot,
-            reply_sender,
-        )
-        .await;
+        let blocked_message = if tc.function.name == "send_message" {
+            match policy {
+                ToolDispatchPolicy::Background => Some(
+                    "Error: send_message is disabled during background tasks. Finish silently; the runner will announce a newly completed task.",
+                ),
+                ToolDispatchPolicy::Normal {
+                    send_message_attempted,
+                } if *send_message_attempted => Some(
+                    "Error: send_message may be called at most once per turn. Continue working without another progress message.",
+                ),
+                ToolDispatchPolicy::Normal {
+                    send_message_attempted,
+                } => {
+                    *send_message_attempted = true;
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let result_text = if let Some(message) = blocked_message {
+            log::warn!(
+                "Blocked repeated/background send_message call in chat {}",
+                chat_id
+            );
+            message.to_string()
+        } else {
+            dispatch_tool_with_sender(
+                state,
+                chat_id,
+                tc.function.name.as_str(),
+                &args,
+                tg_bot,
+                reply_sender,
+            )
+            .await
+        };
         if let Some(dir) = data_dir {
             log_tool_call_to(dir, &tc.function.name, &tc.function.arguments, &result_text);
         }

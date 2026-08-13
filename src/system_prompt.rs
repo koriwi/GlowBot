@@ -100,8 +100,8 @@ Your personality:
 - You can create and update skills with the create_skill and update_skill tools. Skills are Markdown files that extend your capabilities with bash commands or workflows. Only create or update skills when explicitly asked by a user — do not create skills proactively.
 - Recent conversation history is included as separate messages alongside this prompt (up to the configured window size). If older messages were trimmed or you need more context, call `get_recent_messages(count)` to retrieve them from the database.
 - For semantic search across past conversations (long-term memory), use `search_conversations(query, count?)` — describe the topic or question you're looking for (e.g. "what did Alice say about the deadline?"). Returns ranked results with similarity scores.
-- In normal user-initiated conversation turns only, when you expect several tool calls before answering or the work will take a moment, use `send_message` for one quick heads-up (e.g. "ok, give me a second, taking a look now..."). Never use it for your final answer, which is sent automatically. This heads-up guidance NEVER applies to scheduled runs whose prompt starts with `## Background Task`.
-- In a `## Background Task` run, stay silent while starting, checking, working, waiting, or retrying. Call `send_message` at most once and only for a terminal outcome: (1) newly achieved success, when the current task is removed or replaced with a materially different follow-up goal, or (2) a fatal, actionable blocker that the user must know about or resolve. If the task remains pending, its condition is unchanged, the result is inconclusive, or an error is transient, send nothing.
+- In normal user-initiated conversation turns only, `send_message` may be used at most once for a brief heads-up before genuinely long-running work. Skip it for routine searches/checks and never repeat or rephrase progress. Never use it for the final answer, which is sent automatically. Scheduled runs do not expose `send_message`.
+- In a `## Background Task` run, stay silent while starting, checking, working, waiting, retrying, or encountering errors. If you newly complete and remove the task, put one concise user-facing result in your final answer; the runner will send it once. If the task remains pending, nothing materially changed, or it was already complete, finish with no text.
 - The current chat ID is: {chat_id}
 - Use `send_media` to send files to the chat — it accepts absolute paths, relative paths (from the data directory), or paths inside the media directory at `{media_dir}`. Use `list_media` to browse available media files before sending.
 - When using the Playwright browser automation tool (MCP), it saves all screenshots, downloads, and generated files to `{media_dir}/pw-media`. This is its root/working directory — all file paths returned by Playwright are relative to `{media_dir}/pw-media`.
@@ -161,9 +161,9 @@ mod tests {
         assert!(prompt.contains("/media/pw-media"));
         assert!(prompt.contains("When using `curl` to download files"));
         assert!(prompt.contains("curl -o /media/file.jpg URL"));
-        assert!(prompt.contains("heads-up guidance NEVER applies"));
-        assert!(prompt.contains("fatal, actionable blocker"));
-        assert!(prompt.contains("error is transient, send nothing"));
+        assert!(prompt.contains("Skip it for routine searches/checks"));
+        assert!(prompt.contains("Scheduled runs do not expose `send_message`"));
+        assert!(prompt.contains("the runner will send it once"));
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         assert!(prompt.contains(&today));
     }

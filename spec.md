@@ -128,6 +128,7 @@ The data directory is a standalone git repository, not nested inside the applica
 ### 4.1 Telegram Integration
 
 - Receives messages via long-polling or webhook (configurable, poll default).
+- Ignores Telegram messages sent by bots, through inline bots, or by automatic linked-channel forwarding. Human-authored manual forwards remain valid input. This prevents SMS/integration mirror messages from triggering a second LLM turn.
 - Sends responses as plain text or Markdown.
 - Tracks chat context: group vs. DM, user identity (ID + username + display name), and Telegram message sent time.
 - Each non-command message sent to the LLM is prefixed with channel metadata. Telegram includes sent time and sender identity; SMS includes modem date, sender phone number, and mapped Telegram chat ID.
@@ -140,7 +141,7 @@ The data directory is a standalone git repository, not nested inside the applica
 - SMS from phone numbers not mapped by a `dms.<chat_id>.phone_number` entry are ignored and marked read.
 - Mapped SMS is processed under the mapped positive Telegram chat ID, so Telegram and SMS turns share the same SQLite history, memories, tools, model, and DM configuration.
 - Replies always follow the initiating channel: SMS input gets an SMS reply; Telegram input gets a Telegram reply. The `send_message` tool follows the same rule during a turn.
-- `dms.<chat_id>.forward_sms_to_telegram: true` mirrors that contact's incoming and successfully sent SMS text to the mapped Telegram DM without duplicating it in LLM history. It defaults to `false` independently for each DM.
+- `dms.<chat_id>.forward_sms_to_telegram: true` mirrors that contact's incoming and successfully sent SMS text to the mapped Telegram DM without duplicating it in LLM history. It defaults to `false` independently for each DM. Modem inbox entries are deduplicated in memory after successful processing, so a delayed/failed mark-read operation cannot trigger the LLM or send a reply twice.
 - SMS output is plain text. The SMS-specific system prompt asks for concise ASCII/GSM-safe output without Markdown, emoji, or decorative Unicode. Common Unicode punctuation and Latin diacritics are converted when safe; characters necessary for meaning are preserved.
 - GSM-7 output is split into standalone messages of at most 160 septets (extension-table characters count as two). Necessary non-GSM output is split at 70 UTF-16 units. MMS is not supported or attempted.
 
@@ -189,7 +190,7 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
   - **`read_config_schema`** — returns the JSON Schema for all config types.
   - **`read_config`** — returns the current config as YAML.
   - **`edit_config`** — proposes config changes via Accept/Deny dialog.
-  - **`send_message`** — send a plain text message to the current chat. Always exposed. Normal user-initiated turns may use it for one heads-up/intermediate message. Scheduled task runs reserve it for terminal success or fatal/actionable blockers; they stay silent for progress, waiting, retries, and unchanged pending states.
+  - **`send_message`** — send a plain text message to the current chat. Normal user-initiated turns may use it once before genuinely long-running work, but not for routine searches/checks or repeated progress. It is omitted from scheduled-task tool definitions and also runtime-blocked there.
   - **`get_recent_messages`** — returns the last N messages from the conversation history. The bot does NOT automatically send past messages — only the current user message is included in each request. The LLM must call this tool when it needs context from earlier in the conversation.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
 
@@ -205,6 +206,7 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
 - `/status` shows context usage as `"37k/252k (15%)"` — prompt tokens / model limit with percentage.
 - If the model context length is not yet cached (e.g. OpenRouter fetch failed), `/status` shows `"unknown"`.
 - Heartbeat tasks also track usage, so `/status` reflects the most recent activity even from background processing.
+- OpenRouter chat responses support gzip, Brotli, deflate, and zstd content encoding. A successful response with an unreadable/truncated body or an empty body is retried once before the error is returned.
 
 ### 4.2a Media Ingest
 
@@ -320,10 +322,10 @@ chats:
 - For each chat with pending tasks, a **dedicated timer loop** is spawned with that chat's configured interval (in seconds). If the chat has no custom interval, the global default is used. DMs always use the global default since they can't be preconfigured.
 - Each per-chat loop independently: picks the oldest untried task → runs the LLM agent → sleeps for its interval → repeats. If heartbeat is disabled (interval = 0) the loop exits and will be respawned on the next scheduler scan if it becomes enabled again. If the agent completes all tasks, the loop exits immediately so the chat becomes eligible for re-discovery when new tasks are added.
 - The agent uses bash, MCP tools, and task tools to complete the work. Each task is processed **at most once per cycle**, preventing re-grinding if a task cannot be completed yet (e.g. waiting for a download). If a task remains uncompleted (no `remove_task` call), it is **skipped** and the cycle moves on to the next untried task in the list. The cycle exits only when every remaining task has been tried at least once.
-- Scheduled task runs follow a strict terminal-only messaging policy. The agent must stay silent while starting, checking, working, waiting, retrying, or observing an unchanged/inconclusive state. It may call **`send_message`** at most once per run, and only for either (1) newly achieved success, when the current task is removed or replaced with a materially different follow-up goal, or (2) a fatal/actionable blocker that the user must know about or resolve (for example, a required service is down). Pending tasks and transient failures produce no message. Tasks found already complete are quietly removed without a message.
+- Scheduled task runs cannot call **`send_message`**: the tool is omitted from their definitions and runtime-blocked as a second line of defense. The agent stays silent while starting, checking, working, waiting, retrying, or encountering provider/tool errors. After a task is newly completed and removed, the runner sends the model's non-empty final result exactly once. Pending tasks, transient/provider failures, and tasks found already complete produce no message.
 - Task processing runs in its own task — does not block message handling.
 
-**Tools:** `add_task`, `list_tasks`, `remove_task`, `send_message`.
+**Tools:** `add_task`, `list_tasks`, `remove_task` (scheduled task runs do not expose `send_message`).
 
 ---
 

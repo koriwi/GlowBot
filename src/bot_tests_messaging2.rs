@@ -228,6 +228,78 @@ async fn test_sms_and_telegram_share_dm_conversation_history() {
 }
 
 #[tokio::test]
+async fn test_background_dispatch_blocks_send_message_at_runtime() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    let sender = RecordingTextReplySender::default();
+    let tool_calls = vec![ToolCall {
+        id: "background_message".into(),
+        call_type: "function".into(),
+        function: FunctionCall {
+            name: "send_message".into(),
+            arguments: r#"{"text":"Searching now..."}"#.into(),
+        },
+    }];
+
+    let results = dispatch_tool_calls_with_sender(
+        &bot.state,
+        "123",
+        &tool_calls,
+        None,
+        None,
+        Some(&sender),
+        &mut ToolDispatchPolicy::Background,
+    )
+    .await;
+
+    assert!(sender.messages.lock().unwrap().is_empty());
+    assert!(results[0]
+        .text_content()
+        .contains("send_message is disabled during background tasks"));
+}
+
+#[tokio::test]
+async fn test_normal_dispatch_allows_only_one_send_message_per_turn() {
+    let (bot, _dir, _mock) = setup_test_bot().await;
+    let sender = RecordingTextReplySender::default();
+    let tool_calls = vec![
+        ToolCall {
+            id: "first_message".into(),
+            call_type: "function".into(),
+            function: FunctionCall {
+                name: "send_message".into(),
+                arguments: r#"{"text":"Searching now..."}"#.into(),
+            },
+        },
+        ToolCall {
+            id: "second_message".into(),
+            call_type: "function".into(),
+            function: FunctionCall {
+                name: "send_message".into(),
+                arguments: r#"{"text":"Still searching..."}"#.into(),
+            },
+        },
+    ];
+    let mut policy = ToolDispatchPolicy::normal();
+
+    let results = dispatch_tool_calls_with_sender(
+        &bot.state,
+        "123",
+        &tool_calls,
+        None,
+        None,
+        Some(&sender),
+        &mut policy,
+    )
+    .await;
+
+    assert_eq!(sender.messages.lock().unwrap().as_slice(), &["Searching now..."]);
+    assert_eq!(results[0].text_content(), "Message sent.");
+    assert!(results[1]
+        .text_content()
+        .contains("at most once per turn"));
+}
+
+#[tokio::test]
 async fn test_sms_send_message_tool_uses_sms_reply_sender() {
     let (bot, _dir, mock) = setup_test_bot().await;
     bot.state

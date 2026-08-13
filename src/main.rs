@@ -1,3 +1,5 @@
+#[path = "main_message.rs"]
+mod main_message;
 #[path = "main_sms.rs"]
 mod main_sms;
 
@@ -250,6 +252,14 @@ async fn handle_message(
     msg: Message,
     bot_username: &str,
 ) {
+    if main_message::should_ignore_message(&msg) {
+        log::debug!(
+            "Ignoring Telegram message {} from bot/integration sender",
+            msg.id
+        );
+        return;
+    }
+
     let text = msg.text().map(|s| s.to_string());
     let caption = msg.caption().map(|s| s.to_string());
     let media = glowbot::media::IngestedMedia::try_from_message(&msg);

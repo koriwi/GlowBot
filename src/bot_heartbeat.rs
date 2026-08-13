@@ -1,4 +1,4 @@
-use super::bot_dispatch::dispatch_tool_calls;
+use super::bot_dispatch::{dispatch_tool_calls_with_sender, ToolDispatchPolicy};
 use super::BotState;
 use crate::openrouter::{ChatCompletionRequest, ChatMessage};
 use std::collections::HashMap;
@@ -41,10 +41,10 @@ pub(super) fn background_task_prompt(task_id: &str, task_desc: &str, date: &str)
         - When the goal is newly completed, call remove_task(\"{task_id}\") to mark it complete.\n\
         - If completion creates follow-up work, add a task with a materially different next goal, then remove this task.\n\
         - If the task cannot be completed yet (for example, it is waiting for an external event), leave it pending. Do NOT remove it or add an identical task; it will run again next cycle.\n\
-        - STRICT MESSAGE POLICY: Ignore normal-conversation guidance about sending a heads-up. Never send messages about starting, checking, attempting, making progress, waiting, retrying, or seeing whether the task can be done.\n\
-        - You may call send_message at most ONCE, and only for a terminal outcome: either (a) newly achieved success, when you also remove this task or replace it with a materially different follow-up goal, or (b) a fatal, actionable blocker that the user must know about or resolve (for example, a required service is down and no useful progress is possible).\n\
-        - If the task remains pending, the condition is unchanged, the result is inconclusive, or an error is transient, exit silently without calling send_message.\n\
-        - If the task was already complete before this run (for example, the action was already performed), quietly remove it and exit without calling send_message.\n\
+        - STRICT MESSAGE POLICY: This run cannot send chat messages. Never attempt a heads-up, progress, waiting, retry, blocker, or result message.\n\
+        - If you newly complete the task, remove it and put the concise user-facing result in your final answer. The runner will send that final answer once.\n\
+        - If the task remains pending, the condition is unchanged, the result is inconclusive, or an error is transient, leave it pending and finish with no text.\n\
+        - If the task was already complete before this run, quietly remove it and finish with no text.\n\
         Current date: {date}",
     )
 }
@@ -171,7 +171,7 @@ pub async fn run_heartbeat_task(
             let base = s.assemble_system_prompt(&cid, true, "");
             let model = s.effective_model(&cid);
             let bash_enabled = s.config.is_bash_enabled(&cid);
-            let tools = s.build_tools(bash_enabled, &cid);
+            let tools = s.build_background_tools(bash_enabled, &cid);
             let ctx = s
                 .model_metadata
                 .get(crate::openrouter::normalize_model_id(&model))
@@ -214,11 +214,9 @@ pub async fn run_heartbeat_task(
                         (r, usage)
                     }
                     Err(e) => {
-                        log::error!("Heartbeat LLM error: {}", e);
-                        if let Some(chat) = parse_chat_id(&cid) {
-                            let msg = format!("⚠️ Task '{}' failed: LLM error — {}", task_id, e);
-                            crate::bot_send::send_message(&tg_bot, chat, &msg).await;
-                        }
+                        // Provider/transport errors are not actionable for the user.
+                        // Leave the task pending so the next heartbeat can retry.
+                        log::error!("Heartbeat LLM error for task '{}': {}", task_id, e);
                         break;
                     }
                 }
@@ -242,9 +240,33 @@ pub async fn run_heartbeat_task(
                 }
                 .with_provider_data(choice.message.provider_data.clone());
                 turn_messages.push(assistant);
-                turn_messages
-                    .extend(dispatch_tool_calls(&state, &cid, tcs, None, Some(&tg_bot)).await);
+                turn_messages.extend(
+                    dispatch_tool_calls_with_sender(
+                        &state,
+                        &cid,
+                        tcs,
+                        None,
+                        Some(&tg_bot),
+                        None,
+                        &mut ToolDispatchPolicy::Background,
+                    )
+                    .await,
+                );
                 continue;
+            }
+
+            let was_removed = {
+                let s = state.lock().await;
+                let list = crate::tasks::TaskList::load(&s.chats_dir(), &cid).unwrap_or_default();
+                !list.tasks.iter().any(|task| task.id == task_id)
+            };
+            if was_removed {
+                let final_text = choice.message.content.unwrap_or_default();
+                if !final_text.trim().is_empty() {
+                    if let Some(chat) = parse_chat_id(&cid) {
+                        crate::bot_send::send_message(&tg_bot, chat, &final_text).await;
+                    }
+                }
             }
             break;
         }
@@ -309,6 +331,7 @@ async fn process_reminder_action(
 
     let system_msg = ChatMessage::system(&system_prompt);
     let mut turn_messages = vec![ChatMessage::user(&reminder_header)];
+    let mut dispatch_policy = ToolDispatchPolicy::normal();
 
     for _ in 0..10 {
         if check_stopped(stop_signals, &cid) {
@@ -374,7 +397,18 @@ async fn process_reminder_action(
             }
             .with_provider_data(choice.message.provider_data.clone());
             turn_messages.push(assistant);
-            turn_messages.extend(dispatch_tool_calls(state, &cid, tcs, None, Some(tg_bot)).await);
+            turn_messages.extend(
+                dispatch_tool_calls_with_sender(
+                    state,
+                    &cid,
+                    tcs,
+                    None,
+                    Some(tg_bot),
+                    None,
+                    &mut dispatch_policy,
+                )
+                .await,
+            );
             continue;
         }
         break;

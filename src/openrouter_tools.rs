@@ -504,7 +504,7 @@ pub(crate) fn send_message_tool_definition() -> ToolDefinition {
         def_type: "function".into(),
         function: FunctionDef {
             name: "send_message".into(),
-            description: "Send a plain text message to the current chat. In normal user-initiated conversations, use this only for one heads-up/intermediate message (e.g. 'ok, give me a second, taking a look now...'), never for the final answer that is sent automatically. In a scheduled run headed '## Background Task', NEVER send heads-up, progress, waiting, retry, or routine status messages. In such runs, call this at most once and only for newly achieved success when the current task is removed or replaced with a materially different follow-up goal, or for a fatal, actionable blocker that the user must know about or resolve. Stay silent if the task remains pending or nothing materially changed.".into(),
+            description: "Send one brief heads-up before genuinely long-running work in a normal user-initiated conversation. Do not use it for routine searches/checks, repeated progress updates, or the final answer (which is sent automatically). This tool is removed and runtime-blocked during scheduled background tasks.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

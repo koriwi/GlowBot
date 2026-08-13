@@ -35,6 +35,31 @@ impl SmsGateway for RecordingGateway {
 }
 
 #[test]
+fn sms_deduplicator_remembers_only_explicitly_processed_messages() {
+    let message = IncomingSms {
+        id: "42".into(),
+        phone_number: "+49123".into(),
+        text: "Hello".into(),
+        modem_date: "2026-08-13 19:48:48".into(),
+    };
+    let mut deduplicator = SmsDeduplicator::default();
+
+    assert!(!deduplicator.is_duplicate(&message));
+    assert!(!deduplicator.is_duplicate(&message));
+    deduplicator.remember(&message);
+    assert!(deduplicator.is_duplicate(&message));
+
+    let mut same_sms_different_storage_id = message.clone();
+    same_sms_different_storage_id.id = "43".into();
+    same_sms_different_storage_id.phone_number = "+49 123".into();
+    assert!(deduplicator.is_duplicate(&same_sms_different_storage_id));
+
+    let mut different_sms = message.clone();
+    different_sms.text = "Another message".into();
+    assert!(!deduplicator.is_duplicate(&different_sms));
+}
+
+#[test]
 fn phone_numbers_are_normalized_for_mapping() {
     assert_eq!(normalize_phone_number("+49 170-123 45 67"), "491701234567");
     assert_eq!(normalize_phone_number("0049 (170) 1234567"), "491701234567");

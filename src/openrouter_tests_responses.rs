@@ -1,3 +1,222 @@
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+fn test_completion_request() -> ChatCompletionRequest {
+    ChatCompletionRequest {
+        model: "test/model".into(),
+        messages: vec![ChatMessage::user("hello")],
+        tools: None,
+        tool_choice: None,
+        modalities: None,
+        image_config: None,
+    }
+}
+
+#[tokio::test]
+async fn test_chat_completion_decodes_gzip_response() {
+    let server = MockServer::start().await;
+    const GZIP_RESPONSE: &[u8] = &[
+        31, 139, 8, 0, 0, 0, 0, 0, 2, 255, 171, 86, 74, 206, 200, 207, 76, 78, 45, 86, 178,
+        138, 174, 86, 202, 77, 45, 46, 78, 76, 79, 85, 178, 170, 86, 74, 206, 207, 43, 73, 205,
+        43, 81, 178, 82, 202, 207, 86, 210, 81, 42, 202, 207, 1, 10, 43, 37, 22, 23, 103, 22,
+        151, 36, 2, 197, 107, 107, 99, 107, 1, 56, 144, 190, 161, 61, 0, 0, 0,
+    ];
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-encoding", "gzip")
+                .set_body_bytes(GZIP_RESPONSE),
+        )
+        .mount(&server)
+        .await;
+
+    let client = OpenRouterClient::new_with_base_url("key".into(), &server.uri());
+    let response = client
+        .chat_completion(&test_completion_request())
+        .await
+        .unwrap();
+    assert_eq!(response.choices[0].message.content.as_deref(), Some("ok"));
+    let requests = server.received_requests().await.unwrap();
+    let accept_encoding = requests[0]
+        .headers
+        .get("accept-encoding")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(accept_encoding.contains("gzip"));
+    assert!(accept_encoding.contains("br"));
+    assert!(accept_encoding.contains("zstd"));
+    assert!(accept_encoding.contains("deflate"));
+}
+
+#[tokio::test]
+async fn test_chat_completion_retries_empty_success_body_once() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200))
+        .with_priority(1)
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "choices": [{"message": {"content": "retried", "role": "assistant"}}]
+        })))
+        .with_priority(2)
+        .mount(&server)
+        .await;
+
+    let client = OpenRouterClient::new_with_base_url("key".into(), &server.uri());
+    let response = client
+        .chat_completion(&test_completion_request())
+        .await
+        .unwrap();
+    assert_eq!(
+        response.choices[0].message.content.as_deref(),
+        Some("retried")
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn test_openrouter_auxiliary_endpoints() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "test/model", "context_length": 4096}]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/embeddings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"embedding": [0.1, 0.2]}]
+        })))
+        .mount(&server)
+        .await;
+    let client = OpenRouterClient::new_with_base_url("key".into(), &server.uri());
+
+    assert_eq!(client.fetch_models().await.unwrap()[0].id, "test/model");
+    assert_eq!(
+        client.embeddings("test/embed", "hello").await.unwrap(),
+        vec![0.1, 0.2]
+    );
+}
+
+#[tokio::test]
+async fn test_openrouter_auxiliary_endpoint_parse_errors() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not models json"))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/embeddings"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not embeddings json"))
+        .mount(&server)
+        .await;
+    let client = OpenRouterClient::new_with_base_url("key".into(), &server.uri());
+
+    assert!(client
+        .fetch_models()
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("not models json"));
+    assert!(client
+        .embeddings("test/embed", "hello")
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("not embeddings json"));
+}
+
+#[tokio::test]
+async fn test_openrouter_auxiliary_endpoint_errors() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("models unavailable"))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/embeddings"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("embeddings unavailable"))
+        .mount(&server)
+        .await;
+    let client = OpenRouterClient::new_with_base_url("key".into(), &server.uri());
+
+    assert!(client.fetch_models().await.unwrap_err().to_string().contains("models unavailable"));
+    assert!(client
+        .embeddings("test/embed", "hello")
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("embeddings unavailable"));
+}
+
+#[tokio::test]
+async fn test_chat_completion_accepts_empty_choices_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "choices": []
+        })))
+        .mount(&server)
+        .await;
+    let client = OpenRouterClient::new_with_base_url("key".into(), &server.uri());
+
+    let response = client
+        .chat_completion(&test_completion_request())
+        .await
+        .unwrap();
+    assert!(response.choices.is_empty());
+}
+
+#[tokio::test]
+async fn test_chat_completion_does_not_retry_http_errors() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(503).set_body_string("provider unavailable"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client = OpenRouterClient::new_with_base_url("key".into(), &server.uri());
+
+    let error = client
+        .chat_completion(&test_completion_request())
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("503 Service Unavailable"));
+    assert!(error.to_string().contains("provider unavailable"));
+}
+
+#[tokio::test]
+async fn test_chat_completion_reports_nonempty_malformed_success_without_retry() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client = OpenRouterClient::new_with_base_url("key".into(), &server.uri());
+
+    let error = client
+        .chat_completion(&test_completion_request())
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("Failed to parse chat completion"));
+    assert!(error.to_string().contains("not json"));
+}
+
 #[test]
 fn test_chat_completion_response_deserialization() {
     let json = serde_json::json!({

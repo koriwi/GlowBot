@@ -265,6 +265,12 @@ async fn test_build_tools_without_bash() {
     assert_eq!(tools.len(), 26); // 21 base + 3 config + 2 model tools
     assert!(!tools.iter().any(|t| t.function.name == "bash"));
     assert!(tools.iter().any(|t| t.function.name == "send_message"));
+
+    let background_tools = state.build_background_tools(false, "-123");
+    assert_eq!(background_tools.len(), 25);
+    assert!(!background_tools
+        .iter()
+        .any(|t| t.function.name == "send_message"));
 }
 
 #[tokio::test]

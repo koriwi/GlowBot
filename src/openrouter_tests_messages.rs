@@ -123,10 +123,10 @@ fn test_update_memory_tool_definition() {
 fn test_send_message_tool_definition_has_terminal_background_policy() {
     let def = send_message_tool_definition();
     assert_eq!(def.function.name, "send_message");
-    assert!(def.function.description.contains("NEVER send heads-up"));
-    assert!(def.function.description.contains("newly achieved success"));
-    assert!(def.function.description.contains("fatal, actionable blocker"));
-    assert!(def.function.description.contains("task remains pending"));
+    assert!(def.function.description.contains("genuinely long-running work"));
+    assert!(def.function.description.contains("routine searches/checks"));
+    assert!(def.function.description.contains("runtime-blocked"));
+    assert!(def.function.description.contains("background tasks"));
 }
 
 #[test]
