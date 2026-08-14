@@ -200,10 +200,17 @@ async fn mount_logged_in_modem(server: &MockServer) {
 async fn huawei_gateway_lists_marks_and_sends_text_sms() {
     let server = MockServer::start().await;
     mount_logged_in_modem(&server).await;
-    let inbox = "<response><Count>1</Count><Messages><Message><Smstat>0</Smstat>\
-        <Index>42</Index><Phone>+49123</Phone><Content>Hello</Content>\
-        <Date>2026-08-11 10:00:00</Date><Sca></Sca><SaveType>0</SaveType>\
-        <Priority>0</Priority><SmsType>1</SmsType></Message></Messages></response>";
+    let inbox = "<response><Count>3</Count><Messages>\
+        <Message><Smstat>0</Smstat><Index>42</Index><Phone>+49123</Phone>\
+        <Content>Hello</Content><Date>2026-08-11 10:00:00</Date><Sca></Sca>\
+        <SaveType>0</SaveType><Priority>0</Priority><SmsType>1</SmsType></Message>\
+        <Message><Smstat>0</Smstat><Index>43</Index><Phone>+49123</Phone>\
+        <Content>A long multipart message</Content><Date>2026-08-11 10:01:00</Date>\
+        <Sca></Sca><SaveType>0</SaveType><Priority>0</Priority><SmsType>2</SmsType></Message>\
+        <Message><Smstat>0</Smstat><Index>44</Index><Phone>+49123</Phone>\
+        <Content></Content><Date>2026-08-11 10:02:00</Date><Sca></Sca>\
+        <SaveType>0</SaveType><Priority>0</Priority><SmsType>7</SmsType></Message>\
+        </Messages></response>";
     Mock::given(method("POST"))
         .and(path("/api/sms/sms-list"))
         .and(body_string_contains("<BoxType>1</BoxType>"))
@@ -233,12 +240,20 @@ async fn huawei_gateway_lists_marks_and_sends_text_sms() {
     let messages = gateway.unread_messages().await.unwrap();
     assert_eq!(
         messages,
-        vec![IncomingSms {
-            id: "42".into(),
-            phone_number: "+49123".into(),
-            text: "Hello".into(),
-            modem_date: "2026-08-11 10:00:00".into(),
-        }]
+        vec![
+            IncomingSms {
+                id: "42".into(),
+                phone_number: "+49123".into(),
+                text: "Hello".into(),
+                modem_date: "2026-08-11 10:00:00".into(),
+            },
+            IncomingSms {
+                id: "43".into(),
+                phone_number: "+49123".into(),
+                text: "A long multipart message".into(),
+                modem_date: "2026-08-11 10:01:00".into(),
+            },
+        ]
     );
     gateway.mark_read("42").await.unwrap();
     gateway
@@ -255,6 +270,12 @@ async fn huawei_gateway_lists_marks_and_sends_text_sms() {
     assert!(body.contains("<Phone>+49123</Phone>"));
     assert!(body.contains("<Content>Reply &amp; more</Content>"));
     assert!(body.contains("<Length>12</Length>"));
+
+    let marked_status = requests.iter().any(|request| {
+        request.url.path() == "/api/sms/set-read"
+            && String::from_utf8_lossy(&request.body).contains("<Index>44</Index>")
+    });
+    assert!(marked_status, "delivery confirmation should be marked read");
 }
 
 #[tokio::test]

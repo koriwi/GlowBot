@@ -2,7 +2,7 @@ use crate::bot_send::TextReplySender;
 use crate::config::SmsConfig;
 use anyhow::Context;
 use async_trait::async_trait;
-use huawei_dongle_api::models::{SmsBoxType, SmsListRequest, SmsSendRequest, SmsSortType};
+use huawei_dongle_api::models::{SmsBoxType, SmsListRequest, SmsSendRequest, SmsSortType, SmsType};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -22,6 +22,22 @@ pub struct IncomingSms {
     pub phone_number: String,
     pub text: String,
     pub modem_date: String,
+}
+
+/// Internal modem entry retaining the SMS type long enough to distinguish
+/// user-authored text from delivery confirmations.
+struct ModemInboxEntry {
+    message: IncomingSms,
+    sms_type: SmsType,
+}
+
+impl ModemInboxEntry {
+    fn is_user_message(&self) -> bool {
+        matches!(
+            self.sms_type,
+            SmsType::Single | SmsType::Multipart | SmsType::Unicode
+        )
+    }
 }
 
 /// Suppresses modem inbox entries that remain marked unread briefly after they
@@ -124,7 +140,7 @@ impl HuaweiSmsGateway {
         Ok(())
     }
 
-    async fn list_inbox(&self, box_type: SmsBoxType) -> anyhow::Result<Vec<IncomingSms>> {
+    async fn list_inbox(&self, box_type: SmsBoxType) -> anyhow::Result<Vec<ModemInboxEntry>> {
         // Huawei B311 firmware rejects ReadCount values above 20 with error 100005.
         // Remaining unread messages are picked up on the next poll after this page is marked read.
         let request = SmsListRequest::new(1, 20, box_type, SmsSortType::ByTime, true, true);
@@ -139,11 +155,14 @@ impl HuaweiSmsGateway {
             .messages
             .into_iter()
             .filter(|message| message.is_unread())
-            .map(|message| IncomingSms {
-                id: message.index,
-                phone_number: message.phone,
-                text: message.content,
-                modem_date: message.date,
+            .map(|message| ModemInboxEntry {
+                sms_type: message.sms_type,
+                message: IncomingSms {
+                    id: message.index,
+                    phone_number: message.phone,
+                    text: message.content,
+                    modem_date: message.date,
+                },
             })
             .collect())
     }
@@ -154,10 +173,33 @@ impl SmsGateway for HuaweiSmsGateway {
     async fn unread_messages(&self) -> anyhow::Result<Vec<IncomingSms>> {
         let _guard = self.operation_lock.lock().await;
         self.ensure_authenticated().await?;
-        let mut messages = self.list_inbox(SmsBoxType::LocalInbox).await?;
+        let mut entries = self.list_inbox(SmsBoxType::LocalInbox).await?;
         match self.list_inbox(SmsBoxType::SimInbox).await {
-            Ok(mut sim_messages) => messages.append(&mut sim_messages),
+            Ok(mut sim_entries) => entries.append(&mut sim_entries),
             Err(error) => log::debug!("Huawei SIM inbox unavailable: {error}"),
+        }
+
+        let mut messages = Vec::new();
+        for entry in entries {
+            if entry.is_user_message() {
+                messages.push(entry.message);
+                continue;
+            }
+
+            // Delivery confirmations are modem status events, not messages from
+            // the contact. Feeding an empty receipt to the LLM can produce an
+            // extra fallback reply after a multipart send.
+            log::debug!(
+                "Ignoring Huawei SMS status entry {} ({:?})",
+                entry.message.id,
+                entry.sms_type
+            );
+            if let Err(error) = self.client.sms().mark_read(&entry.message.id).await {
+                log::warn!(
+                    "Failed to mark Huawei SMS status entry {} as read: {error}",
+                    entry.message.id
+                );
+            }
         }
         Ok(messages)
     }

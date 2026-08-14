@@ -95,7 +95,7 @@ dms:
     forward_sms_to_telegram: true
 ```
 
-Incoming SMS from unmapped numbers are ignored. Mapped SMS and Telegram messages share one SQLite conversation history, while replies follow the incoming channel. Outgoing SMS is plain text, converts avoidable Unicode punctuation/emoji to GSM-safe text, and splits automatically at 160 GSM-7 septets (or 70 UTF-16 units when non-GSM text is necessary). MMS is not used.
+Incoming SMS from unmapped numbers are ignored. Mapped SMS and Telegram messages share one SQLite conversation history, while replies follow the incoming channel. Outgoing SMS is plain text, converts avoidable Unicode punctuation/emoji to GSM-safe text, and splits automatically at 160 GSM-7 septets (or 70 UTF-16 units when non-GSM text is necessary). Modem delivery confirmations are ignored as status events instead of being treated as new messages. MMS is not used.
 
 Use E.164 phone numbers (for example `+491701234567`) in the config. Set `forward_sms_to_telegram` separately for each DM that should receive SMS mirrors; it defaults to `false`. Mirrored messages use a reserved `[GlowBot SMS mirror]` display-only envelope and are never treated as fresh Telegram input, even if a relay presents them with human sender metadata. The modem is polled every five seconds and reconnects automatically after errors.
 
