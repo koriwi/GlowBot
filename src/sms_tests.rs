@@ -8,7 +8,8 @@ struct RecordingGateway {
     sent: StdMutex<Vec<(String, String)>>,
     marked: StdMutex<Vec<String>>,
     incoming: StdMutex<Vec<IncomingSms>>,
-    fail_send: bool,
+    send_attempts: StdMutex<usize>,
+    failures_remaining: StdMutex<usize>,
 }
 
 #[async_trait]
@@ -23,9 +24,13 @@ impl SmsGateway for RecordingGateway {
     }
 
     async fn send_segment(&self, phone_number: &str, text: &str) -> anyhow::Result<()> {
-        if self.fail_send {
+        *self.send_attempts.lock().unwrap() += 1;
+        let mut failures_remaining = self.failures_remaining.lock().unwrap();
+        if *failures_remaining > 0 {
+            *failures_remaining -= 1;
             anyhow::bail!("send failed");
         }
+        drop(failures_remaining);
         self.sent
             .lock()
             .unwrap()
@@ -154,17 +159,35 @@ async fn sms_reply_sender_sanitizes_splits_and_sends_every_segment() {
     assert_eq!(sent.len(), 2);
     assert_eq!(sent[0], ("+49123".into(), "a".repeat(160)));
     assert_eq!(sent[1], ("+49123".into(), "a".into()));
+    assert_eq!(*gateway.send_attempts.lock().unwrap(), 2);
+}
+
+#[tokio::test]
+async fn sms_reply_sender_retries_transient_multipart_send_failures() {
+    let gateway = Arc::new(RecordingGateway {
+        failures_remaining: StdMutex::new(1),
+        ..Default::default()
+    });
+    let sender = SmsReplySender::new(gateway.clone(), "+49123", None);
+    sender.send_text(&"a".repeat(161)).await.unwrap();
+
+    assert_eq!(*gateway.send_attempts.lock().unwrap(), 3);
+    let sent = gateway.sent.lock().unwrap();
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[0].1, "a".repeat(160));
+    assert_eq!(sent[1].1, "a");
 }
 
 #[tokio::test]
 async fn sms_reply_sender_reports_empty_and_gateway_errors() {
     let gateway = Arc::new(RecordingGateway {
-        fail_send: true,
+        failures_remaining: StdMutex::new(SMS_SEND_ATTEMPTS),
         ..Default::default()
     });
-    let sender = SmsReplySender::new(gateway, "+49123", None);
+    let sender = SmsReplySender::new(gateway.clone(), "+49123", None);
     assert!(sender.send_text("hello").await.is_err());
     assert!(sender.send_text("😀").await.is_err());
+    assert_eq!(*gateway.send_attempts.lock().unwrap(), SMS_SEND_ATTEMPTS);
 }
 
 fn login_state(logged_in: bool) -> String {

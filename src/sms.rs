@@ -9,6 +9,9 @@ use std::time::{Duration, Instant};
 use teloxide::types::ChatId;
 
 const SMS_DEDUP_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const SMS_SEND_ATTEMPTS: usize = 3;
+const SMS_SEND_RETRY_DELAY: Duration = Duration::from_millis(if cfg!(test) { 0 } else { 3_000 });
+const SMS_SEGMENT_DELAY: Duration = Duration::from_millis(if cfg!(test) { 0 } else { 2_000 });
 const TELEGRAM_SMS_MIRROR_TAG: &str = "[GlowBot SMS mirror]";
 const GSM_BASIC: &str = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
 const GSM_EXTENSION: &str = "^{}\\[~]|€";
@@ -41,8 +44,9 @@ impl ModemInboxEntry {
 }
 
 /// Suppresses modem inbox entries that remain marked unread briefly after they
-/// have already been processed. Entries are remembered only after successful
-/// delivery, so genuine processing failures can still be retried.
+/// have already been processed. Entries are remembered after the LLM turn is
+/// complete, even if outbound delivery fails, so a modem send error cannot rerun
+/// and duplicate the entire turn. Failures before completion can still retry.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SmsFingerprint {
     phone_number: String,
@@ -253,6 +257,44 @@ impl SmsReplySender {
         let text = telegram_incoming_mirror_text(message);
         crate::bot_send::send_plain_message(bot, *chat_id, &text).await;
     }
+
+    async fn send_segment_with_retry(
+        &self,
+        segment: &str,
+        segment_number: usize,
+        total_segments: usize,
+    ) -> anyhow::Result<()> {
+        for attempt in 1..=SMS_SEND_ATTEMPTS {
+            log::info!(
+                "Sending SMS segment {}/{} (attempt {}/{})",
+                segment_number,
+                total_segments,
+                attempt,
+                SMS_SEND_ATTEMPTS
+            );
+            match self.gateway.send_segment(&self.phone_number, segment).await {
+                Ok(()) => return Ok(()),
+                Err(error) if attempt < SMS_SEND_ATTEMPTS => {
+                    log::warn!(
+                        "SMS segment {}/{} send failed (attempt {}/{}): {error:#}; retrying",
+                        segment_number,
+                        total_segments,
+                        attempt,
+                        SMS_SEND_ATTEMPTS
+                    );
+                    tokio::time::sleep(SMS_SEND_RETRY_DELAY).await;
+                }
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!(
+                            "failed to send SMS segment {segment_number}/{total_segments} after {SMS_SEND_ATTEMPTS} attempts"
+                        )
+                    });
+                }
+            }
+        }
+        unreachable!("SMS send attempt loop always returns")
+    }
 }
 
 fn telegram_incoming_mirror_text(message: &IncomingSms) -> String {
@@ -283,9 +325,14 @@ impl TextReplySender for SmsReplySender {
             "SMS reply is empty after formatting"
         );
         let segments = split_sms(&prepared);
-        for segment in &segments {
-            self.gateway
-                .send_segment(&self.phone_number, segment)
+        let total_segments = segments.len();
+        for (index, segment) in segments.iter().enumerate() {
+            if index > 0 {
+                // Huawei modems submit SMS asynchronously and often reject an
+                // immediate second request as busy. Pace multipart segments.
+                tokio::time::sleep(SMS_SEGMENT_DELAY).await;
+            }
+            self.send_segment_with_retry(segment, index + 1, total_segments)
                 .await?;
         }
 

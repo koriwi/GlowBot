@@ -135,33 +135,74 @@ async fn handle_incoming_sms(
     )
     .await;
 
-    let delivered = match result {
-        Ok(Some(response)) => match reply_sender.send_text(&response).await {
-            Ok(()) => true,
-            Err(error) => {
-                log::error!("Failed to reply to SMS {}: {error}", message.id);
-                false
-            }
-        },
-        Ok(None) => {
-            log::warn!("Mapped SMS {} produced no reply", message.id);
-            true
-        }
-        Err(error) => {
-            log::error!("Failed to process SMS {}: {error}", message.id);
-            false
-        }
-    };
+    let processed = finish_sms_turn(&message.id, result, &reply_sender).await;
 
-    if delivered {
+    if processed {
         if let Err(error) = gateway.mark_read(&message.id).await {
-            // Delivery has already happened; remember the message even if this
-            // modem update failed so the next poll cannot trigger the LLM again.
+            // Processing is terminal; remember the message even if this modem
+            // update failed so the next poll cannot rerun the LLM turn.
             log::warn!(
-                "Failed to mark processed SMS {} as read: {error}",
+                "Failed to mark processed SMS {} as read: {error:#}",
                 message.id
             );
         }
     }
-    delivered
+    processed
+}
+
+async fn finish_sms_turn(
+    message_id: &str,
+    result: anyhow::Result<Option<String>>,
+    reply_sender: &dyn TextReplySender,
+) -> bool {
+    match result {
+        Ok(Some(response)) => {
+            if let Err(error) = reply_sender.send_text(&response).await {
+                // The LLM turn has already been persisted. Retrying the unread
+                // inbox entry would rerun the LLM and duplicate any segments
+                // that were sent before the failure.
+                log::error!("Failed to reply to SMS {message_id}: {error:#}");
+            }
+            true
+        }
+        Ok(None) => {
+            log::warn!("Mapped SMS {message_id} produced no reply");
+            true
+        }
+        Err(error) => {
+            log::error!("Failed to process SMS {message_id}: {error:#}");
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FailingReplySender;
+
+    #[async_trait::async_trait]
+    impl TextReplySender for FailingReplySender {
+        async fn send_text(&self, _text: &str) -> anyhow::Result<()> {
+            anyhow::bail!("modem busy")
+        }
+    }
+
+    #[tokio::test]
+    async fn completed_turn_is_terminal_even_when_reply_delivery_fails() {
+        assert!(
+            finish_sms_turn("42", Ok(Some("reply".into())), &FailingReplySender).await,
+            "a send failure must not cause the inbox message to rerun"
+        );
+        assert!(finish_sms_turn("42", Ok(None), &FailingReplySender).await);
+        assert!(
+            !finish_sms_turn(
+                "42",
+                Err(anyhow::anyhow!("LLM failed")),
+                &FailingReplySender
+            )
+            .await
+        );
+    }
 }
