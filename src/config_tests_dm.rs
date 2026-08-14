@@ -98,6 +98,36 @@ fn test_config_load_save_with_dms() {
 }
 
 #[test]
+fn test_sms_poller_counts_only_mapped_dms() {
+    let mut config = basic_config();
+    config.dms.insert("41".into(), DmConfig::default());
+    config.dms.insert(
+        "-100".into(),
+        DmConfig {
+            phone_number: Some("+49100".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(config.sms_dm_count(), 0);
+    assert!(config.dm_for_phone_number("+49100").is_none());
+    assert!(config
+        .validate()
+        .unwrap_err()
+        .to_string()
+        .contains("positive Telegram DM chat ID"));
+
+    config.dms.remove("-100");
+    config.dms.insert(
+        "42".into(),
+        DmConfig {
+            phone_number: Some("+49123".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(config.sms_dm_count(), 1);
+}
+
+#[test]
 fn test_sms_config_and_phone_mapping() {
     let mut config = basic_config();
     config.sms = Some(SmsConfig {

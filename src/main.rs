@@ -119,15 +119,23 @@ async fn run_bot() -> anyhow::Result<()> {
     // while /stop commands can bypass the lock to signal cancellation.
     let chat_locks: main_sms::ChatLocks = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
-    // Poll the optional Huawei modem independently from Telegram. Both channels
-    // share the same per-chat locks and SQLite conversation history.
+    // Poll the optional Huawei modem only when at least one direct-message
+    // contact has a phone mapping. Group chats never enable SMS polling.
     if let Some(sms_config) = config.sms.clone() {
-        let sms_bot = Arc::clone(&bot);
-        let sms_tg = tg_bot.clone();
-        let sms_locks = Arc::clone(&chat_locks);
-        tokio::spawn(async move {
-            main_sms::run_sms_loop(sms_bot, sms_tg, sms_locks, sms_config).await;
-        });
+        let mapped_dms = config.sms_dm_count();
+        if mapped_dms == 0 {
+            log::info!(
+                "Global SMS modem poller disabled: no dms.<chat_id>.phone_number mappings configured"
+            );
+        } else {
+            log::info!("Starting global SMS modem poller for {mapped_dms} mapped DM(s)");
+            let sms_bot = Arc::clone(&bot);
+            let sms_tg = tg_bot.clone();
+            let sms_locks = Arc::clone(&chat_locks);
+            tokio::spawn(async move {
+                main_sms::run_sms_loop(sms_bot, sms_tg, sms_locks, sms_config).await;
+            });
+        }
     }
 
     log::info!("GlowBot is ready. Starting long-polling...");

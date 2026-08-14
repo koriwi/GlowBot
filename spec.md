@@ -102,7 +102,7 @@ chats:
 
 `/commands` at runtime can modify settings for the active chat (if commands are enabled for that chat).
 
-The optional `sms` object enables Huawei modem polling. Its password is redacted from config display. `dms.<chat_id>.phone_number` maps a phone number to that private Telegram conversation; E.164 format is recommended and duplicate normalized mappings are rejected. `dms.<chat_id>.forward_sms_to_telegram` independently enables SMS mirroring for that conversation and defaults to `false`.
+The optional `sms` object configures Huawei modem access. Polling starts only when at least one `dms.<chat_id>.phone_number` is configured; group chat entries never enable or use SMS. Its password is redacted from config display. `dms.<chat_id>.phone_number` maps a phone number to that private Telegram conversation; E.164 format is recommended and duplicate normalized mappings are rejected. `dms.<chat_id>.forward_sms_to_telegram` independently enables SMS mirroring for that conversation and defaults to `false`.
 
 ### 3.2 Git Versioning
 
@@ -137,7 +137,7 @@ The data directory is a standalone git repository, not nested inside the applica
 #### SMS channel
 
 - The optional SMS channel uses `huawei-dongle-api` with a small vendored patch for the missing typed `send-sms` endpoint, supporting Huawei HiLink devices such as the B311.
-- The modem inbox is polled every five seconds. Authentication and reconnection are automatic.
+- When at least one DM has a phone mapping, the global modem inbox is polled every five seconds. Authentication and reconnection are automatic. With no mapped DMs, the modem poller stays disabled; group chats never start it.
 - SMS from phone numbers not mapped by a `dms.<chat_id>.phone_number` entry are ignored and marked read.
 - Mapped SMS is processed under the mapped positive Telegram chat ID, so Telegram and SMS turns share the same SQLite history, memories, tools, model, and DM configuration.
 - Replies always follow the initiating channel: SMS input gets an SMS reply; Telegram input gets a Telegram reply. The `send_message` tool follows the same rule during a turn.
