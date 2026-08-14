@@ -1,11 +1,17 @@
 use teloxide::types::Message;
 
-/// Telegram forwards are genuine user actions, but messages emitted by bots or
-/// automatic linked-channel forwarding are not new instructions for GlowBot.
-/// This also prevents SMS mirror messages produced by integration bots from
-/// entering the LLM pipeline.
+/// Telegram forwards are genuine user actions, but messages emitted by bots,
+/// automatic linked-channel forwarding, or GlowBot's display-only SMS mirror
+/// are not new instructions. The mirror envelope is checked independently of
+/// sender metadata because a relay can present it as human-authored.
 pub(super) fn should_ignore_message(message: &Message) -> bool {
-    message.from.as_ref().is_some_and(|user| user.is_bot)
+    let is_sms_mirror = message
+        .text()
+        .or_else(|| message.caption())
+        .is_some_and(glowbot::sms::is_telegram_sms_mirror_text);
+
+    is_sms_mirror
+        || message.from.as_ref().is_some_and(|user| user.is_bot)
         || message.via_bot.is_some()
         || message.is_automatic_forward()
 }
@@ -64,6 +70,20 @@ mod tests {
         assert!(should_ignore_message(&message_from_json(
             serde_json::json!({
                 "is_automatic_forward": true
+            })
+        )));
+    }
+
+    #[test]
+    fn ignores_sms_mirror_even_when_telegram_reports_a_human_sender() {
+        assert!(should_ignore_message(&message_from_json(
+            serde_json::json!({
+                "text": "[GlowBot SMS mirror]\nFrom +49123 (2026-08-14 09:00:00)\nhello"
+            })
+        )));
+        assert!(!should_ignore_message(&message_from_json(
+            serde_json::json!({
+                "text": "A normal message mentioning [GlowBot SMS mirror]"
             })
         )));
     }

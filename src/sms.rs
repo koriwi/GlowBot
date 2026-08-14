@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use teloxide::types::ChatId;
 
 const SMS_DEDUP_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const TELEGRAM_SMS_MIRROR_TAG: &str = "[GlowBot SMS mirror]";
 const GSM_BASIC: &str = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
 const GSM_EXTENSION: &str = "^{}\\[~]|€";
 const GSM_SEGMENT_SEPTETS: usize = 160;
@@ -207,12 +208,28 @@ impl SmsReplySender {
         let Some((bot, chat_id)) = &self.telegram_forward else {
             return;
         };
-        let text = format!(
-            "SMS from {} ({})\n{}",
-            message.phone_number, message.modem_date, message.text
-        );
+        let text = telegram_incoming_mirror_text(message);
         crate::bot_send::send_plain_message(bot, *chat_id, &text).await;
     }
+}
+
+fn telegram_incoming_mirror_text(message: &IncomingSms) -> String {
+    format!(
+        "{TELEGRAM_SMS_MIRROR_TAG}\nFrom {} ({})\n{}",
+        message.phone_number, message.modem_date, message.text
+    )
+}
+
+fn telegram_outgoing_mirror_text(phone_number: &str, text: &str) -> String {
+    format!("{TELEGRAM_SMS_MIRROR_TAG}\nTo {phone_number}\n{text}")
+}
+
+/// Whether Telegram text is a display-only envelope emitted by the SMS mirror.
+///
+/// The envelope is checked independently of Telegram sender metadata because
+/// relays can present mirrored messages as if a human authored them.
+pub fn is_telegram_sms_mirror_text(text: &str) -> bool {
+    text.lines().next() == Some(TELEGRAM_SMS_MIRROR_TAG)
 }
 
 #[async_trait]
@@ -231,7 +248,7 @@ impl TextReplySender for SmsReplySender {
         }
 
         if let Some((bot, chat_id)) = &self.telegram_forward {
-            let forwarded = format!("SMS to {}\n{}", self.phone_number, prepared);
+            let forwarded = telegram_outgoing_mirror_text(&self.phone_number, &prepared);
             crate::bot_send::send_plain_message(bot, *chat_id, &forwarded).await;
         }
         Ok(())

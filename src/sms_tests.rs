@@ -68,6 +68,28 @@ fn phone_numbers_are_normalized_for_mapping() {
 }
 
 #[test]
+fn telegram_sms_mirrors_have_a_reserved_display_only_envelope() {
+    let incoming = telegram_incoming_mirror_text(&IncomingSms {
+        id: "42".into(),
+        phone_number: "+49123".into(),
+        text: "Hello".into(),
+        modem_date: "2026-08-14 09:00:00".into(),
+    });
+    assert_eq!(
+        incoming,
+        "[GlowBot SMS mirror]\nFrom +49123 (2026-08-14 09:00:00)\nHello"
+    );
+    assert!(is_telegram_sms_mirror_text(&incoming));
+
+    let outgoing = telegram_outgoing_mirror_text("+49123", "Hi back");
+    assert_eq!(outgoing, "[GlowBot SMS mirror]\nTo +49123\nHi back");
+    assert!(is_telegram_sms_mirror_text(&outgoing));
+    assert!(!is_telegram_sms_mirror_text(
+        "A normal message mentioning [GlowBot SMS mirror]"
+    ));
+}
+
+#[test]
 fn avoidable_unicode_is_converted_without_damaging_gsm_characters() {
     let prepared = prepare_sms_text("“Grüße”—café… • test 😀 `x`");
     assert_eq!(prepared, "\"Grüße\"-café... - test  'x'");
