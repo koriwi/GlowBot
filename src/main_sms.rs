@@ -19,7 +19,7 @@ pub async fn run_sms_loop(
         match HuaweiSmsGateway::connect(&sms_config).await {
             Ok(gateway) => {
                 log::info!(
-                    "Global SMS poller connected to Huawei modem at {} for mapped DMs",
+                    "SMS channel connected to Huawei modem at {}",
                     sms_config.ip_address
                 );
                 let gateway: Arc<dyn SmsGateway> = Arc::new(gateway);
@@ -31,14 +31,11 @@ pub async fn run_sms_loop(
                 )
                 .await
                 {
-                    log::warn!("Global SMS modem polling failed: {error:#}; reconnecting in 15s");
+                    log::warn!("SMS modem polling failed: {error}; reconnecting in 15s");
                 }
             }
             Err(error) => {
-                log::warn!(
-                    "Failed to connect global SMS modem at {} for mapped DMs: {error:#}; retrying in 15s",
-                    sms_config.ip_address
-                );
+                log::warn!("Failed to connect SMS channel: {error}; retrying in 15s");
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(15)).await;

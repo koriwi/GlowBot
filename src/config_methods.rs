@@ -68,10 +68,6 @@ impl Config {
         let mut phone_mappings = std::collections::HashSet::new();
         for (chat_id, dm) in &self.dms {
             if let Some(phone_number) = &dm.phone_number {
-                anyhow::ensure!(
-                    chat_id.parse::<i64>().is_ok_and(|id| id > 0),
-                    "dms.{chat_id}.phone_number can only be configured for a positive Telegram DM chat ID"
-                );
                 let normalized = crate::sms::normalize_phone_number(phone_number);
                 anyhow::ensure!(
                     !normalized.is_empty(),
@@ -104,24 +100,10 @@ impl Config {
         self.dms.get(chat_id)
     }
 
-    /// Number of direct-message contacts configured for SMS routing.
-    /// Group chat configuration is deliberately excluded.
-    pub fn sms_dm_count(&self) -> usize {
-        self.dms
-            .iter()
-            .filter(|(chat_id, dm)| {
-                dm.phone_number.is_some() && chat_id.parse::<i64>().is_ok_and(|chat_id| chat_id > 0)
-            })
-            .count()
-    }
-
     /// Find the Telegram DM mapped to an SMS phone number.
     pub fn dm_for_phone_number(&self, phone_number: &str) -> Option<(&str, &DmConfig)> {
         let wanted = crate::sms::normalize_phone_number(phone_number);
         self.dms.iter().find_map(|(chat_id, dm)| {
-            if !chat_id.parse::<i64>().is_ok_and(|chat_id| chat_id > 0) {
-                return None;
-            }
             let configured = dm.phone_number.as_deref()?;
             (crate::sms::normalize_phone_number(configured) == wanted)
                 .then_some((chat_id.as_str(), dm))
