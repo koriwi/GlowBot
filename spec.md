@@ -170,8 +170,8 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
 - Codex OAuth does not provide embeddings. OpenRouter-only embeddings, image generation, and media fallback features continue to require an OpenRouter API key.
 - Model is set per chat in config.
 - Handles tool-use responses with a multi-turn loop (up to 10 rounds).
-- Maintains a **conversation history** per chat, stored in-memory. Past messages are **not** automatically sent to the LLM. Instead, the bot sends only the current user message along with the system prompt. The LLM can call `get_recent_messages(count)` to retrieve prior messages on demand when it needs context.
-- Previous messages are still kept for tracking purposes but do not consume context tokens unless explicitly requested.
+- Maintains persistent **conversation history** per chat in SQLite. Each request automatically includes the configured number of recent visible user/assistant messages plus the current user message. Historical tool calls and results are excluded from this automatic context, while the active turn's tool traffic remains included.
+- Historical tool calls and results remain stored and semantically searchable, but do not consume automatic conversation-context tokens unless found through `search_conversations`.
 - Responses are sent with `ParseMode::MarkdownV2`. LLM output is converted via the `telegram-markdown-v2` crate (`convert_with_strategy` with `UnsupportedTagsStrategy::Escape`), which parses standard Markdown and emits properly escaped V2. Unsupported constructs (tables, blockquotes, raw HTML) are escaped as plain text rather than crashing. The system prompt instructs the LLM to wrap tables in code blocks (```) so they render as preformatted text. Falls back to plain text on conversion failure.
 - Hardcoded tools exposed to the LLM:
   - `read_memory` – returns a user's memory as structured JSON (frontmatter + body).
@@ -191,7 +191,7 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
   - **`read_config`** — returns the current config as YAML.
   - **`edit_config`** — proposes config changes via Accept/Deny dialog.
   - **`send_message`** — send a plain text message to the current chat. Normal user-initiated turns may use it once before genuinely long-running work, but not for routine searches/checks or repeated progress. It is omitted from scheduled-task tool definitions and also runtime-blocked there.
-  - **`get_recent_messages`** — returns the last N visible user/assistant messages from conversation history; internal tool-call traffic does not consume the requested count. The bot does NOT automatically send past messages — only the current user message is included in each request. The LLM calls this tool only when it needs context from earlier in the conversation.
+  - **`get_recent_messages`** — returns the last N visible user/assistant messages from conversation history; internal tool-call traffic does not consume the requested count. Use it when more conversational context is needed than was included automatically.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
 
 **Important implementation detail:** Bash commands run with the data directory as working directory. All paths must be relative (e.g. `chats/123/456.md`, not `glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` so the LLM knows the exact memory file paths.
@@ -373,8 +373,8 @@ A human-focused todo list — simple items the user wants to remember or track. 
 
 #### Short-term (conversation context)
 
-- Only the **current user message** is sent to the LLM with each request, along with the system prompt. The current user message includes channel-specific metadata (Telegram identity/timestamp or SMS phone/modem date/mapping). Previous messages are stored persistently in **SQLite** (`glowbot_data/conversations.db`) but not transmitted unless explicitly requested.
-- The bot provides a **`get_recent_messages(count)`** tool that queries the database and returns the last N visible user/assistant messages, excluding internal tool calls and results. The LLM should call this only when it needs to recall earlier parts of the conversation.
+- The configured number of recent visible **user and assistant messages** is sent with each request, followed by the current user message and system prompt. The current user message includes channel-specific metadata (Telegram identity/timestamp or SMS phone/modem date/mapping). History is stored persistently in **SQLite** (`glowbot_data/conversations.db`). Historical tool calls/results are deliberately omitted from automatic context; current-turn tool traffic remains present.
+- The bot provides a **`get_recent_messages(count)`** tool that queries the database and returns the last N visible user/assistant messages, excluding internal tool calls and results. The LLM can call it when more conversational context is needed.
 - The `conversation_window` config value controls the query `LIMIT` (default: 20). Older messages remain in the database but are excluded from default context.
 - History **survives bot restarts** because it's stored in SQLite, not in-memory.
 - Each message is a row with columns: `chat_id`, `role`, `content` (JSON), `name`, `tool_calls` (JSON), `tool_call_id`, `created_at`. This schema supports adding an `embedding` column later for vector search (Phase 2 RAG).
@@ -426,7 +426,7 @@ description: |
 - Every message is automatically embedded via OpenRouter's embeddings API and stored in the `message_embeddings` table (BLOB of f32 little-endian bytes, model name tagged per row).
 - On startup: embeddings from a different model are cleaned up; then an async background task backfills any unembedded messages (500ms delay between calls, console/log progress).
 - `embedding_search_limit` config (default 1000) caps how many recent embeddings are loaded for similarity search.
-- LLM tool `search_conversations(query, count?)` — embeds the query, runs cosine similarity against stored embeddings for the chat, returns top-K results with content and similarity scores.
+- LLM tool `search_conversations(query, count?)` — embeds the query, runs cosine similarity against stored embeddings for the chat, and returns top-K results with content and similarity scores. Searchable records include visible conversation messages, historical tool names/arguments, and tool results even though historical tool traffic is omitted from automatic context.
 - Dimension-agnostic: BLOB storage handles any model's vector size. Model filtering ensures only same-model vectors are compared.
 - Vectors are loaded into RAM for similarity computation — ~59 MB per 10k embeddings with `text-embedding-3-small` (1536 dims).
 
@@ -601,7 +601,7 @@ Everything in §5.
 ### Short-term conversation context
 
 - Messages are stored in **SQLite** (`conversations.db`) — one row per message — so history **survives restarts**.
-- The bot only sends the **current user message** to the LLM by default (plus the system prompt). Earlier messages are not included automatically, keeping latency low.
+- The bot sends the configured recent window of visible **user/assistant messages**, the current user message, and the system prompt. Historical tool traces are omitted from automatic context to keep old agent runs from dominating new requests.
 - When the user references something earlier, the LLM calls `get_recent_messages(count)` to fetch the needed context from the database.
 - The `conversation_window` config controls the query `LIMIT` (default: 20), acting as a sliding window. Older messages stay in the DB but are excluded from default context.
 - This one-row-per-message design supports adding an `embedding` column later for vector/RAG search (Phase 2).

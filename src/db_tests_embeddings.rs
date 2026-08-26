@@ -66,6 +66,50 @@ fn test_save_and_search_embeddings() {
 }
 
 #[test]
+fn test_tool_activity_is_backfilled_and_searchable() {
+    use crate::openrouter::{FunctionCall, ToolCall};
+
+    let db = make_db();
+    let chat_id = "-tools";
+    let ids = db
+        .save_messages(
+            chat_id,
+            &[
+                ChatMessage::assistant_tool_calls(vec![ToolCall {
+                    id: "call_tracker".into(),
+                    call_type: "function".into(),
+                    function: FunctionCall {
+                        name: "tracker_search".into(),
+                        arguments: r#"{"query":"Tabaluga German"}"#.into(),
+                    },
+                }]),
+                ChatMessage::tool_result("call_tracker", "Found season one in German"),
+            ],
+        )
+        .unwrap();
+
+    let unembedded = db.find_unembedded_messages().unwrap();
+    assert_eq!(unembedded.len(), 2);
+    assert!(unembedded[0].1.contains("tracker_search"));
+    assert!(unembedded[0].1.contains("Tabaluga German"));
+    assert!(unembedded[1].1.contains("[Tool result]"));
+    assert!(unembedded[1].1.contains("Found season one in German"));
+
+    db.save_embedding(ids[0], &[1.0, 0.0], "tool-model")
+        .unwrap();
+    db.save_embedding(ids[1], &[0.0, 1.0], "tool-model")
+        .unwrap();
+    let results = db
+        .search_embeddings(chat_id, &[1.0, 0.0], "tool-model", 2, 10)
+        .unwrap();
+    assert_eq!(results.len(), 2);
+    assert!(results[0].2.contains("tracker_search"));
+    assert!(results
+        .iter()
+        .any(|(_, _, text)| text.contains("Found season one in German")));
+}
+
+#[test]
 fn test_search_embeddings_respects_limit() {
     let db = make_db();
     let chat_id = "-888";

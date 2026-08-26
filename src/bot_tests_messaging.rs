@@ -113,9 +113,9 @@ async fn test_process_message_includes_sender_and_sent_time_metadata() {
 }
 
 #[tokio::test]
-async fn test_process_message_sends_only_current_message_to_llm() {
+async fn test_process_message_includes_visible_history_without_old_tool_trace() {
     let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
-    for response in ["stale reply", "current reply"] {
+    for response in ["previous reply", "current reply"] {
         mock.add_response(ChatCompletionResponse {
             choices: vec![Choice {
                 message: AssistantMessage {
@@ -129,9 +129,29 @@ async fn test_process_message_sends_only_current_message_to_llm() {
         });
     }
 
-    bot.process_message("-123", "456", "@testuser", "stale request", "mybot")
+    bot.process_message("-123", "456", "@testuser", "previous request", "mybot")
         .await
         .unwrap();
+    {
+        let state = bot.state.lock().await;
+        state
+            .db
+            .save_messages(
+                "-123",
+                &[
+                    ChatMessage::assistant_tool_calls(vec![ToolCall {
+                        id: "old_call".into(),
+                        call_type: "function".into(),
+                        function: FunctionCall {
+                            name: "bash".into(),
+                            arguments: r#"{"command":"old internal command"}"#.into(),
+                        },
+                    }]),
+                    ChatMessage::tool_result("old_call", "old internal tool result"),
+                ],
+            )
+            .unwrap();
+    }
     mock.take_requests();
     bot.process_message(
         "-123",
@@ -145,15 +165,19 @@ async fn test_process_message_sends_only_current_message_to_llm() {
 
     let requests = mock.take_requests();
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].len(), 2);
+    assert_eq!(requests[0].len(), 4);
     assert_eq!(requests[0][0].role, "system");
-    assert_eq!(requests[0][1].role, "user");
-    let user_content = requests[0][1].text_content();
-    assert!(user_content.contains("current unique request"));
-    assert!(!user_content.contains("stale request"));
+    assert!(requests[0][1].text_content().contains("previous request"));
+    assert_eq!(requests[0][2].text_content(), "previous reply");
+    assert!(requests[0][3]
+        .text_content()
+        .contains("current unique request"));
+    assert!(requests[0]
+        .iter()
+        .all(|message| message.tool_calls.is_none()));
     assert!(!requests[0]
         .iter()
-        .any(|message| message.text_content().contains("stale reply")));
+        .any(|message| message.text_content().contains("old internal tool result")));
 }
 
 #[tokio::test]

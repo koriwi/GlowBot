@@ -117,6 +117,25 @@ pub(crate) async fn process_with_llm_impl(
     // Ensure user has a memory file
     ensure_memory_exists_impl(state, chat_id, user_id, username).await?;
 
+    // Include recent conversational messages, but not historical tool traces. Tool calls and
+    // results from this active turn remain in `turn_messages` below.
+    let history = {
+        let s = state.lock().await;
+        let window_size = s.config.conversation.recent_messages_window_size;
+        let cutoff = s.db.get_cutoff(chat_id).unwrap_or(None);
+        match s.db.load_visible_messages(chat_id, window_size, cutoff) {
+            Ok(messages) => messages,
+            Err(error) => {
+                log::error!(
+                    "Failed to load visible conversation history for chat {}: {}",
+                    chat_id,
+                    error
+                );
+                Vec::new()
+            }
+        }
+    };
+
     let current_msg = build_user_message_full(
         state,
         chat_id,
@@ -163,7 +182,7 @@ pub(crate) async fn process_with_llm_impl(
             let (messages, _trimmed) = crate::openrouter::build_trimmed_request(
                 context_limit,
                 &[ChatMessage::system(&system_prompt)],
-                &[],
+                &history,
                 &turn_messages,
                 &tools,
             );
@@ -350,8 +369,8 @@ async fn embed_turn(
         if i >= message_ids.len() {
             break;
         }
-        let text = msg.text_content();
-        if text.is_empty() {
+        let text = Database::searchable_text(msg);
+        if text.trim().is_empty() {
             continue;
         }
         let chunks = chunk_for_embedding(&text, max_chars, allow_split);

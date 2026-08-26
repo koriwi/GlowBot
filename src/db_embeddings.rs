@@ -1,4 +1,4 @@
-use crate::openrouter::{ChatContent, ContentPart};
+use crate::openrouter::{ChatContent, ChatMessage, ToolCall};
 use rusqlite::params;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -43,26 +43,58 @@ impl Ord for ScoredItem {
 }
 
 impl Database {
-    /// Extract readable text from a serialised ChatContent JSON string.
-    fn text_from_content_json(content_json: &str) -> Option<String> {
-        let text = match serde_json::from_str::<ChatContent>(content_json) {
-            Ok(ChatContent::Text(t)) => t,
-            Ok(ChatContent::Parts(parts)) => parts
-                .iter()
-                .filter_map(|p| match p {
-                    ContentPart::Text { text } => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join(" "),
-            Err(_) => return None,
+    /// Text used for semantic conversation search, including tool calls and results.
+    pub(crate) fn searchable_text(message: &ChatMessage) -> String {
+        let text = message.text_content();
+        if message.role == "tool" {
+            let call_id = message.tool_call_id.as_deref().unwrap_or("unknown");
+            return format!("[Tool result]\nCall ID: {call_id}\n{text}");
+        }
+
+        let Some(tool_calls) = &message.tool_calls else {
+            return text;
         };
-        if text.is_empty() {
-            None
+        let calls = tool_calls
+            .iter()
+            .map(|call| {
+                format!(
+                    "[Tool call]\nName: {}\nArguments: {}",
+                    call.function.name, call.function.arguments
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        if text.trim().is_empty() {
+            calls
         } else {
-            Some(text)
+            format!("{text}\n\n{calls}")
         }
     }
+
+    fn searchable_text_from_json(
+        role: String,
+        content_json: &str,
+        tool_calls_json: Option<String>,
+        tool_call_id: Option<String>,
+    ) -> Option<String> {
+        let content = serde_json::from_str::<ChatContent>(content_json).ok()?;
+        let tool_calls: Option<Vec<ToolCall>> = tool_calls_json
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .ok()?;
+        let message = ChatMessage {
+            role,
+            content,
+            name: None,
+            tool_calls,
+            tool_call_id,
+            reasoning: None,
+            provider_data: None,
+        };
+        let text = Self::searchable_text(&message);
+        (!text.trim().is_empty()).then_some(text)
+    }
+
     /// Pack a slice of f32 values into a little-endian byte blob.
     pub fn pack_embedding(embedding: &[f32]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(embedding.len() * 4);
@@ -112,22 +144,27 @@ impl Database {
     pub fn find_unembedded_messages(&self) -> anyhow::Result<Vec<(i64, String)>> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
-            "SELECT m.id, m.content
+            "SELECT m.id, m.role, m.content, m.tool_calls, m.tool_call_id
              FROM messages m
              LEFT JOIN message_embeddings e ON e.message_id = m.id
              WHERE e.id IS NULL
-               AND m.role != 'tool'
              ORDER BY m.id",
         )?;
         let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            let content_json: String = row.get(1)?;
-            Ok((id, content_json))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
         })?;
         let mut results = Vec::new();
         for row in rows {
-            let (id, content_json) = row?;
-            if let Some(text) = Self::text_from_content_json(&content_json) {
+            let (id, role, content_json, tool_calls_json, tool_call_id) = row?;
+            if let Some(text) =
+                Self::searchable_text_from_json(role, &content_json, tool_calls_json, tool_call_id)
+            {
                 results.push((id, text));
             }
         }
@@ -151,11 +188,11 @@ impl Database {
         let conn = self.lock_conn();
 
         let mut stmt = conn.prepare(
-            "SELECT e.message_id, e.embedding, m.content
+            "SELECT e.message_id, e.embedding, m.role, m.content,
+                    m.tool_calls, m.tool_call_id
              FROM message_embeddings e
              JOIN messages m ON m.id = e.message_id
              WHERE m.chat_id = ?1 AND e.model = ?2
-               AND m.role != 'tool'
              ORDER BY e.message_id DESC
              LIMIT ?3",
         )?;
@@ -163,14 +200,20 @@ impl Database {
         struct Raw {
             message_id: i64,
             embedding_blob: Vec<u8>,
+            role: String,
             content_json: String,
+            tool_calls_json: Option<String>,
+            tool_call_id: Option<String>,
         }
 
         let rows = stmt.query_map(params![chat_id, model, scan_limit as i64], |row| {
             Ok(Raw {
                 message_id: row.get(0)?,
                 embedding_blob: row.get(1)?,
-                content_json: row.get(2)?,
+                role: row.get(2)?,
+                content_json: row.get(3)?,
+                tool_calls_json: row.get(4)?,
+                tool_call_id: row.get(5)?,
             })
         })?;
 
@@ -184,7 +227,12 @@ impl Database {
 
         for row in rows {
             let raw = row?;
-            let Some(text) = Self::text_from_content_json(&raw.content_json) else {
+            let Some(text) = Self::searchable_text_from_json(
+                raw.role,
+                &raw.content_json,
+                raw.tool_calls_json,
+                raw.tool_call_id,
+            ) else {
                 continue;
             };
 

@@ -676,7 +676,7 @@ pub(crate) fn search_conversations_tool_definition() -> ToolDefinition {
         def_type: "function".into(),
         function: FunctionDef {
             name: "search_conversations".into(),
-            description: "Search past conversation messages by semantic similarity. Use this to find relevant messages from earlier in the chat — e.g. 'that discussion about docker volumes' or 'what did Alice say about the deadline?'. Returns ranked results with similarity scores and content.".into(),
+            description: "Search past conversation messages and historical tool activity by semantic similarity. Use this to find earlier user/assistant messages, tool names and arguments, or tool results — e.g. 'what did Alice say about the deadline?' or 'the curl call used to search the tracker'. Returns ranked results with similarity scores and content.".into(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

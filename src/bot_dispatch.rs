@@ -663,7 +663,7 @@ async fn dispatch_tool_with_sender(
                 .unwrap_or_default()
             };
 
-            // search_embeddings already excludes tool messages at the SQL level.
+            // Searchable text includes ordinary messages plus historical tool calls/results.
             let top_results: Vec<_> = results
                 .into_iter()
                 .filter(|(_id, _score, text)| {
