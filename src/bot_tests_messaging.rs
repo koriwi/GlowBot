@@ -113,6 +113,50 @@ async fn test_process_message_includes_sender_and_sent_time_metadata() {
 }
 
 #[tokio::test]
+async fn test_process_message_sends_only_current_message_to_llm() {
+    let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
+    for response in ["stale reply", "current reply"] {
+        mock.add_response(ChatCompletionResponse {
+            choices: vec![Choice {
+                message: AssistantMessage {
+                    content: Some(response.into()),
+                    role: Some("assistant".into()),
+                    ..Default::default()
+                },
+                finish_reason: Some("stop".into()),
+            }],
+            ..Default::default()
+        });
+    }
+
+    bot.process_message("-123", "456", "@testuser", "stale request", "mybot")
+        .await
+        .unwrap();
+    mock.take_requests();
+    bot.process_message(
+        "-123",
+        "456",
+        "@testuser",
+        "current unique request",
+        "mybot",
+    )
+    .await
+    .unwrap();
+
+    let requests = mock.take_requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].len(), 2);
+    assert_eq!(requests[0][0].role, "system");
+    assert_eq!(requests[0][1].role, "user");
+    let user_content = requests[0][1].text_content();
+    assert!(user_content.contains("current unique request"));
+    assert!(!user_content.contains("stale request"));
+    assert!(!requests[0]
+        .iter()
+        .any(|message| message.text_content().contains("stale reply")));
+}
+
+#[tokio::test]
 async fn test_process_message_interaction_whitelist_blocks() {
     let (bot, _dir, _mock) = setup_test_bot_with_whitelisted_chat().await;
     // User "789" is not in interaction_whitelist
@@ -463,7 +507,7 @@ async fn test_process_message_loop_limit() {
     let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 
     // Continuously return tool calls to trigger the loop limit
-    for _ in 0..64 {
+    for _ in 0..10 {
         mock.add_response(ChatCompletionResponse {
             choices: vec![Choice {
                 message: AssistantMessage {

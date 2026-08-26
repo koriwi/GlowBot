@@ -489,7 +489,7 @@ async fn dispatch_tool_with_sender(
             let history = {
                 let s = state.lock().await;
                 let cutoff = s.db.get_cutoff(&cid).unwrap_or(None);
-                match s.db.load_messages(&cid, count, cutoff) {
+                match s.db.load_visible_messages(&cid, count, cutoff) {
                     Ok(msgs) => msgs,
                     Err(e) => {
                         log::error!(
@@ -502,7 +502,6 @@ async fn dispatch_tool_with_sender(
             };
             let items: Vec<_> = history
                 .iter()
-                .filter(|m| m.role != "tool")
                 .filter(|m| {
                     // Skip messages with no visible text (empty content or media placeholders).
                     let text = m.text_content();

@@ -157,6 +157,7 @@ pub mod mock {
     pub struct MockLlmBackend {
         pub responses: Mutex<Vec<ChatCompletionResponse>>,
         pub embedding_responses: Mutex<Vec<Vec<f32>>>,
+        pub requests: Mutex<Vec<Vec<crate::openrouter::ChatMessage>>>,
         pub should_error: Mutex<bool>,
     }
 
@@ -165,6 +166,7 @@ pub mod mock {
             Self {
                 responses: Mutex::new(Vec::new()),
                 embedding_responses: Mutex::new(Vec::new()),
+                requests: Mutex::new(Vec::new()),
                 should_error: Mutex::new(false),
             }
         }
@@ -194,6 +196,10 @@ pub mod mock {
         pub fn set_error(&self, error: bool) {
             *self.should_error.lock().unwrap_or_else(|e| e.into_inner()) = error;
         }
+
+        pub fn take_requests(&self) -> Vec<Vec<crate::openrouter::ChatMessage>> {
+            std::mem::take(&mut *self.requests.lock().unwrap_or_else(|e| e.into_inner()))
+        }
     }
 
     impl Default for MockLlmBackend {
@@ -206,8 +212,12 @@ pub mod mock {
     impl LlmBackend for MockLlmBackend {
         async fn chat_completion(
             &self,
-            _request: &ChatCompletionRequest,
+            request: &ChatCompletionRequest,
         ) -> anyhow::Result<ChatCompletionResponse> {
+            self.requests
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(request.messages.clone());
             if self.check_error() {
                 return Err(anyhow::anyhow!("Mock LLM error"));
             }

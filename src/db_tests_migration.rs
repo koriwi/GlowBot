@@ -160,6 +160,35 @@ fn test_window_limit() {
 }
 
 #[test]
+fn test_visible_message_limit_ignores_tool_traffic() {
+    use crate::openrouter::{FunctionCall, ToolCall};
+
+    let db = make_db();
+    let chat_id = "-visible";
+    let messages = vec![
+        ChatMessage::user("old request"),
+        ChatMessage::assistant_tool_calls(vec![ToolCall {
+            id: "call_1".into(),
+            call_type: "function".into(),
+            function: FunctionCall {
+                name: "bash".into(),
+                arguments: "{}".into(),
+            },
+        }]),
+        ChatMessage::tool_result("call_1", "large internal result"),
+        ChatMessage::assistant("old reply"),
+        ChatMessage::user("new request"),
+        ChatMessage::assistant("new reply"),
+    ];
+    db.save_messages(chat_id, &messages).unwrap();
+
+    let loaded = db.load_visible_messages(chat_id, 2, None).unwrap();
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded[0].text_content(), "new request");
+    assert_eq!(loaded[1].text_content(), "new reply");
+}
+
+#[test]
 fn test_tool_calls_roundtrip() {
     use crate::openrouter::{FunctionCall, ToolCall};
 

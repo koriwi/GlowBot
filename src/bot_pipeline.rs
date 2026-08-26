@@ -117,28 +117,6 @@ pub(crate) async fn process_with_llm_impl(
     // Ensure user has a memory file
     ensure_memory_exists_impl(state, chat_id, user_id, username).await?;
 
-    // Read existing conversation history upfront
-    let history = {
-        let s = state.lock().await;
-        let win = s.config.conversation.recent_messages_window_size;
-        let cutoff = s.db.get_cutoff(chat_id).unwrap_or(None);
-        let hist = match s.db.load_messages(chat_id, win, cutoff) {
-            Ok(msgs) => msgs,
-            Err(e) => {
-                log::error!(
-                    "Failed to load conversation history for chat {}: {}",
-                    chat_id,
-                    e
-                );
-                Vec::new()
-            }
-        };
-        // Strip orphaned tool results that can occur when the sliding
-        // window drops an assistant_tool_calls message but keeps its
-        // subsequent tool_result messages.
-        crate::openrouter::strip_orphaned_tool_results(&hist)
-    };
-
     let current_msg = build_user_message_full(
         state,
         chat_id,
@@ -171,7 +149,7 @@ pub(crate) async fn process_with_llm_impl(
             .unwrap_or(0)
     };
 
-    let max_tool_rounds = 64;
+    let max_tool_rounds = 10;
 
     let (result, final_reasoning) = {
         let mut final_text = None;
@@ -185,7 +163,7 @@ pub(crate) async fn process_with_llm_impl(
             let (messages, _trimmed) = crate::openrouter::build_trimmed_request(
                 context_limit,
                 &[ChatMessage::system(&system_prompt)],
-                &history,
+                &[],
                 &turn_messages,
                 &tools,
             );

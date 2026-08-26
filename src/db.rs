@@ -100,18 +100,60 @@ impl Database {
                 .collect::<rusqlite::Result<Vec<_>>>()?
         };
 
-        let mut msgs = Vec::with_capacity(raws.len());
+        Self::deserialize_messages(raws, chat_id)
+    }
+
+    /// Load the most recent visible user/assistant messages, ignoring internal tool traffic.
+    /// The limit therefore counts conversation messages rather than database rows.
+    pub fn load_visible_messages(
+        &self,
+        chat_id: &str,
+        limit: usize,
+        since: Option<i64>,
+    ) -> anyhow::Result<Vec<ChatMessage>> {
+        let conn = self.lock_conn();
+        let sql = if since.is_some() {
+            "SELECT role, content, reasoning, name, tool_calls, tool_call_id
+             FROM messages
+             WHERE chat_id = ?1 AND created_at > ?2
+               AND role IN ('user', 'assistant') AND content <> '\"\"'
+             ORDER BY id DESC
+             LIMIT ?3"
+        } else {
+            "SELECT role, content, reasoning, name, tool_calls, tool_call_id
+             FROM messages
+             WHERE chat_id = ?1
+               AND role IN ('user', 'assistant') AND content <> '\"\"'
+             ORDER BY id DESC
+             LIMIT ?2"
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let raws = if let Some(s) = since {
+            stmt.query_map(params![chat_id, s, limit as i64], Self::map_row)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        } else {
+            stmt.query_map(params![chat_id, limit as i64], Self::map_row)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        Self::deserialize_messages(raws, chat_id)
+    }
+
+    fn deserialize_messages(
+        raws: Vec<RawMessage>,
+        chat_id: &str,
+    ) -> anyhow::Result<Vec<ChatMessage>> {
+        let mut messages = Vec::with_capacity(raws.len());
         for raw in raws {
             let content: ChatContent = serde_json::from_str(&raw.content_json)
                 .with_context(|| format!("Failed to deserialize content for chat {}", chat_id))?;
             let tool_calls: Option<Vec<ToolCall>> = raw
                 .tool_calls_json
-                .map(|s| serde_json::from_str(&s))
+                .map(|value| serde_json::from_str(&value))
                 .transpose()
                 .with_context(|| {
                     format!("Failed to deserialize tool_calls for chat {}", chat_id)
                 })?;
-            msgs.push(ChatMessage {
+            messages.push(ChatMessage {
                 role: raw.role,
                 content,
                 reasoning: raw.reasoning,
@@ -121,12 +163,11 @@ impl Database {
                 provider_data: None,
             });
         }
-        // rows come back newest-first; reverse to chronological order
-        msgs.reverse();
-        Ok(msgs)
+        messages.reverse();
+        Ok(messages)
     }
 
-    /// Helper to map a row into a Raw struct for load_messages.
+    /// Helper to map a row into a Raw struct for message loading.
     fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawMessage> {
         Ok(RawMessage {
             role: row.get(0)?,

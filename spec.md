@@ -191,7 +191,7 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
   - **`read_config`** — returns the current config as YAML.
   - **`edit_config`** — proposes config changes via Accept/Deny dialog.
   - **`send_message`** — send a plain text message to the current chat. Normal user-initiated turns may use it once before genuinely long-running work, but not for routine searches/checks or repeated progress. It is omitted from scheduled-task tool definitions and also runtime-blocked there.
-  - **`get_recent_messages`** — returns the last N messages from the conversation history. The bot does NOT automatically send past messages — only the current user message is included in each request. The LLM must call this tool when it needs context from earlier in the conversation.
+  - **`get_recent_messages`** — returns the last N visible user/assistant messages from conversation history; internal tool-call traffic does not consume the requested count. The bot does NOT automatically send past messages — only the current user message is included in each request. The LLM calls this tool only when it needs context from earlier in the conversation.
 - **MCP tools** are dynamically added from configured servers. They are prefixed `mcp_<server>_<tool>` and discovered on startup via the MCP protocol (JSON-RPC, `initialize` → `tools/list`). See §4.7.
 
 **Important implementation detail:** Bash commands run with the data directory as working directory. All paths must be relative (e.g. `chats/123/456.md`, not `glowbot_data/chats/123/456.md`). The system prompt is given the current `chat_id` so the LLM knows the exact memory file paths.
@@ -374,7 +374,7 @@ A human-focused todo list — simple items the user wants to remember or track. 
 #### Short-term (conversation context)
 
 - Only the **current user message** is sent to the LLM with each request, along with the system prompt. The current user message includes channel-specific metadata (Telegram identity/timestamp or SMS phone/modem date/mapping). Previous messages are stored persistently in **SQLite** (`glowbot_data/conversations.db`) but not transmitted unless explicitly requested.
-- The bot provides a **`get_recent_messages(count)`** tool that queries the database and returns the last N messages. The LLM should call this when it needs to recall earlier parts of the conversation.
+- The bot provides a **`get_recent_messages(count)`** tool that queries the database and returns the last N visible user/assistant messages, excluding internal tool calls and results. The LLM should call this only when it needs to recall earlier parts of the conversation.
 - The `conversation_window` config value controls the query `LIMIT` (default: 20). Older messages remain in the database but are excluded from default context.
 - History **survives bot restarts** because it's stored in SQLite, not in-memory.
 - Each message is a row with columns: `chat_id`, `role`, `content` (JSON), `name`, `tool_calls` (JSON), `tool_call_id`, `created_at`. This schema supports adding an `embedding` column later for vector search (Phase 2 RAG).
