@@ -531,7 +531,7 @@ async fn test_process_message_loop_limit() {
     let (bot, _dir, mock) = setup_test_bot_with_whitelisted_chat().await;
 
     // Continuously return tool calls to trigger the loop limit
-    for _ in 0..10 {
+    for _ in 0..64 {
         mock.add_response(ChatCompletionResponse {
             choices: vec![Choice {
                 message: AssistantMessage {

@@ -168,7 +168,7 @@ pub(crate) async fn process_with_llm_impl(
             .unwrap_or(0)
     };
 
-    let max_tool_rounds = 10;
+    let max_tool_rounds = 64;
 
     let (result, final_reasoning) = {
         let mut final_text = None;

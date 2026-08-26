@@ -169,7 +169,7 @@ DMs are configured via the `dms` map (keyed by user/chat ID). Only DMs explicitl
 - Codex Responses function calls are translated to GlowBot's existing tool loop. Encrypted reasoning items are replayed during the active tool turn, while reasoning summaries continue to be captured in conversation history.
 - Codex OAuth does not provide embeddings. OpenRouter-only embeddings, image generation, and media fallback features continue to require an OpenRouter API key.
 - Model is set per chat in config.
-- Handles tool-use responses with a multi-turn loop (up to 10 rounds).
+- Handles tool-use responses with a multi-turn loop (up to 64 rounds).
 - Maintains persistent **conversation history** per chat in SQLite. Each request automatically includes the configured number of recent visible user/assistant messages plus the current user message. Historical tool calls and results are excluded from this automatic context, while the active turn's tool traffic remains included.
 - Historical tool calls and results remain stored and semantically searchable, but do not consume automatic conversation-context tokens unless found through `search_conversations`.
 - Responses are sent with `ParseMode::MarkdownV2`. LLM output is converted via the `telegram-markdown-v2` crate (`convert_with_strategy` with `UnsupportedTagsStrategy::Escape`), which parses standard Markdown and emits properly escaped V2. Unsupported constructs (tables, blockquotes, raw HTML) are escaped as plain text rather than crashing. The system prompt instructs the LLM to wrap tables in code blocks (```) so they render as preformatted text. Falls back to plain text on conversion failure.
