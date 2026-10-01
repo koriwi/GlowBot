@@ -205,6 +205,30 @@ Commands must be enabled per-chat via `commands_enabled: true` (except `/stop` w
 - **Git auto-commit**: Every config/memory/skill write triggers `git add` → `commit` → `push`
 - **MarkdownV2 rendering**: Proper Telegram MarkdownV2 output with fallback to plain text
 
+## Background events
+
+Send generic events to `POST /events`. Each configured destination chat runs its
+LLM with its instructions, memories, recent history, skills, and permitted tools.
+The caller supplies chat IDs; external tags and other service metadata are resolved
+outside GlowBot. No saved task is required.
+
+```bash
+curl -X POST http://127.0.0.1:8787/events \
+  -H 'Content-Type: application/json' \
+  -d '{"chat_ids":["-1234567890"],"event":{"type":"completed","details":"An operation finished"}}'
+```
+
+Chat IDs are strings and must be listed in `chats` or `dms`. `event` accepts any
+non-null JSON value. HTTP 202 means background processing was accepted.
+Runs stay silent during progress and use `send_message` for success or actionable
+blockers. Event conversations are saved in the existing message history.
+
+Set `GLOWBOT_EVENT_BIND` to change the listener address (default `0.0.0.0:8787`);
+restart after changing it. Compose publishes `127.0.0.1:8787` on the host.
+The endpoint has no authentication, duplicate tracking, or automatic retries.
+Queued events live in memory and can be lost on restart. Existing polling tasks
+must be removed separately when switching to callbacks.
+
 ## Development
 
 ```bash

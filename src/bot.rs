@@ -7,8 +7,11 @@ use crate::llm::LlmBackend;
 mod bot_commands;
 #[path = "bot_dispatch.rs"]
 pub mod bot_dispatch;
+#[path = "bot_event.rs"]
+mod bot_event;
 #[path = "bot_heartbeat.rs"]
 mod bot_heartbeat;
+pub use self::bot_event::run_event;
 #[path = "bot_models.rs"]
 pub mod bot_models;
 #[path = "bot_pipeline.rs"]

@@ -5,6 +5,7 @@ pub mod codex;
 pub mod commands;
 pub mod config;
 pub mod db;
+pub mod events;
 pub mod git;
 pub mod llm;
 pub mod mcp;

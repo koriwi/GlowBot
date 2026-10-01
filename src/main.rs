@@ -115,6 +115,21 @@ async fn run_bot() -> anyhow::Result<()> {
     let chat_locks: Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
         Arc::new(std::sync::Mutex::new(HashMap::new()));
 
+    // The event listener uses the same per-chat locks as incoming messages.
+    let event_bind = env::var("GLOWBOT_EVENT_BIND").unwrap_or_else(|_| "0.0.0.0:8787".into());
+    let listener = tokio::net::TcpListener::bind(&event_bind).await?;
+    let event_router = glowbot::events::router(glowbot::events::EventContext {
+        bot: bot.clone(),
+        telegram: tg_bot.clone(),
+        chat_locks: chat_locks.clone(),
+    });
+    log::info!("Event listener on {}", event_bind);
+    tokio::spawn(async move {
+        if let Err(error) = axum::serve(listener, event_router).await {
+            log::error!("Event listener stopped: {}", error);
+        }
+    });
+
     log::info!("GlowBot is ready. Starting long-polling...");
 
     // Manual polling loop to handle both Message and CallbackQuery updates.

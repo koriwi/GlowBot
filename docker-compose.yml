@@ -11,6 +11,9 @@ services:
     environment:
       - GLOWBOT_DATA_DIR=/home/glowbot/glowbot_data
       - RUST_LOG=info
+      - GLOWBOT_EVENT_BIND=0.0.0.0:8787
+    ports:
+      - "127.0.0.1:8787:8787"
     # For git push in the data directory, mount SSH key:
     # volumes:
     #   - ~/.ssh:/home/glowbot/.ssh:ro

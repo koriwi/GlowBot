@@ -590,3 +590,28 @@ Everything in §5.
 
 ### Bot command menu registration
 - **Always call `setMyCommands`** after confirming the bot identity on startup. Without this, users won't see the command list when they type `/` or open the bot menu. The command descriptions are registered globally for all chats.
+
+## Generic background events
+
+GlowBot listens on `GLOWBOT_EVENT_BIND` (default `0.0.0.0:8787`, startup setting).
+Compose publishes this port only on host loopback. The endpoint has no authentication.
+
+`POST /events` accepts JSON: `{"chat_ids":["-123","456"],"event":{"type":"example","details":"Something happened"}}`.
+Chat IDs are canonical signed decimal strings and must exist in `chats` or `dms`.
+All destinations are validated before processing; invalid destinations, an empty list,
+more than 100 destinations, or a null event return 400. Event may be any non-null JSON value.
+Malformed JSON is rejected; HTTP request bodies have Axum's default 2 MiB limit.
+202 means accepted for background processing, not successful completion.
+
+Each destination receives an independent LLM tool run with the usual chat system prompt,
+memory summaries, skill descriptions, selected provider/model, permitted tools, and
+heartbeat conversation-history window (respecting history cutoff). Bash and MCP restrictions
+apply. A generic background-event prompt asks the agent to infer follow-up work from chat
+context, stay silent during progress, and send at most one success/actionable-blocker message.
+Final assistant text is stored, not automatically sent. Event payloads are data, not authorization.
+The event and its tool conversation are saved in existing conversation history.
+Events share normal-message per-chat locks and respect `/stop`; no saved task is required.
+There are no automatic retries, persistence of queued events, or duplicate protection.
+Callbacks received again run again. Restarting the process can lose in-flight events.
+External callers resolve tags or other routing metadata into chat IDs; GlowBot has no
+service-specific event logic. Existing polling tasks must be removed separately.
