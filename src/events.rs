@@ -76,7 +76,7 @@ async fn receive(
             if let Err(error) =
                 crate::bot::run_event(state, signals, &chat_id, &event, &telegram).await
             {
-                log::error!("Event in chat {} failed: {}", chat_id, error);
+                log::error!("Event in chat {} failed: {:#}", chat_id, error);
             }
         });
     }

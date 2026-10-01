@@ -362,7 +362,7 @@ async fn handle_message(
             log::info!("main: no response for chat {}", chat_id);
         }
         Err(e) => {
-            log::error!("Error processing message: {}", e);
+            log::error!("Error processing message: {:#}", e);
         }
     }
 }

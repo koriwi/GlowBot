@@ -214,7 +214,7 @@ pub async fn run_heartbeat_task(
                         (r, usage)
                     }
                     Err(e) => {
-                        log::error!("Heartbeat LLM error: {}", e);
+                        log::error!("Heartbeat LLM error: {:#}", e);
                         if let Some(chat) = parse_chat_id(&cid) {
                             let msg = format!("⚠️ Task '{}' failed: LLM error — {}", task_id, e);
                             crate::bot_send::send_message(&tg_bot, chat, &msg).await;
@@ -343,7 +343,7 @@ async fn process_reminder_action(
                     (r, usage)
                 }
                 Err(e) => {
-                    log::error!("Heartbeat reminder {} LLM error: {}", reminder_id, e);
+                    log::error!("Heartbeat reminder {} LLM error: {:#}", reminder_id, e);
                     let msg = format!(
                         "⏰ Reminder: {}\n⚠️ Action failed: LLM error — {}",
                         description, e
