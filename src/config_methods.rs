@@ -45,13 +45,27 @@ impl Config {
             );
         }
 
-        let uses_openrouter_extras = self.openrouter.embedding_model.is_some()
+        if self
+            .chats
+            .values()
+            .any(|c| c.interaction_mode == InteractionMode::AutoDetect)
+        {
+            anyhow::ensure!(
+                self.openrouter
+                    .decider_model
+                    .as_ref()
+                    .is_some_and(|m| !m.trim().is_empty()),
+                "openrouter.decider_model is required for auto_detect"
+            );
+        }
+        let uses_openrouter_extras = self.openrouter.decider_model.is_some()
+            || self.openrouter.embedding_model.is_some()
             || self.openrouter.image_fallback_model.is_some()
             || self.openrouter.audio_fallback_model.is_some()
             || self.openrouter.image_gen_model.is_some();
         anyhow::ensure!(
             !uses_openrouter_extras || !self.openrouter.api_key.trim().is_empty(),
-            "openrouter.api_key is required for embeddings, image generation, and media fallback models"
+            "openrouter.api_key is required for embeddings, image generation, media fallback models, and decisions"
         );
         Ok(())
     }
@@ -281,6 +295,7 @@ pub(crate) fn basic_config() -> Config {
         telegram_token: "test-token".into(),
         provider: LlmProvider::Openrouter,
         openrouter: OpenRouterConfig {
+            decider_model: None,
             api_key: "test-key".into(),
             model: "test/model".into(),
             image_fallback_model: None,

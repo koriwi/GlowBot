@@ -27,6 +27,8 @@ fn default_transport() -> String {
 pub enum InteractionMode {
     #[serde(rename = "every_message")]
     EveryMessage,
+    #[serde(rename = "auto_detect")]
+    AutoDetect,
     #[serde(rename = "mention_only")]
     #[default]
     MentionOnly,
@@ -203,6 +205,9 @@ pub enum LlmProvider {
 /// OpenRouter API configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct OpenRouterConfig {
+    /// Decisions API model used by auto_detect group interaction mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decider_model: Option<String>,
     /// OpenRouter API key.
     #[serde(default)]
     pub api_key: String,

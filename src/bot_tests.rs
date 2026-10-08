@@ -9,3 +9,5 @@ include!("bot_tests_heartbeat.rs");
 include!("bot_tests_features.rs");
 include!("bot_tests_config.rs");
 include!("bot_tests_advisor.rs");
+
+include!("bot_tests_decider.rs");

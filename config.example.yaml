@@ -10,9 +10,12 @@ openrouter:
   model: "your-model-name-here"
   # Fallback models for media ingest — used when the conversation model doesn't
   # natively support the media type (image/audio). Only needed if you want
-  # automatic conversion for non-vision/non-audio models.
+  # automatic conversion for non-vision/non-audio models. The decider also uses
+  # these when needed; Decisions audio currently always requires transcription.
   # image_fallback_model: "openai/gpt-4o"
   # audio_fallback_model: "google/gemini-2.5-flash"
+  # Decisions model for auto_detect group interaction mode (optional).
+  # decider_model: "openai/gpt-6-luna-decisions"
   # Image generation model — when set, the `generate_image` tool is enabled.
   # Must be an image generation model (e.g. "google/imagen-4", "black-forest-labs/flux-1.1-pro").
   # image_gen_model: "black-forest-labs/flux-1.1-pro"
@@ -86,7 +89,7 @@ chats:
   #   name: "Team Chat"                 # optional, human-readable label (survives config updates)
   #   provider: codex                    # optional: openrouter | codex; overrides global provider
   #   model: "gpt-5.4"                  # optional; defaults to the selected provider's global model
-  #   interaction_mode: "every_message"    # "every_message" | "mention_only"
+  #   interaction_mode: "every_message"    # "every_message" | "mention_only" | "auto_detect"
   #   interaction_whitelist: []            # user IDs; empty = everyone allowed
   #   command_whitelist: []                # user IDs allowed to run commands; empty = nobody
   #   system_prompt: ""                    # optional per-chat system prompt

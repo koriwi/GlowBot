@@ -50,6 +50,17 @@ async fn run_bot() -> anyhow::Result<()> {
             let state = state.clone();
             tokio::spawn(async move {
                 let client = glowbot::openrouter::OpenRouterClient::new(api_key);
+                if state.lock().await.config.openrouter.decider_model.is_some() {
+                    match client.fetch_decision_models().await {
+                        Ok(models) => {
+                            let mut state = state.lock().await;
+                            for model in models {
+                                state.decision_metadata.insert(model.id.clone(), model);
+                            }
+                        }
+                        Err(e) => log::error!("Failed to fetch decider metadata: {}", e),
+                    }
+                }
                 match client.fetch_models().await {
                     Ok(models) => {
                         let mut state = state.lock().await;

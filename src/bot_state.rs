@@ -40,6 +40,11 @@ pub struct BotState {
         std::collections::HashMap<String, rmcp::service::Peer<rmcp::service::RoleClient>>,
     /// Cached model metadata from OpenRouter (includes context lengths and input modalities).
     pub model_metadata: HashMap<String, ModelInfo>,
+    /// Local HTTP endpoint used only by decision integration tests.
+    #[cfg(test)]
+    pub(crate) decision_test_url: Option<String>,
+    /// Decisions catalog, kept separate from selectable conversation models.
+    pub decision_metadata: HashMap<String, ModelInfo>,
     /// Model IDs in the order they were returned by the API (for "popular" sort).
     pub model_order: Vec<String>,
     /// Per-chat last token usage from the most recent LLM call.

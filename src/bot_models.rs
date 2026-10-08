@@ -954,6 +954,9 @@ mod tests {
                 _mcp_services: vec![],
                 mcp_peers: HashMap::new(),
                 model_metadata: HashMap::new(),
+                #[cfg(test)]
+                decision_test_url: None,
+                decision_metadata: std::collections::HashMap::new(),
                 model_order: vec![],
                 last_usage: HashMap::new(),
                 pending_config_changes: HashMap::new(),

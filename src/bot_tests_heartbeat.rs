@@ -319,6 +319,9 @@ fn test_context_usage_formatting() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),

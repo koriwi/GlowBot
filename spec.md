@@ -616,3 +616,46 @@ There are no automatic retries, persistence of queued events, or duplicate prote
 Callbacks received again run again. Restarting the process can lose in-flight events.
 External callers resolve tags or other routing metadata into chat IDs; GlowBot has no
 service-specific event logic. Existing polling tasks must be removed separately.
+
+## Automatic group interaction decisions
+
+Groups may set `interaction_mode: auto_detect` and configure
+`openrouter.decider_model` (for example `openai/gpt-6-luna-decisions`). An OpenRouter
+API key is required even when the group's agent provider is Codex. Other interaction
+modes, DMs, commands, permissions, and background events retain their existing routing.
+
+After permission and command filtering, each eligible incoming message is saved once
+in normal conversation history, including messages the decider ignores and messages
+whose processing fails or is stopped. Embeddings apply to these saved messages too.
+Direct `@bot_username` mentions in text or captions bypass the decider.
+
+Otherwise, GlowBot calls OpenRouter's `POST /api/alpha/decisions` with a typed `noul`
+question, `should_respond`. The question asks whether the message invites the bot to
+respond, including implicit addressing, follow-ups, and questions the bot can answer
+about itself. Merely discussing the bot or addressing another human does not qualify.
+The bot is assumed to be the primary participant in the group. The decision includes
+recent conversation using `conversation.recent_messages_window_size` and the history
+cutoff; tool calls/results are excluded from the decision state.
+
+The agent runs when the returned probability is **>= 0.6**. Every received numeric
+value is printed to stdout with the chat ID, model, and threshold. Missing, invalid,
+out-of-range answers, HTTP failures, and decision timeouts cause silence and an error
+log. Decisions requests have a 15-second timeout and respect `/stop` before invoking
+the agent. Typing indicators start only once the agent is selected.
+
+Decider capabilities come from a separate cache fetched using
+`GET /api/v1/models?output_modalities=decisions`, independently of the agent model.
+The cache is populated at startup and refreshed on demand for an uncached model.
+Approved config edits restart the process, refreshing metadata. Failed fetches retain
+previously verified metadata; without usable metadata the bot stays silent and retains
+the incoming message without making fallback calls.
+
+For image-capable deciders, images are sent as top-level `image_url` state parts using
+base64 PNG/JPEG/WebP data URLs. Text-only deciders use the chat's effective
+`image_fallback_model` to describe the current image. Audio is transcribed with the
+chat's effective `audio_fallback_model`, since Decisions does not currently document
+native audio input. Prepared transcripts/descriptions are reused by the agent; media
+paths remain in history so the agent can use media tools. Historical image parts are
+sent natively when supported, otherwise only their saved text/path is included.
+Missing fallbacks or failed media preparation cause silence rather than a decision
+based on incomplete media. Direct mentions use the agent's usual media preparation.

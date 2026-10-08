@@ -1,3 +1,5 @@
+#[path = "bot_decider.rs"]
+mod bot_decider;
 use crate::commands::{can_interact, parse_command};
 use crate::config::Config;
 use crate::db::Database;
@@ -81,6 +83,9 @@ impl GlowBot {
             _mcp_services: mcp_services,
             mcp_peers,
             model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
             last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -118,6 +123,17 @@ impl GlowBot {
 
         let client = crate::openrouter::OpenRouterClient::new(api_key);
         let models = client.fetch_models().await?;
+        if self
+            .state
+            .lock()
+            .await
+            .config
+            .openrouter
+            .decider_model
+            .is_some()
+        {
+            bot_decider::refresh(&self.state).await?;
+        }
 
         let mut s = self.state.lock().await;
         for m in models {
@@ -401,6 +417,10 @@ pub async fn process_message_impl(
         sent_at,
         tools_enabled,
         tg_bot,
+        Some((
+            is_mention || caption.is_some_and(|c| c.contains(&format!("@{}", bot_username))),
+            bot_username,
+        )),
     )
     .await
 }

@@ -1,8 +1,14 @@
+#[path = "bot_embeddings.rs"]
+mod bot_embeddings;
+pub(crate) use bot_embeddings::chunk_for_embedding;
+use bot_embeddings::embed_turn;
+#[path = "bot_media.rs"]
+mod bot_media;
 use super::BotState;
-use crate::db::Database;
 use crate::git::GitRepo;
 use crate::memory::{save_memory, Memory};
-use crate::openrouter::{ChatCompletionRequest, ChatMessage, OpenRouterClient};
+use crate::openrouter::{ChatCompletionRequest, ChatMessage};
+use bot_media::build_user_message_full;
 use std::collections::HashMap;
 use std::sync::Arc;
 use teloxide::prelude::*;
@@ -35,6 +41,7 @@ pub(crate) async fn process_with_llm_impl(
     sent_at: Option<chrono::DateTime<chrono::Utc>>,
     tools_enabled: bool,
     tg_bot: Option<&teloxide::Bot>,
+    interaction: Option<(bool, &str)>,
 ) -> anyhow::Result<Option<String>> {
     log::info!(
         "pipeline: starting LLM processing for chat={}, user={}, text=\"{}\", has_media={}",
@@ -43,26 +50,6 @@ pub(crate) async fn process_with_llm_impl(
         text.chars().take(100).collect::<String>(),
         media.is_some()
     );
-
-    // Start a background typing indicator refresher that sends ChatAction::Typing
-    // every 4 seconds so long-running LLM sessions don't look frozen.
-    let _typing_guard = tg_bot.map(|bot| {
-        let bot = bot.clone();
-        let keep_running = Arc::new(std::sync::atomic::AtomicBool::new(true));
-        let keep_clone = Arc::clone(&keep_running);
-        if let Ok(parsed) = chat_id.parse::<i64>() {
-            let cid = teloxide::types::ChatId(parsed);
-            tokio::spawn(async move {
-                while keep_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                    let _ = bot
-                        .send_chat_action(cid, teloxide::types::ChatAction::Typing)
-                        .await;
-                    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
-                }
-            });
-        }
-        TypingGuard { flag: keep_running }
-    });
 
     // Set up stop signal for this chat (clear any previous signal)
     {
@@ -93,11 +80,33 @@ pub(crate) async fn process_with_llm_impl(
         )
     };
 
+    let auto_detect = chat_id.starts_with('-') && {
+        state
+            .lock()
+            .await
+            .config
+            .chat_config(chat_id)
+            .interaction_mode
+            == crate::config::InteractionMode::AutoDetect
+    };
+    let needs_decision = auto_detect && !interaction.is_some_and(|(mention, _)| mention);
+    let decider = if needs_decision {
+        match super::bot_decider::model_for_decision(state).await {
+            Ok(model) => Some(model),
+            Err(e) => {
+                log::error!("decider: unavailable for chat {}: {}", chat_id, e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Ensure user has a memory file
     ensure_memory_exists_impl(state, chat_id, user_id, username).await?;
 
     // Read existing conversation history upfront
-    let history = {
+    let mut history = {
         let s = state.lock().await;
         let win = s.config.conversation.recent_messages_window_size;
         let cutoff = s.db.get_cutoff(chat_id).unwrap_or(None);
@@ -118,19 +127,109 @@ pub(crate) async fn process_with_llm_impl(
         crate::openrouter::strip_orphaned_tool_results(&hist)
     };
 
-    let current_msg = build_user_message_full(
-        state,
-        chat_id,
-        user_id,
-        username,
-        sender_name,
-        sent_at,
-        text,
-        caption,
-        media,
-        tg_bot,
-    )
-    .await;
+    let (current_msg, media_complete) = if needs_decision && decider.is_none() {
+        let body = format!(
+            "User: {} (ID: {})\n{}\n{}\n{}",
+            username,
+            user_id,
+            text,
+            caption.unwrap_or(""),
+            if media.is_some() {
+                "[Media unavailable for decision]"
+            } else {
+                ""
+            }
+        );
+        (ChatMessage::user_with_name(&body, username), false)
+    } else {
+        build_user_message_full(
+            state,
+            chat_id,
+            user_id,
+            username,
+            sender_name,
+            sent_at,
+            text,
+            caption,
+            media,
+            tg_bot,
+            decider.as_deref(),
+        )
+        .await
+    };
+    if auto_detect {
+        let ids = state
+            .lock()
+            .await
+            .db
+            .save_messages(chat_id, std::slice::from_ref(&current_msg))?;
+        bot_embeddings::embed_saved(state, ids, vec![current_msg.clone()]).await;
+    }
+    if needs_decision {
+        if !media_complete {
+            log::error!(
+                "decider: media preparation incomplete for chat {}; staying silent",
+                chat_id
+            );
+            return Ok(None);
+        }
+        if check_stopped() {
+            return Ok(None);
+        }
+        let Some(decider_model) = decider else {
+            return Ok(None);
+        };
+        let bot_username = interaction.map(|(_, name)| name).unwrap_or("bot");
+        match super::bot_decider::judge(
+            state,
+            chat_id,
+            &decider_model,
+            bot_username,
+            &history,
+            &current_msg,
+        )
+        .await
+        {
+            Ok(true) => {
+                if check_stopped() {
+                    return Ok(None);
+                }
+            }
+            Ok(false) => return Ok(None),
+            Err(e) => {
+                log::error!("decider: failed for chat {}: {}", chat_id, e);
+                return Ok(None);
+            }
+        }
+    }
+    let current_msg = if auto_detect {
+        for message in &mut history {
+            *message = super::bot_decider::for_agent(state, chat_id, message.clone()).await;
+        }
+        super::bot_decider::for_agent(state, chat_id, current_msg).await
+    } else {
+        current_msg
+    };
+    // Start a background typing indicator refresher that sends ChatAction::Typing
+    // every 4 seconds so long-running LLM sessions don't look frozen.
+    let _typing_guard = tg_bot.map(|bot| {
+        let bot = bot.clone();
+        let keep_running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let keep_clone = Arc::clone(&keep_running);
+        if let Ok(parsed) = chat_id.parse::<i64>() {
+            let cid = teloxide::types::ChatId(parsed);
+            tokio::spawn(async move {
+                while keep_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = bot
+                        .send_chat_action(cid, teloxide::types::ChatAction::Typing)
+                        .await;
+                    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+                }
+            });
+        }
+        TypingGuard { flag: keep_running }
+    });
+
     let mut turn_messages = vec![current_msg.clone()];
 
     let tools: Vec<crate::openrouter::ToolDefinition> = if tools_enabled {
@@ -272,8 +371,15 @@ pub(crate) async fn process_with_llm_impl(
             "pipeline: saving turn to DB ({} messages)",
             turn_messages.len()
         );
-        s.db.save_messages(chat_id, &turn_messages)
-            .unwrap_or_default()
+        s.db.save_messages(
+            chat_id,
+            if auto_detect {
+                &turn_messages[1..]
+            } else {
+                &turn_messages
+            },
+        )
+        .unwrap_or_default()
     };
     log::info!(
         "pipeline: stored {} messages in DB for chat {}",
@@ -291,7 +397,11 @@ pub(crate) async fn process_with_llm_impl(
                 let embed_model = embed_model.clone();
                 let max_chars = s.config.embedding.max_chars;
                 let allow_split = s.config.embedding.allow_split;
-                let turn_messages = turn_messages.clone();
+                let turn_messages = if auto_detect {
+                    turn_messages[1..].to_vec()
+                } else {
+                    turn_messages.clone()
+                };
                 drop(s);
 
                 tokio::spawn(async move {
@@ -316,457 +426,6 @@ pub(crate) async fn process_with_llm_impl(
         chat_id
     );
     Ok(Some(result))
-}
-
-/// Embed each message in a turn and store the vectors.
-/// Runs as a background task — failures are logged but don't affect the user.
-async fn embed_turn(
-    db: &Database,
-    api_key: &str,
-    embed_model: &str,
-    max_chars: usize,
-    allow_split: bool,
-    message_ids: &[i64],
-    turn_messages: &[ChatMessage],
-) {
-    let client = OpenRouterClient::new(api_key.to_string());
-    for (i, msg) in turn_messages.iter().enumerate() {
-        if i >= message_ids.len() {
-            break;
-        }
-        let text = msg.text_content();
-        if text.is_empty() {
-            continue;
-        }
-        let chunks = chunk_for_embedding(&text, max_chars, allow_split);
-        for chunk in &chunks {
-            let text_preview: String = chunk.chars().take(80).collect();
-            match client.embeddings(embed_model, chunk).await {
-                Ok(vec) => {
-                    if let Err(e) = db.save_embedding(message_ids[i], &vec, embed_model) {
-                        log::warn!(
-                            "Failed to save embedding for message {} (model={}, text=\"{}\"): {}",
-                            message_ids[i],
-                            embed_model,
-                            text_preview,
-                            e
-                        );
-                    }
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Failed to embed message {} (model={}, text=\"{}\"): {}",
-                        message_ids[i],
-                        embed_model,
-                        text_preview,
-                        e
-                    );
-                }
-            }
-        }
-    }
-}
-
-/// Split text into chunks for embedding based on max_chars and allow_split.
-/// Returns a Vec of strings — always at least one element.
-pub(crate) fn chunk_for_embedding(text: &str, max_chars: usize, allow_split: bool) -> Vec<String> {
-    if max_chars == 0 {
-        return vec![text.to_string()];
-    }
-    let chars: Vec<char> = text.chars().collect();
-    if chars.len() <= max_chars {
-        return vec![text.to_string()];
-    }
-    if allow_split {
-        chars
-            .chunks(max_chars)
-            .map(|c| c.iter().collect())
-            .collect()
-    } else {
-        vec![chars[..max_chars].iter().collect()]
-    }
-}
-
-/// Build the user message for the LLM, handling media ingestion:
-/// - Native image: downloads image, encodes as data-URL, builds user_multimodal
-/// - Non-native image: metadata + file path so the LLM can use the describe_image tool
-/// - Native audio: downloads audio, encodes as base64, builds user_multimodal
-/// - Non-native audio: calls audio_fallback_model to transcribe, builds text message
-async fn build_user_message_full(
-    state: &Arc<Mutex<BotState>>,
-    chat_id: &str,
-    user_id: &str,
-    username: &str,
-    sender_name: Option<&str>,
-    sent_at: Option<chrono::DateTime<chrono::Utc>>,
-    text: &str,
-    caption: Option<&str>,
-    media: Option<&crate::media::IngestedMedia>,
-    tg_bot: Option<&teloxide::Bot>,
-) -> ChatMessage {
-    let metadata_prefix = message_metadata_prefix(user_id, username, sender_name, sent_at);
-    let media = match media {
-        Some(m) => m,
-        None => {
-            return ChatMessage::user_with_name(&format_user_text(&metadata_prefix, text), username)
-        }
-    };
-
-    let is_image = matches!(media, crate::media::IngestedMedia::Photo { .. });
-
-    // Get model capabilities and config
-    let (supports_modality, image_fallback_exists, audio_fallback_model, token, media_dir, api_key) = {
-        let s = state.lock().await;
-        let model_id = s.effective_model(chat_id);
-        let normalized = crate::openrouter::normalize_model_id(&model_id);
-        let meta = s.model_metadata.get(normalized);
-        let modality = if is_image { "image" } else { "audio" };
-        let supports_modality = meta.map(|m| m.supports_modality(modality)).unwrap_or(false);
-        let image_fallback_exists = s.config.image_fallback_model_for_chat(chat_id).is_some();
-        let audio_fallback_model = s
-            .config
-            .audio_fallback_model_for_chat(chat_id)
-            .map(String::from);
-        (
-            supports_modality,
-            image_fallback_exists,
-            audio_fallback_model,
-            s.config.telegram_token.clone(),
-            s.config.media_dir.clone(),
-            s.config.openrouter.api_key.clone(),
-        )
-    };
-
-    // Download the file from Telegram
-    let file_id = match media {
-        crate::media::IngestedMedia::Photo { file_id, .. } => file_id.as_str(),
-        crate::media::IngestedMedia::Voice { file_id, .. } => file_id.as_str(),
-        crate::media::IngestedMedia::Audio { file_id, .. } => file_id.as_str(),
-    };
-
-    let dest_dir = crate::media::ingest_dir(&media_dir);
-
-    let file_path = match tg_bot {
-        Some(bot) => {
-            use teloxide::prelude::*;
-            match bot.get_file(file_id).send().await {
-                Ok(file) => match crate::media::download_file(&file, &token, &dest_dir).await {
-                    Ok(p) => Some(p),
-                    Err(e) => {
-                        log::warn!("Media: failed to download {}: {}", file_id, e);
-                        None
-                    }
-                },
-                Err(e) => {
-                    log::warn!("Media: get_file failed for {}: {}", file_id, e);
-                    None
-                }
-            }
-        }
-        None => {
-            log::info!(
-                "Media: no tg_bot available, skipping download for {}",
-                file_id
-            );
-            None
-        }
-    };
-
-    // Build the user message based on capabilities
-    if let Some(fp) = file_path {
-        if supports_modality {
-            build_native_message(media, caption, text, username, &metadata_prefix, &fp)
-        } else if is_image {
-            build_image_metadata_message(
-                media,
-                caption,
-                text,
-                username,
-                &metadata_prefix,
-                &fp,
-                image_fallback_exists,
-            )
-        } else if let Some(ref fb_model) = audio_fallback_model {
-            build_audio_fallback_message(
-                media,
-                caption,
-                text,
-                username,
-                &metadata_prefix,
-                &fp,
-                fb_model,
-                &api_key,
-            )
-            .await
-        } else {
-            build_text_metadata_message(media, caption, text, username, &metadata_prefix)
-        }
-    } else {
-        build_text_metadata_message(media, caption, text, username, &metadata_prefix)
-    }
-}
-
-fn message_metadata_prefix(
-    user_id: &str,
-    username: &str,
-    sender_name: Option<&str>,
-    sent_at: Option<chrono::DateTime<chrono::Utc>>,
-) -> String {
-    let sent_at = sent_at.unwrap_or_else(chrono::Utc::now).to_rfc3339();
-    let sender_id = if user_id.trim().is_empty() {
-        "unknown"
-    } else {
-        user_id
-    };
-    let sender_username = if username.trim().is_empty() {
-        "unknown"
-    } else {
-        username
-    };
-    let sender_name = sender_name
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or("unknown");
-
-    format!(
-        "[Telegram message metadata]\nSent at: {sent_at}\nSender ID: {sender_id}\nSender name: {sender_name}\nSender username: {sender_username}"
-    )
-}
-
-fn format_user_text(metadata_prefix: &str, text: &str) -> String {
-    if text.trim().is_empty() {
-        metadata_prefix.to_string()
-    } else {
-        format!("{metadata_prefix}\n\nMessage:\n{text}")
-    }
-}
-
-/// Build a ChatMessage with native multimodal content parts.
-fn build_native_message(
-    media: &crate::media::IngestedMedia,
-    caption: Option<&str>,
-    text: &str,
-    username: &str,
-    metadata_prefix: &str,
-    file_path: &std::path::Path,
-) -> ChatMessage {
-    use crate::openrouter::ContentPart;
-    let mut parts: Vec<ContentPart> = Vec::new();
-
-    // Tell the LLM where the ingested file is saved so it can use it
-    // as a reference_image for generate_image or pass it to other tools.
-    parts.push(ContentPart::Text {
-        text: format!(
-            "{}\n[Ingested file saved to: {}]\n",
-            metadata_prefix,
-            file_path.display()
-        ),
-    });
-
-    match media {
-        crate::media::IngestedMedia::Photo { .. } => {
-            match crate::media::image_to_data_url(file_path) {
-                Ok(data_url) => {
-                    parts.push(ContentPart::ImageUrl {
-                        image_url: crate::openrouter::ImageUrlDetail {
-                            url: data_url,
-                            detail: None,
-                        },
-                    });
-                }
-                Err(e) => {
-                    log::warn!("Media: failed to encode image: {}", e);
-                }
-            }
-        }
-        crate::media::IngestedMedia::Voice { .. } | crate::media::IngestedMedia::Audio { .. } => {
-            match crate::media::audio_to_base64(file_path) {
-                Ok((data, format)) => {
-                    parts.push(ContentPart::InputAudio {
-                        input_audio: crate::openrouter::InputAudioDetail { data, format },
-                    });
-                }
-                Err(e) => {
-                    log::warn!("Media: failed to encode audio: {}", e);
-                }
-            }
-        }
-    }
-
-    // Add text parts: caption first, then user text
-    if let Some(cap) = caption {
-        if !cap.is_empty() {
-            parts.push(ContentPart::Text {
-                text: cap.to_string(),
-            });
-        }
-    }
-    if !text.is_empty() {
-        parts.push(ContentPart::Text {
-            text: text.to_string(),
-        });
-    }
-
-    ChatMessage::user_multimodal_with_name(parts, username)
-}
-
-/// Build a ChatMessage where audio is transcribed via a fallback model.
-async fn build_audio_fallback_message(
-    media: &crate::media::IngestedMedia,
-    caption: Option<&str>,
-    text: &str,
-    username: &str,
-    metadata_prefix: &str,
-    file_path: &std::path::Path,
-    fallback_model: &str,
-    api_key: &str,
-) -> ChatMessage {
-    let client = OpenRouterClient::new(api_key.to_string());
-
-    let fallback_text = call_audio_fallback(&client, fallback_model, file_path).await;
-
-    let metadata = media_metadata_text(media);
-    let mut combined = format!(
-        "{}\n{} File saved to: {}",
-        metadata_prefix,
-        metadata,
-        file_path.display()
-    );
-    if let Some(cap) = caption {
-        if !cap.is_empty() {
-            combined.push_str(&format!("\nCaption: {}", cap));
-        }
-    }
-    if let Ok(ft) = &fallback_text {
-        combined.push_str(&format!("\n\n{}", ft));
-    } else if let Err(ref e) = fallback_text {
-        log::warn!("Media: fallback conversion failed: {}", e);
-        combined.push_str("\n(Conversion failed)");
-    }
-    if !text.is_empty() {
-        combined.push_str(&format!("\n\n{}", text));
-    }
-
-    ChatMessage::user_with_name(&combined, username)
-}
-
-/// Call an audio-capable fallback model to transcribe audio.
-async fn call_audio_fallback(
-    client: &OpenRouterClient,
-    model: &str,
-    audio_path: &std::path::Path,
-) -> anyhow::Result<String> {
-    let (base64_data, format) = crate::media::audio_to_base64(audio_path)?;
-    let parts = vec![
-        crate::openrouter::ContentPart::Text {
-            text: "Please transcribe this audio file.".into(),
-        },
-        crate::openrouter::ContentPart::InputAudio {
-            input_audio: crate::openrouter::InputAudioDetail {
-                data: base64_data,
-                format,
-            },
-        },
-    ];
-    let msg = ChatMessage::user_multimodal(parts);
-    let request = ChatCompletionRequest {
-        model: model.to_string(),
-        messages: vec![msg],
-        tools: None,
-        tool_choice: None,
-        modalities: None,
-        image_config: None,
-    };
-    let response = client.chat_completion(&request).await?;
-    let text = response
-        .choices
-        .into_iter()
-        .next()
-        .and_then(|c| c.message.content)
-        .unwrap_or_default();
-    Ok(text)
-}
-
-/// Build a metadata message for images when the model doesn't support them natively.
-/// Includes file path so the LLM can use the describe_image tool.
-fn build_image_metadata_message(
-    media: &crate::media::IngestedMedia,
-    caption: Option<&str>,
-    text: &str,
-    username: &str,
-    metadata_prefix: &str,
-    file_path: &std::path::Path,
-    has_fallback: bool,
-) -> ChatMessage {
-    let metadata = media_metadata_text(media);
-    let mut combined = format!(
-        "{}\n{} File saved to: {}",
-        metadata_prefix,
-        metadata,
-        file_path.display()
-    );
-    if has_fallback {
-        combined.push_str(" Use the describe_image tool with a specific prompt to get visual details (e.g. portion sizes, text reading, object identification, layout).");
-    }
-    if let Some(cap) = caption {
-        if !cap.is_empty() {
-            combined.push_str(&format!("\nCaption: {}", cap));
-        }
-    }
-    if !text.is_empty() {
-        combined.push_str(&format!("\n\n{}", text));
-    }
-    ChatMessage::user_with_name(&combined, username)
-}
-
-/// Build a text-only metadata message (when download fails or no native/fallback available).
-fn build_text_metadata_message(
-    media: &crate::media::IngestedMedia,
-    caption: Option<&str>,
-    text: &str,
-    username: &str,
-    metadata_prefix: &str,
-) -> ChatMessage {
-    let metadata = media_metadata_text(media);
-    let mut combined = format!("{}\n{}", metadata_prefix, metadata);
-    if let Some(cap) = caption {
-        if !cap.is_empty() {
-            combined.push_str(&format!("\nCaption: {}", cap));
-        }
-    }
-    if !text.is_empty() {
-        combined.push_str(&format!("\n\n{}", text));
-    }
-    ChatMessage::user_with_name(&combined, username)
-}
-
-/// Produce a metadata prefix for ingested media.
-fn media_metadata_text(media: &crate::media::IngestedMedia) -> String {
-    match media {
-        crate::media::IngestedMedia::Photo { width, height, .. } => {
-            format!("[This image ({}x{}) was sent by the user.]", width, height)
-        }
-        crate::media::IngestedMedia::Voice { duration, .. } => {
-            format!(
-                "[This voice message ({}s) was sent by the user and was automatically transcribed for you.]",
-                duration
-            )
-        }
-        crate::media::IngestedMedia::Audio {
-            duration, title, ..
-        } => {
-            if let Some(t) = title {
-                format!(
-                    "[This audio file \"{}\" ({}s) was sent by the user and was automatically transcribed for you.]",
-                    t, duration
-                )
-            } else {
-                format!(
-                    "[This audio file ({}s) was sent by the user and was automatically transcribed for you.]",
-                    duration
-                )
-            }
-        }
-    }
 }
 
 pub(crate) async fn ensure_memory_exists_impl(

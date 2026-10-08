@@ -16,8 +16,8 @@ pub(crate) fn truncate_str(s: &str, max_len: usize) -> String {
 }
 
 pub struct OpenRouterClient {
-    api_key: String,
-    http_client: reqwest::Client,
+    pub(super) api_key: String,
+    pub(super) http_client: reqwest::Client,
 }
 
 impl OpenRouterClient {
@@ -102,14 +102,17 @@ impl OpenRouterClient {
 }
 
 /// Keep response metadata and body failures separate from JSON decoding failures.
-struct ResponseBody {
+pub(super) struct ResponseBody {
     status: reqwest::StatusCode,
     text: String,
     diagnostics: String,
 }
 
 impl ResponseBody {
-    fn parse<T: serde::de::DeserializeOwned>(&self, operation: &str) -> anyhow::Result<T> {
+    pub(super) fn parse<T: serde::de::DeserializeOwned>(
+        &self,
+        operation: &str,
+    ) -> anyhow::Result<T> {
         use anyhow::Context;
         if !self.status.is_success() {
             anyhow::bail!(
@@ -128,7 +131,7 @@ impl ResponseBody {
     }
 }
 
-async fn read_response_body(
+pub(super) async fn read_response_body(
     mut response: reqwest::Response,
     operation: &str,
 ) -> anyhow::Result<ResponseBody> {

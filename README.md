@@ -251,3 +251,24 @@ Test coverage target is ≥95% line coverage. See [`AGENTS.md`](AGENTS.md) for t
 ## License
 
 MIT
+
+## Automatic group interaction
+
+To let GlowBot decide whether an unmentioned group message is intended for it:
+
+```yaml
+openrouter:
+  api_key: "..."
+  decider_model: "openai/gpt-6-luna-decisions"
+
+chats:
+  "-123":
+    interaction_mode: auto_detect
+```
+
+Explicit mentions bypass the decider. Other eligible messages are saved in history
+and judged through OpenRouter's typed Decisions API; a probability of at least `0.6`
+runs the agent. Every received value is printed to the console. The decider uses
+native images when supported and the configured media fallback models otherwise
+(audio currently always requires transcription). Failures stay silent and are logged.
+The decider uses OpenRouter even when the chat agent uses Codex.

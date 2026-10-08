@@ -16,9 +16,12 @@ pub use openrouter_context::{
 
 #[path = "openrouter_client.rs"]
 mod openrouter_client;
+#[path = "openrouter_decisions.rs"]
+mod openrouter_decisions;
 #[cfg(test)]
 pub(crate) use openrouter_client::truncate_str;
 pub use openrouter_client::OpenRouterClient;
+pub use openrouter_decisions::{decision_state, DecisionsResponse};
 
 /// Known OpenRouter routing specifiers and their button labels.
 pub const SPECIFIER_BUTTONS: &[(&str, &str)] = &[

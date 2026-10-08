@@ -15,6 +15,9 @@ async fn test_dispatch_send_message_empty_text() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -51,6 +54,9 @@ async fn test_dispatch_send_message_no_tg_bot() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -87,6 +93,9 @@ async fn test_dispatch_send_media_empty_file_path() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -123,6 +132,9 @@ async fn test_dispatch_send_media_file_not_found() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -161,6 +173,9 @@ async fn test_dispatch_send_media_no_tg_bot() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -198,6 +213,9 @@ async fn test_dispatch_send_media_original_quality() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -239,6 +257,9 @@ fn setup_state_with_media_dir(media_dir: &std::path::Path) -> Arc<Mutex<BotState
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -387,6 +408,9 @@ async fn test_dispatch_bash_empty_command() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -424,6 +448,9 @@ async fn test_dispatch_bash_disabled() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -464,6 +491,9 @@ async fn test_dispatch_read_memory_missing() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
@@ -500,6 +530,9 @@ async fn test_dispatch_update_memory_no_fields() {
         db: crate::db::Database::open_in_memory().unwrap(),
         mcp_tools: vec![],
         model_metadata: HashMap::new(),
+            #[cfg(test)]
+            decision_test_url: None,
+            decision_metadata: std::collections::HashMap::new(),
             model_order: Vec::new(),
         last_usage: HashMap::new(),
             pending_config_changes: HashMap::new(),
