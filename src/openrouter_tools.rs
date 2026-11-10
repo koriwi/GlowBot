@@ -612,6 +612,12 @@ pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition 
                         "type": "array",
                         "items": { "type": "string" },
                         "description": "Optional file paths to reference images to guide the generation (style, composition, etc.). Paths can be relative to the data directory, absolute, or inside the media directory."
+                    },
+                    "reference_max_dimension": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 16384,
+                        "description": "Optional maximum width and height in pixels for every reference image, e.g. 1024. Shrinks to fit, preserves aspect ratio, never upscales or changes originals. Use to control input resolution/cost when appropriate for the model. Independent of output size. Omit to send original references."
                     }
                 },
                 "required": ["prompt"]

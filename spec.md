@@ -680,3 +680,12 @@ Images are decoded from `data[].b64_json`, saved under the media directory's
 `generated/` folder, and returned as paths for `send_media`. Empty results, API
 errors, and failures to save any images return tool errors. Existing configuration
 keys and per-chat/DM model precedence remain unchanged.
+
+`reference_max_dimension` optionally limits each reference image's width and height
+to 1–16384 pixels. ImageMagick shrinks to fit without cropping or upscaling,
+preserves aspect ratio, applies EXIF orientation, and sends the first frame as PNG
+with metadata stripped. Original files are untouched. Omitted/null sends original
+bytes. This is independent of output `size`; it limits dimensions, not file bytes
+or guaranteed billing. Invalid limits or reference preparation failures abort the
+request before generation. Conversion has a 30-second timeout per image.
+The runtime Docker image installs `imagemagick` (the `convert` command).

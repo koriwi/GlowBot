@@ -2,6 +2,9 @@ use super::BotState;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+#[path = "bot_image_resize.rs"]
+mod image_resize;
+
 /// Handle the `generate_image` tool — generate images via the OpenRouter Image API.
 pub(crate) async fn tool_generate_image(
     state: &Arc<Mutex<BotState>>,
@@ -22,6 +25,10 @@ pub(crate) async fn tool_generate_image(
     };
 
     let size = args["size"].as_str().map(|s| s.to_string());
+    let reference_limit = match image_resize::reference_limit(args) {
+        Ok(limit) => limit,
+        Err(error) => return format!("Error: {error}"),
+    };
 
     let (api_key, data_dir, media_dir) = {
         let s = state.lock().await;
@@ -42,7 +49,7 @@ pub(crate) async fn tool_generate_image(
                 continue;
             }
             let full_path = resolve_file_path(path_str, &data_dir, &media_dir);
-            match std::fs::read(&full_path) {
+            match image_resize::read_reference(&full_path, reference_limit).await {
                 Ok(bytes) => {
                     let mime = guess_mime(&bytes);
                     let b64 = base64_encode(&bytes);
@@ -54,10 +61,9 @@ pub(crate) async fn tool_generate_image(
                     });
                 }
                 Err(e) => {
-                    log::warn!(
-                        "Failed to read reference image '{}': {}",
-                        full_path.display(),
-                        e
+                    return format!(
+                        "Error: failed to prepare reference image '{}': {e:#}",
+                        full_path.display()
                     );
                 }
             }
