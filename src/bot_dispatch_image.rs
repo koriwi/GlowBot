@@ -86,17 +86,24 @@ pub(crate) async fn tool_generate_image(
         Err(e) => return format!("Error: image generation failed: {}", e),
     };
 
+    let response_metadata = response.metadata();
+    let failure = |error: String| {
+        serde_json::json!({"error":error, "response_metadata":response_metadata}).to_string()
+    };
     let images = response.data;
 
     if images.is_empty() {
-        return "Error: no images returned from generation".into();
+        return failure("Error: no images returned from generation".into());
     }
 
     // Save generated images to the media directory
     let media_path = std::path::PathBuf::from(&media_dir);
     let gen_dir = media_path.join("generated");
     if let Err(e) = std::fs::create_dir_all(&gen_dir) {
-        return format!("Error: failed to create media/generated directory: {}", e);
+        return failure(format!(
+            "Error: failed to create media/generated directory: {}",
+            e
+        ));
     }
 
     let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
@@ -149,14 +156,14 @@ pub(crate) async fn tool_generate_image(
     }
 
     if saved_paths.is_empty() {
-        return "Error: failed to save any generated images".into();
+        return failure("Error: failed to save any generated images".into());
     }
 
     let absolute_paths: Vec<String> = saved_paths
         .iter()
         .map(|p| format!("{}/{}", media_dir.trim_end_matches('/'), p))
         .collect();
-    let paths_json = serde_json::json!({"generated_images": absolute_paths}).to_string();
+    let paths_json = serde_json::json!({"generated_images": absolute_paths, "response_metadata":response_metadata}).to_string();
     log::info!(
         "Generated {} image(s) with model {} in chat {}",
         saved_paths.len(),

@@ -97,8 +97,9 @@ async fn image_api_sends_prompt_dimensions_and_references_and_reads_images() {
             .and(header("authorization", "Bearer test-key"))
             .and(body_json(expected))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "data":[{"b64_json":"aGVsbG8=", "media_type":"image/png"}, {"b64_json":"d29ybGQ="}],
-                "usage":{"cost":0.02}
+                "data":[{"b64_json":"aGVsbG8=", "media_type":"image/png", "width":1024}, {"b64_json":"d29ybGQ="}],
+                "usage":{"cost":0.02,"prompt_tokens":100}, "created":123,
+                "future_metadata":{"provider":"example"}
             })))
             .expect(1)
             .mount(&server)
@@ -111,6 +112,14 @@ async fn image_api_sends_prompt_dimensions_and_references_and_reads_images() {
         assert_eq!(response.data[0].b64_json, "aGVsbG8=");
         assert_eq!(response.data[0].media_type.as_deref(), Some("image/png"));
         assert!(response.data[1].media_type.is_none());
+        assert_eq!(
+            response.metadata(),
+            json!({
+                "data":[{"media_type":"image/png","width":1024},{}],
+                "usage":{"cost":0.02,"prompt_tokens":100},"created":123,
+                "future_metadata":{"provider":"example"}
+            })
+        );
     }
 }
 

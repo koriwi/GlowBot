@@ -587,7 +587,7 @@ pub(crate) fn list_media_tool_definition(media_dir: &str) -> ToolDefinition {
 /// Only exposed when `image_gen_model` is configured.
 pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition {
     let desc = format!(
-        "Generate images from a text description via the OpenRouter Image API. Optionally provide reference images to guide style, composition, or content. Generated images are saved to the media directory at '{}' and their absolute file paths are returned — use send_media to display them. Reference images must be file paths to existing images (PNG, JPEG, WebP, GIF).",
+        "Generate images from a text description via the OpenRouter Image API. Optionally provide reference images to guide style, composition, or content. Generated images are saved to the media directory at '{}' and their absolute file paths are returned — use send_media to display them. response_metadata contains all OpenRouter response fields except image base64 payloads, including usage/cost when available. Report API-reported cost when asked; absent cost is unknown, not zero. Reference images must be file paths to existing images (PNG, JPEG, WebP, GIF).",
         media_dir
     );
     ToolDefinition {

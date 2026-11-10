@@ -662,6 +662,13 @@ based on incomplete media. Direct mentions use the agent's usual media preparati
 
 ## Image generation API
 
+`generate_image` returns `generated_images` paths and `response_metadata`, containing
+all OpenRouter JSON response fields, including usage/cost and unknown future fields,
+plus per-image metadata in `data`. Only `data[].b64_json` is omitted because images
+are saved locally. Missing cost stays absent, not zero; agents may report API-reported
+cost when present and must not invent a charge. Metadata is also returned if a
+successful API response has no images or local saving fails.
+
 Tool fields have three roles: `prompt` and `model` are core API fields managed by
 GlowBot (required prompt; optional model override with config fallback). They are
 sent as API fields but stay outside `api_parameters` to avoid two sources of truth.

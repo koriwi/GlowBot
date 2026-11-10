@@ -108,16 +108,28 @@ impl ImageGenerationRequest {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ImageGenerationResponse {
     pub data: Vec<ImageData>,
+    #[serde(flatten)]
+    pub metadata: serde_json::Map<String, serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+impl ImageGenerationResponse {
+    /// Preserve the API response fields without copying image payloads into context.
+    pub fn metadata(&self) -> serde_json::Value {
+        serde_json::to_value(self).expect("Image response metadata is JSON")
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ImageData {
+    #[serde(skip_serializing)]
     pub b64_json: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>,
+    #[serde(flatten)]
+    pub metadata: serde_json::Map<String, serde_json::Value>,
 }
 
 impl OpenRouterClient {
