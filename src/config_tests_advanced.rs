@@ -82,6 +82,18 @@ fn test_image_gen_model_serialization() {
 }
 
 #[test]
+fn test_image_gen_model_guidance_roundtrip() {
+    let mut config = basic_config();
+    let yaml = serde_yaml::to_string(&config).unwrap();
+    assert!(!yaml.contains("image_gen_model_guidance"));
+    assert!(serde_yaml::from_str::<Config>(&yaml).unwrap().openrouter.image_gen_model_guidance.is_none());
+    let guidance = "Prefer the default.\nUse an editing model for garment references.";
+    config.openrouter.image_gen_model_guidance = Some(guidance.into());
+    let yaml = serde_yaml::to_string(&config).unwrap();
+    assert_eq!(serde_yaml::from_str::<Config>(&yaml).unwrap().openrouter.image_gen_model_guidance.as_deref(), Some(guidance));
+}
+
+#[test]
 fn test_heartbeat_recent_messages_window_size_default() {
     let config = basic_config();
     // None → falls back to recent_messages_window_size (20)

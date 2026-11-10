@@ -301,6 +301,7 @@ pub(crate) fn basic_config() -> Config {
             image_fallback_model: None,
             audio_fallback_model: None,
             image_gen_model: None,
+            image_gen_model_guidance: None,
             embedding_model: None,
             advice_model: None,
         },

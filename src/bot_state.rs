@@ -159,6 +159,23 @@ impl BotState {
             self.config.image_fallback_model_for_chat(chat_id),
             self.config.advice_model_for_chat(chat_id),
         );
+        if let Some(guidance) = self
+            .config
+            .openrouter
+            .image_gen_model_guidance
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+        {
+            if let Some(tool) = t
+                .iter_mut()
+                .find(|tool| tool.function.name == "generate_image")
+            {
+                tool.function
+                    .description
+                    .push_str("\n\nImage model selection guidance:\n");
+                tool.function.description.push_str(guidance);
+            }
+        }
         let mut blacklisted_counts: HashMap<&str, usize> = HashMap::new();
         for mt in &self.mcp_tools {
             if !self.config.is_mcp_server_allowed(chat_id, &mt.server_name) {

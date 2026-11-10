@@ -662,6 +662,11 @@ based on incomplete media. Direct mentions use the agent's usual media preparati
 
 ## Image generation API
 
+Optional `openrouter.image_gen_model_guidance` is natural-language selection advice
+appended to the `generate_image` tool description for all chats where it is enabled.
+Omitted or whitespace-only text adds nothing. It does not enable generation or
+change the configured model; the agent may use it to guide per-request overrides.
+
 `generate_image` returns `generated_images` paths and `response_metadata`, containing
 all OpenRouter JSON response fields, including usage/cost and unknown future fields,
 plus per-image metadata in `data`. Only `data[].b64_json` is omitted because images

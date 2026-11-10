@@ -19,6 +19,11 @@ openrouter:
   # Image generation model — when set, the `generate_image` tool is enabled.
   # Must support /api/v1/images; discover models at /api/v1/images/models.
   # image_gen_model: "qwen/qwen-image-2.1-turbo"
+  # Optional natural-language guidance appended to the generate_image tool description.
+  # Does not change the default model; omitted or blank adds no guidance.
+  # image_gen_model_guidance: |
+  #   Prefer the configured model for everyday requests. For garment edits, choose
+  #   a model that preserves clothing details; inspect its capabilities first.
   # Embedding model for conversation vector search (RAG) — disabled by default.
   # When set, every message is embedded and stored. Example: "openai/text-embedding-3-small"
   # embedding_model: "openai/text-embedding-3-small"

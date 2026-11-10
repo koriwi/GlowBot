@@ -166,6 +166,30 @@ async fn test_heartbeat_has_pending_tasks() {
 }
 
 #[tokio::test]
+async fn test_image_gen_model_guidance_in_tool_description() {
+    let (bot, _dir, _llm) = setup_test_bot().await;
+    let mut state = bot.state.lock().await;
+    state.config.openrouter.image_gen_model = Some("test/image".into());
+    let baseline = state.build_tools(false, "-123");
+    let description = |tools: &[crate::openrouter::ToolDefinition]| {
+        tools.iter().find(|t| t.function.name == "generate_image").unwrap().function.description.clone()
+    };
+    let original = description(&baseline);
+    state.config.openrouter.image_gen_model_guidance = Some("Prefer the default.\nUse an edit model for clothes.".into());
+    let tools = state.build_tools(false, "-123");
+    assert_eq!(description(&tools), format!("{original}\n\nImage model selection guidance:\nPrefer the default.\nUse an edit model for clothes."));
+    for tool in tools.iter().filter(|t| t.function.name != "generate_image") {
+        let before = baseline.iter().find(|t| t.function.name == tool.function.name).unwrap();
+        assert_eq!(tool.function.description, before.function.description);
+    }
+    state.config.openrouter.image_gen_model_guidance = Some(" \n ".into());
+    assert_eq!(description(&state.build_tools(false, "-123")), original);
+    state.config.openrouter.image_gen_model = None;
+    state.config.openrouter.image_gen_model_guidance = Some("Use an edit model.".into());
+    assert!(!state.build_tools(false, "-123").iter().any(|t| t.function.name == "generate_image"));
+}
+
+#[tokio::test]
 async fn test_build_tools_includes_mcp() {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().join("glowbot_data");
