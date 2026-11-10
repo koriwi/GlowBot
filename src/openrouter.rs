@@ -16,6 +16,9 @@ pub use openrouter_context::{
 
 #[path = "openrouter_client.rs"]
 mod openrouter_client;
+#[path = "openrouter_images.rs"]
+mod openrouter_images;
+pub use openrouter_images::{ImageGenerationRequest, ImageGenerationResponse};
 #[path = "openrouter_decisions.rs"]
 mod openrouter_decisions;
 #[cfg(test)]

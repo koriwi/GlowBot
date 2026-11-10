@@ -2,7 +2,7 @@ use super::BotState;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// Handle the `generate_image` tool — generate images via OpenRouter chat completions.
+/// Handle the `generate_image` tool — generate images via the OpenRouter Image API.
 pub(crate) async fn tool_generate_image(
     state: &Arc<Mutex<BotState>>,
     chat_id: &str,
@@ -32,11 +32,7 @@ pub(crate) async fn tool_generate_image(
         )
     };
 
-    // Build the user message: text prompt + optional reference images
-    let mut content_parts: Vec<crate::openrouter::ContentPart> =
-        vec![crate::openrouter::ContentPart::Text {
-            text: prompt.to_string(),
-        }];
+    let mut input_references = Vec::new();
 
     // Attach reference images as image_url parts
     if let Some(ref_paths) = args["reference_images"].as_array() {
@@ -50,7 +46,7 @@ pub(crate) async fn tool_generate_image(
                 Ok(bytes) => {
                     let mime = guess_mime(&bytes);
                     let b64 = base64_encode(&bytes);
-                    content_parts.push(crate::openrouter::ContentPart::ImageUrl {
+                    input_references.push(crate::openrouter::ContentPart::ImageUrl {
                         image_url: crate::openrouter::ImageUrlDetail {
                             url: format!("data:{};base64,{}", mime, b64),
                             detail: None,
@@ -68,45 +64,20 @@ pub(crate) async fn tool_generate_image(
         }
     }
 
-    let user_msg = crate::openrouter::ChatMessage::user_multimodal(content_parts);
-
-    // Build image_config from args
-    let image_config = size.as_ref().map(|s| {
-        // If size looks like an aspect ratio (e.g. "16:9"), use aspect_ratio;
-        // otherwise treat as image_size (e.g. "1K", "2K", "4K")
-        if s.contains(':') {
-            crate::openrouter::ImageConfig {
-                aspect_ratio: Some(s.clone()),
-                image_size: None,
-            }
-        } else {
-            crate::openrouter::ImageConfig {
-                aspect_ratio: None,
-                image_size: Some(s.clone()),
-            }
-        }
-    });
-
-    let request = crate::openrouter::ChatCompletionRequest {
-        model: image_gen_model.clone(),
-        messages: vec![user_msg],
-        tools: None,
-        tool_choice: None,
-        modalities: Some(vec!["image".into()]),
-        image_config,
-    };
+    let request = crate::openrouter::ImageGenerationRequest::new(
+        image_gen_model.clone(),
+        prompt.to_string(),
+        size,
+        input_references,
+    );
 
     let client = crate::openrouter::OpenRouterClient::new(api_key);
-    let response = match client.chat_completion(&request).await {
+    let response = match client.generate_images(&request).await {
         Ok(r) => r,
         Err(e) => return format!("Error: image generation failed: {}", e),
     };
 
-    // Extract images from the assistant message
-    let images = match response.choices.into_iter().next() {
-        Some(choice) => choice.message.images.unwrap_or_default(),
-        None => return "Error: no response from image generation".into(),
-    };
+    let images = response.data;
 
     if images.is_empty() {
         return "Error: no images returned from generation".into();
@@ -123,7 +94,7 @@ pub(crate) async fn tool_generate_image(
     let mut saved_paths: Vec<String> = Vec::new();
 
     for (i, img) in images.iter().enumerate() {
-        let b64_data_url = &img.image_url.url;
+        let b64_data_url = &img.b64_json;
         let image_bytes = match base64_decode(b64_data_url) {
             Ok(b) => b,
             Err(e) => {
@@ -132,7 +103,10 @@ pub(crate) async fn tool_generate_image(
             }
         };
 
-        let ext = detect_image_format(&image_bytes).unwrap_or("png");
+        let ext = match img.media_type.as_deref() {
+            Some("image/svg+xml") => "svg",
+            _ => detect_image_format(&image_bytes).unwrap_or("png"),
+        };
         let total = images.len();
         let filename = if total == 1 {
             format!(
@@ -215,7 +189,7 @@ fn detect_image_format(bytes: &[u8]) -> Option<&'static str> {
         Some("png")
     } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
         Some("jpg")
-    } else if bytes.starts_with(b"RIFF") && bytes.len() > 8 && &bytes[8..12] == b"WEBP" {
+    } else if bytes.starts_with(b"RIFF") && bytes.len() >= 12 && &bytes[8..12] == b"WEBP" {
         Some("webp")
     } else if bytes.starts_with(b"GIF8") {
         Some("gif")
@@ -254,7 +228,7 @@ fn guess_mime(bytes: &[u8]) -> &'static str {
         "image/png"
     } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
         "image/jpeg"
-    } else if bytes.starts_with(b"RIFF") && bytes.len() > 8 && &bytes[8..12] == b"WEBP" {
+    } else if bytes.starts_with(b"RIFF") && bytes.len() >= 12 && &bytes[8..12] == b"WEBP" {
         "image/webp"
     } else if bytes.starts_with(b"GIF8") {
         "image/gif"
