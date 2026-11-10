@@ -662,10 +662,29 @@ based on incomplete media. Direct mentions use the agent's usual media preparati
 
 ## Image generation API
 
+When image generation is configured, `list_image_models` fetches
+`GET /api/v1/images/models`, returns only `id`, `name`, `description`, `created`
+inside `data`, and sorts by `created` descending. `get_image_model_details(model)`
+fetches `GET /api/v1/images/models/{author}/{slug}/endpoints` and returns the complete
+JSON response without filtering. Both tools fetch current data on demand and report
+HTTP/JSON failures as tool errors. Agents should inspect endpoint capabilities and
+pricing before choosing unfamiliar models or generation parameters.
+
 `generate_image` uses OpenRouter's dedicated `POST /api/v1/images` endpoint for
 all models, including `qwen/qwen-image-2.1-turbo`. Set `openrouter.image_gen_model`
 (or the existing chat/DM override) to a model listed by `GET /api/v1/images/models`.
 There is no chat-completions fallback for image generation.
+Optional `api_parameters` is an open object of OpenRouter request fields, flattened
+into the API body unchanged. It supports future fields without harness updates;
+model-specific names, types and values are validated by OpenRouter, using endpoint
+metadata to guide the agent. Omitted/null leaves provider defaults intact.
+Harness fields (`model`, `prompt`, `input_references`, `reference_images`,
+`reference_max_dimension`, `api_parameters`) are blocked inside this object.
+Only `stream: false` is supported because responses are buffered JSON. Conflicting
+pixel sizes and resolution/aspect ratio, or mismatched tier size and resolution,
+are rejected. `reference_max_dimension` remains optional local preprocessing and
+is never sent to OpenRouter. Legacy top-level `size` remains accepted for existing
+calls but is no longer advertised; duplicate dimension fields are rejected.
 The optional `model` tool argument overrides the effective configured image model
 for that request only, without modifying configuration. Agents should omit it by
 default and override only for special cases, such as an explicit user request or
@@ -674,8 +693,10 @@ empty or non-string overrides return an error. The tool remains exposed only whe
 an image generation model is configured.
 Requests send `model` and `prompt`; local reference images become base64 data URLs
 in `input_references`. The tool's optional `size` maps to `aspect_ratio` for ratios
-such as `16:9`, or to the API's `size` shorthand for tiers (`2K`) and pixel sizes
-(`2048x2048`). Accepted dimensions and reference counts depend on the selected model.
+such as `16:9`, to `resolution` for tiers (`512`, `768`, `1K`, `1.5K`, `2K`, `4K`),
+or to `size` for explicit pixel sizes (`2048x2048`). Tier values are sent explicitly
+as `resolution` so providers receive the intended output tier. Accepted dimensions
+and reference counts depend on the selected model.
 Images are decoded from `data[].b64_json`, saved under the media directory's
 `generated/` folder, and returned as paths for `send_media`. Empty results, API
 errors, and failures to save any images return tool errors. Existing configuration

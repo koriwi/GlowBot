@@ -121,6 +121,8 @@ pub fn all_tool_definitions(
     tools.push(send_media_tool_definition(media_dir));
     if image_gen_model.is_some() {
         tools.push(generate_image_tool_definition(media_dir));
+        tools.push(image_models_tool_definition(false));
+        tools.push(image_models_tool_definition(true));
     }
     if image_fallback_model.is_some() {
         tools.push(describe_image_tool_definition());
@@ -604,9 +606,10 @@ pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition 
                         "type": "string",
                         "description": "Optional OpenRouter Image API model ID for this request only. Omit by default to use the configured image model. Override only in special cases, such as an explicit user request or a capability required for this task that the default model lacks. Does not change configuration."
                     },
-                    "size": {
-                        "type": "string",
-                        "description": "Aspect ratio (e.g. '16:9', '1:1', '4:3') or image size (e.g. '1K', '2K', '4K', '2048x2048'). Aspect ratios are preferred for most models; use image size only if the model supports it."
+                    "api_parameters": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "Optional OpenRouter Image API fields, forwarded unchanged at request top level. Dynamic: use get_image_model_details to discover supported parameters and values for the selected endpoint. Examples: resolution, aspect_ratio, size, seed, quality, n, output_format, provider.options. Omit unneeded options for provider defaults. Cannot override model, prompt or input_references. Only stream:false is supported. Do not combine explicit pixel size with resolution/aspect_ratio. All fields outside this object are GlowBot harness controls; reference_max_dimension only resizes local inputs and is never sent to OpenRouter."
                     },
                     "reference_images": {
                         "type": "array",
@@ -622,6 +625,25 @@ pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition 
                 },
                 "required": ["prompt"]
             }),
+        },
+    }
+}
+
+fn image_models_tool_definition(details: bool) -> ToolDefinition {
+    ToolDefinition {
+        def_type: "function".into(),
+        function: FunctionDef {
+            name: if details { "get_image_model_details" } else { "list_image_models" }.into(),
+            description: if details {
+                "Get the full unfiltered OpenRouter image model endpoints response, including supported parameters, accepted values, pricing, and provider options. Check this before choosing unfamiliar image generation parameters; support varies by endpoint."
+            } else {
+                "List all OpenRouter Image API models, newest first. Returns only id, name, description, created. Use get_image_model_details for supported parameters and pricing before selecting an unfamiliar model."
+            }.into(),
+            parameters: if details {
+                serde_json::json!({"type":"object", "properties":{"model":{"type":"string", "description":"Exact author/slug image model ID from list_image_models"}}, "required":["model"]})
+            } else {
+                serde_json::json!({"type":"object", "properties":{}})
+            },
         },
     }
 }

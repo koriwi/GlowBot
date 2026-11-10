@@ -14,7 +14,8 @@ fn test_generate_image_tool_definition() {
     assert_eq!(required.len(), 1);
     assert_eq!(required[0], "prompt");
     assert_eq!(params["properties"]["prompt"]["type"], "string");
-    assert_eq!(params["properties"]["size"]["type"], "string");
+    assert_eq!(params["properties"]["api_parameters"]["type"], "object");
+    assert_eq!(params["properties"]["api_parameters"]["additionalProperties"], true);
     assert_eq!(params["properties"]["model"]["type"], "string");
     assert_eq!(params["properties"]["reference_max_dimension"]["type"], "integer");
     assert!(params["properties"]["reference_images"]["type"] == "array");
@@ -24,12 +25,14 @@ fn test_generate_image_tool_definition() {
 fn test_all_tool_definitions_with_image_gen_model() {
     // With image_gen_model, without bash, without embedding: 21 base + generate_image + 3 config + 2 model tools = 27
     let tools = all_tool_definitions(false, None, "/media", Some("black-forest-labs/flux-1.1-pro"), None, None);
-    assert_eq!(tools.len(), 27);
+    assert_eq!(tools.len(), 29);
     assert!(tools.iter().any(|t| t.function.name == "generate_image"));
+    assert!(tools.iter().any(|t| t.function.name == "list_image_models"));
+    assert!(tools.iter().any(|t| t.function.name == "get_image_model_details"));
 
     // With image_gen_model, with bash, without embedding: 21 base + generate_image + bash + 3 config + 2 model tools = 28
     let tools = all_tool_definitions(true, None, "/media", Some("black-forest-labs/flux-1.1-pro"), None, None);
-    assert_eq!(tools.len(), 28);
+    assert_eq!(tools.len(), 30);
     assert_eq!(tools[0].function.name, "bash");
     assert!(tools.iter().any(|t| t.function.name == "generate_image"));
 

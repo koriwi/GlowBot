@@ -70,12 +70,15 @@ pub(crate) async fn tool_generate_image(
         }
     }
 
-    let request = crate::openrouter::ImageGenerationRequest::new(
+    let mut request = crate::openrouter::ImageGenerationRequest::new(
         image_gen_model.clone(),
         prompt.to_string(),
         size,
         input_references,
     );
+    if let Err(error) = request.apply_api_parameters(args.get("api_parameters")) {
+        return format!("Error: {error}");
+    }
 
     let client = crate::openrouter::OpenRouterClient::new(api_key);
     let response = match client.generate_images(&request).await {

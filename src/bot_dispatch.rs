@@ -246,6 +246,21 @@ pub(crate) async fn dispatch_tool(
             }
         }
         "generate_image" => bot_dispatch_image::tool_generate_image(state, &cid, args).await,
+        "list_image_models" | "get_image_model_details" => {
+            let api_key = state.lock().await.config.openrouter.api_key.clone();
+            let client = crate::openrouter::OpenRouterClient::new(api_key);
+            let result = if tool_name == "list_image_models" {
+                client.list_image_models().await
+            } else {
+                client
+                    .image_model_details(args["model"].as_str().unwrap_or(""))
+                    .await
+            };
+            match result {
+                Ok(value) => value.to_string(),
+                Err(error) => format!("Error: {error:#}"),
+            }
+        }
         "describe_image" => bot_dispatch_describe::tool_describe_image(state, &cid, args).await,
         "create_skill" => bot_dispatch_skills::tool_create_skill(state, args).await,
         "read_skill" => bot_dispatch_skills::tool_read_skill(state, args).await,
