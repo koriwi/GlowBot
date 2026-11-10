@@ -662,6 +662,20 @@ based on incomplete media. Direct mentions use the agent's usual media preparati
 
 ## Image generation API
 
+Tool fields have three roles: `prompt` and `model` are core API fields managed by
+GlowBot (required prompt; optional model override with config fallback). They are
+sent as API fields but stay outside `api_parameters` to avoid two sources of truth.
+`reference_images` contains local paths converted into API `input_references`;
+`reference_max_dimension` is purely local preprocessing. `api_parameters` holds
+optional dynamic API settings, flattened into the request body.
+The agent-facing schema explains that output `resolution` is a provider-defined
+tier, `aspect_ratio` sets shape, and these can combine. `size: "1K"` is shorthand
+for `resolution: "1K"` and can combine with aspect ratio; explicit pixel `size`
+sets both dimensions where supported. Prefer resolution plus aspect ratio or pixel
+size alone. GlowBot deliberately rejects all pixel-size combinations with
+resolution/aspect ratio for consistent behavior across providers, even though some
+providers accept consistent combinations. None of these controls resize references.
+
 When image generation is configured, `list_image_models` fetches
 `GET /api/v1/images/models`, returns only `id`, `name`, `description`, `created`
 inside `data`, and sorts by `created` descending. `get_image_model_details(model)`

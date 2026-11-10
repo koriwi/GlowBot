@@ -600,16 +600,16 @@ pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition 
                 "properties": {
                     "prompt": {
                         "type": "string",
-                        "description": "Text description of the image to generate. Be detailed — describe subject, style, lighting, composition, colors, mood."
+                        "description": "Required core API field, sent to OpenRouter as prompt. Kept top-level so every call has one explicit prompt; do not repeat in api_parameters. Describe subject, style, lighting, composition, colors, mood."
                     },
                     "model": {
                         "type": "string",
-                        "description": "Optional OpenRouter Image API model ID for this request only. Omit by default to use the configured image model. Override only in special cases, such as an explicit user request or a capability required for this task that the default model lacks. Does not change configuration."
+                        "description": "Core API field managed by GlowBot: optional model ID override for this request only. Kept top-level to resolve the configured default and keep model selection consistent with logging and saved filenames. Sent to OpenRouter as model; do not repeat in api_parameters. Omit by default to use the configured image model. Override only in special cases, such as an explicit user request or a capability required for this task that the default model lacks. Does not change configuration."
                     },
                     "api_parameters": {
                         "type": "object",
                         "additionalProperties": true,
-                        "description": "Optional OpenRouter Image API fields, forwarded unchanged at request top level. Dynamic: use get_image_model_details to discover supported parameters and values for the selected endpoint. Examples: resolution, aspect_ratio, size, seed, quality, n, output_format, provider.options. Omit unneeded options for provider defaults. Cannot override model, prompt or input_references. Only stream:false is supported. Do not combine explicit pixel size with resolution/aspect_ratio. All fields outside this object are GlowBot harness controls; reference_max_dimension only resizes local inputs and is never sent to OpenRouter."
+                        "description": "Optional OpenRouter Image API fields, forwarded unchanged at request top level. Dynamic: use get_image_model_details to discover supported parameters and values for the selected endpoint. Examples: resolution, aspect_ratio, size, seed, quality, n, output_format, provider.options. Output dimensions: resolution is a provider-defined tier, not an exact maximum pixel dimension; aspect_ratio sets shape and combines with resolution. size has two forms: a tier such as 1K is equivalent to resolution and can combine with aspect_ratio; explicit pixels such as 1024x1536 set both dimensions where supported. Prefer resolution plus aspect_ratio for tier/shape control, or size alone for exact pixels. Do not send redundant size tier and resolution. Omit unneeded options for provider defaults. Cannot override model, prompt or input_references. Only stream:false is supported. Do not combine explicit pixel size with resolution/aspect_ratio. Top-level prompt/model are core API fields managed by GlowBot; reference_images is converted to API input_references. reference_max_dimension is purely local preprocessing: a maximum width/height in pixels, not an output tier or API parameter, and is never sent to OpenRouter."
                     },
                     "reference_images": {
                         "type": "array",
