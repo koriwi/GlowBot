@@ -600,6 +600,10 @@ pub(crate) fn generate_image_tool_definition(media_dir: &str) -> ToolDefinition 
                         "type": "string",
                         "description": "Text description of the image to generate. Be detailed — describe subject, style, lighting, composition, colors, mood."
                     },
+                    "model": {
+                        "type": "string",
+                        "description": "Optional OpenRouter Image API model ID for this request only. Omit by default to use the configured image model. Override only in special cases, such as an explicit user request or a capability required for this task that the default model lacks. Does not change configuration."
+                    },
                     "size": {
                         "type": "string",
                         "description": "Aspect ratio (e.g. '16:9', '1:1', '4:3') or image size (e.g. '1K', '2K', '4K', '2048x2048'). Aspect ratios are preferred for most models; use image size only if the model supports it."

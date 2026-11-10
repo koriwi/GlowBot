@@ -15,6 +15,7 @@ fn test_generate_image_tool_definition() {
     assert_eq!(required[0], "prompt");
     assert_eq!(params["properties"]["prompt"]["type"], "string");
     assert_eq!(params["properties"]["size"]["type"], "string");
+    assert_eq!(params["properties"]["model"]["type"], "string");
     assert!(params["properties"]["reference_images"]["type"] == "array");
 }
 

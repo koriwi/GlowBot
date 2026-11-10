@@ -666,6 +666,12 @@ based on incomplete media. Direct mentions use the agent's usual media preparati
 all models, including `qwen/qwen-image-2.1-turbo`. Set `openrouter.image_gen_model`
 (or the existing chat/DM override) to a model listed by `GET /api/v1/images/models`.
 There is no chat-completions fallback for image generation.
+The optional `model` tool argument overrides the effective configured image model
+for that request only, without modifying configuration. Agents should omit it by
+default and override only for special cases, such as an explicit user request or
+a required capability. Omitted or null uses the existing chat/DM/global default;
+empty or non-string overrides return an error. The tool remains exposed only when
+an image generation model is configured.
 Requests send `model` and `prompt`; local reference images become base64 data URLs
 in `input_references`. The tool's optional `size` maps to `aspect_ratio` for ratios
 such as `16:9`, or to the API's `size` shorthand for tiers (`2K`) and pixel sizes

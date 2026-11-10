@@ -15,9 +15,9 @@ pub(crate) async fn tool_generate_image(
 
     let image_gen_model = {
         let s = state.lock().await;
-        match s.config.image_gen_model_for_chat(chat_id) {
-            Some(m) => m.to_string(),
-            None => return "Error: image generation model not configured".into(),
+        match select_image_model(args, s.config.image_gen_model_for_chat(chat_id)) {
+            Ok(model) => model,
+            Err(error) => return format!("Error: {error}"),
         }
     };
 
@@ -157,6 +157,22 @@ pub(crate) async fn tool_generate_image(
     paths_json
 }
 
+/// A request override never changes the configured default.
+fn select_image_model(
+    args: &serde_json::Value,
+    configured: Option<&str>,
+) -> Result<String, &'static str> {
+    match args.get("model") {
+        None | Some(serde_json::Value::Null) => configured
+            .map(str::to_owned)
+            .ok_or("image generation model not configured"),
+        Some(serde_json::Value::String(model)) if !model.trim().is_empty() => {
+            Ok(model.trim().to_owned())
+        }
+        _ => Err("model must be a non-empty string"),
+    }
+}
+
 /// Extract a short slug from a model ID for filenames.
 fn image_gen_model_id(model: &str) -> String {
     model
@@ -246,6 +262,35 @@ fn base64_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn image_model_override_is_per_request() {
+        let configured = Some("default/image");
+        assert_eq!(
+            select_image_model(&serde_json::json!({}), configured),
+            Ok("default/image".into())
+        );
+        assert_eq!(
+            select_image_model(&serde_json::json!({"model":"special/image"}), configured),
+            Ok("special/image".into())
+        );
+        assert_eq!(
+            select_image_model(&serde_json::json!({}), configured),
+            Ok("default/image".into())
+        );
+        assert!(select_image_model(&serde_json::json!({}), None).is_err());
+        assert_eq!(
+            select_image_model(&serde_json::json!({"model":null}), configured),
+            Ok("default/image".into())
+        );
+        for model in [
+            serde_json::json!(""),
+            serde_json::json!("  "),
+            serde_json::json!(42),
+        ] {
+            assert!(select_image_model(&serde_json::json!({"model":model}), configured).is_err());
+        }
+    }
 
     pub(crate) fn base64_decode_for_test(b64: &str) -> Result<Vec<u8>, String> {
         base64_decode(b64)
