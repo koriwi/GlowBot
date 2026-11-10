@@ -169,10 +169,7 @@ impl BotState {
             for tool in t.iter_mut().filter(|tool| {
                 matches!(
                     tool.function.name.as_str(),
-                    "generate_image"
-                        | "list_image_models"
-                        | "get_image_model_details"
-                        | "describe_image"
+                    "generate_image" | "list_image_models" | "get_image_model_details"
                 )
             }) {
                 tool.function

@@ -181,7 +181,7 @@ async fn test_image_gen_model_guidance_in_tool_description() {
     assert_eq!(description(&tools), format!("{original}\n\nImage model selection guidance:\nPrefer the default.\nUse an edit model for clothes."));
     for tool in &tools {
         let before = baseline.iter().find(|t| t.function.name == tool.function.name).unwrap();
-        if matches!(tool.function.name.as_str(), "generate_image" | "list_image_models" | "get_image_model_details" | "describe_image") {
+        if matches!(tool.function.name.as_str(), "generate_image" | "list_image_models" | "get_image_model_details") {
             assert_eq!(tool.function.description, format!("{}\n\nImage model selection guidance:\nPrefer the default.\nUse an edit model for clothes.", before.function.description));
         } else {
             assert_eq!(tool.function.description, before.function.description);

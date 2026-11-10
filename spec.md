@@ -663,8 +663,9 @@ based on incomplete media. Direct mentions use the agent's usual media preparati
 ## Image generation API
 
 Optional `openrouter.image_gen_model_guidance` is natural-language selection advice
-appended to `generate_image`, `list_image_models`, `get_image_model_details`, and
-`describe_image` tool descriptions wherever each tool is enabled.
+appended to `generate_image`, `list_image_models`, and `get_image_model_details`
+tool descriptions wherever each tool is enabled. It is not attached to
+`describe_image`, which analyzes images using the configured vision model.
 Omitted or whitespace-only text adds nothing. It does not enable generation or
 change the configured model; the agent may use it to guide per-request overrides.
 
