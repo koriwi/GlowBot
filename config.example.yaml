@@ -19,7 +19,8 @@ openrouter:
   # Image generation model — when set, the `generate_image` tool is enabled.
   # Must support /api/v1/images; discover models at /api/v1/images/models.
   # image_gen_model: "qwen/qwen-image-2.1-turbo"
-  # Optional natural-language guidance appended to the generate_image tool description.
+  # Optional natural-language guidance appended to image generation, model discovery,
+  # and image description tool descriptions.
   # Does not change the default model; omitted or blank adds no guidance.
   # image_gen_model_guidance: |
   #   Prefer the configured model for everyday requests. For garment edits, choose

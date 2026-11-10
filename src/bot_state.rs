@@ -166,10 +166,15 @@ impl BotState {
             .as_deref()
             .filter(|s| !s.trim().is_empty())
         {
-            if let Some(tool) = t
-                .iter_mut()
-                .find(|tool| tool.function.name == "generate_image")
-            {
+            for tool in t.iter_mut().filter(|tool| {
+                matches!(
+                    tool.function.name.as_str(),
+                    "generate_image"
+                        | "list_image_models"
+                        | "get_image_model_details"
+                        | "describe_image"
+                )
+            }) {
                 tool.function
                     .description
                     .push_str("\n\nImage model selection guidance:\n");

@@ -170,6 +170,7 @@ async fn test_image_gen_model_guidance_in_tool_description() {
     let (bot, _dir, _llm) = setup_test_bot().await;
     let mut state = bot.state.lock().await;
     state.config.openrouter.image_gen_model = Some("test/image".into());
+    state.config.openrouter.image_fallback_model = Some("test/vision".into());
     let baseline = state.build_tools(false, "-123");
     let description = |tools: &[crate::openrouter::ToolDefinition]| {
         tools.iter().find(|t| t.function.name == "generate_image").unwrap().function.description.clone()
@@ -178,12 +179,19 @@ async fn test_image_gen_model_guidance_in_tool_description() {
     state.config.openrouter.image_gen_model_guidance = Some("Prefer the default.\nUse an edit model for clothes.".into());
     let tools = state.build_tools(false, "-123");
     assert_eq!(description(&tools), format!("{original}\n\nImage model selection guidance:\nPrefer the default.\nUse an edit model for clothes."));
-    for tool in tools.iter().filter(|t| t.function.name != "generate_image") {
+    for tool in &tools {
         let before = baseline.iter().find(|t| t.function.name == tool.function.name).unwrap();
-        assert_eq!(tool.function.description, before.function.description);
+        if matches!(tool.function.name.as_str(), "generate_image" | "list_image_models" | "get_image_model_details" | "describe_image") {
+            assert_eq!(tool.function.description, format!("{}\n\nImage model selection guidance:\nPrefer the default.\nUse an edit model for clothes.", before.function.description));
+        } else {
+            assert_eq!(tool.function.description, before.function.description);
+        }
     }
     state.config.openrouter.image_gen_model_guidance = Some(" \n ".into());
     assert_eq!(description(&state.build_tools(false, "-123")), original);
+    for tool in state.build_tools(false, "-123") {
+        assert_eq!(tool.function.description, baseline.iter().find(|t| t.function.name == tool.function.name).unwrap().function.description);
+    }
     state.config.openrouter.image_gen_model = None;
     state.config.openrouter.image_gen_model_guidance = Some("Use an edit model.".into());
     assert!(!state.build_tools(false, "-123").iter().any(|t| t.function.name == "generate_image"));

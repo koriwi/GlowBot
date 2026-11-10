@@ -231,7 +231,7 @@ pub struct OpenRouterConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_gen_model: Option<String>,
     /// Optional natural-language image model selection guidance appended to the
-    /// generate_image tool description. Does not change the configured default.
+    /// image generation, discovery, and description tools. Does not change defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_gen_model_guidance: Option<String>,
     /// Embedding model name for conversation vector search (RAG).
