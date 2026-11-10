@@ -659,3 +659,18 @@ paths remain in history so the agent can use media tools. Historical image parts
 sent natively when supported, otherwise only their saved text/path is included.
 Missing fallbacks or failed media preparation cause silence rather than a decision
 based on incomplete media. Direct mentions use the agent's usual media preparation.
+
+## Image generation API
+
+`generate_image` uses OpenRouter's dedicated `POST /api/v1/images` endpoint for
+all models, including `qwen/qwen-image-2.1-turbo`. Set `openrouter.image_gen_model`
+(or the existing chat/DM override) to a model listed by `GET /api/v1/images/models`.
+There is no chat-completions fallback for image generation.
+Requests send `model` and `prompt`; local reference images become base64 data URLs
+in `input_references`. The tool's optional `size` maps to `aspect_ratio` for ratios
+such as `16:9`, or to the API's `size` shorthand for tiers (`2K`) and pixel sizes
+(`2048x2048`). Accepted dimensions and reference counts depend on the selected model.
+Images are decoded from `data[].b64_json`, saved under the media directory's
+`generated/` folder, and returned as paths for `send_media`. Empty results, API
+errors, and failures to save any images return tool errors. Existing configuration
+keys and per-chat/DM model precedence remain unchanged.

@@ -225,8 +225,8 @@ pub struct OpenRouterConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_fallback_model: Option<String>,
     /// Model used for image generation via the `generate_image` tool.
-    /// Must be an image generation model available on OpenRouter
-    /// (e.g. "google/imagen-4", "black-forest-labs/flux-1.1-pro").
+    /// Must be available through OpenRouter’s /api/v1/images endpoint
+    /// (e.g. "qwen/qwen-image-2.1-turbo"); see /api/v1/images/models.
     /// If unset, the `generate_image` tool is not exposed to the LLM.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_gen_model: Option<String>,

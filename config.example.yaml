@@ -17,8 +17,8 @@ openrouter:
   # Decisions model for auto_detect group interaction mode (optional).
   # decider_model: "openai/gpt-6-luna-decisions"
   # Image generation model — when set, the `generate_image` tool is enabled.
-  # Must be an image generation model (e.g. "google/imagen-4", "black-forest-labs/flux-1.1-pro").
-  # image_gen_model: "black-forest-labs/flux-1.1-pro"
+  # Must support /api/v1/images; discover models at /api/v1/images/models.
+  # image_gen_model: "qwen/qwen-image-2.1-turbo"
   # Embedding model for conversation vector search (RAG) — disabled by default.
   # When set, every message is embedded and stored. Example: "openai/text-embedding-3-small"
   # embedding_model: "openai/text-embedding-3-small"
@@ -80,7 +80,7 @@ dms:
   #   bash_enabled: true               # optional, override global bash_enabled
   #   image_fallback_model: "openai/gpt-4o"   # optional, override global image fallback model
   #   audio_fallback_model: "google/gemini-2.5-flash"  # optional, override global audio fallback model
-  #   image_gen_model: "black-forest-labs/flux-1.1-pro"  # optional, override global image gen model
+  #   image_gen_model: "qwen/qwen-image-2.1-turbo"  # optional, override global image gen model
   #   advice_model: "openai/gpt-4o"          # optional, override global advice model
 
 # Group-specific overrides (keyed by Telegram chat ID, negative)
@@ -97,6 +97,6 @@ chats:
   #   bash_enabled: true                   # optional, override global bash_enabled
   #   image_fallback_model: "openai/gpt-4o"  # optional, override global image fallback model
   #   audio_fallback_model: "google/gemini-2.5-flash"  # optional, override global audio fallback model
-  #   image_gen_model: "black-forest-labs/flux-1.1-pro"  # optional, override global image gen model
+  #   image_gen_model: "qwen/qwen-image-2.1-turbo"  # optional, override global image gen model
   #   advice_model: "openai/gpt-4o"      # optional, override global advice model
   #   mcp_blacklist: []                    # optional, MCP server names to exclude for this chat (e.g. ["homeassistant"])
